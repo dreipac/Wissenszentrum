@@ -352,7 +352,8 @@ textarea.field-control {
 }
 
 .field-control[type="date"],
-.field-control[type="time"] {
+.field-control[type="time"],
+.field-control[type="datetime-local"] {
   color-scheme: dark;
 }
 
@@ -392,18 +393,60 @@ textarea.field-control {
   color: var(--text-muted);
 }
 
-.subtask-track {
+/* Segmentierter Balken: ein Segment je Zwischenschritt */
+.segment-bar {
+  display: flex;
   flex: 1;
-  height: 4px;
+  gap: 3px;
   min-width: 36px;
-  border-radius: 999px;
-  background-color: var(--bg-selected);
-  overflow: hidden;
+  max-width: 220px;
 }
 
-.subtask-fill {
-  height: 100%;
+.segment-bar span {
+  flex: 1;
+  height: 4px;
+  min-width: 2px;
   border-radius: 999px;
+  background-color: var(--bg-selected);
+  transition: background-color 0.2s ease;
+}
+
+.segment-bar span.on {
   background-color: var(--text);
-  transition: width 0.25s ease;
+}
+
+/* Kleinere Variante des runden Abhak-Kreises */
+.check.sm {
+  width: 14px;
+  height: 14px;
+  border-width: 1.5px;
+}
+
+.check.sm.checked::after {
+  left: 3.5px;
+  top: 0.5px;
+  width: 3px;
+  height: 6px;
+  border-width: 0 1.5px 1.5px 0;
+}
+
+/* Symbol-Marke (z. B. BLK, BTC) */
+.tr-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 42px;
+  padding: 0.2rem 0.45rem;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  background-color: var(--bg-app);
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  color: var(--text);
+}
+
+.settings-ok {
+  font-size: 0.85rem;
+  color: var(--positive);
 }

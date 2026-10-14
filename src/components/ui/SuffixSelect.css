@@ -1,0 +1,148 @@
+/* Eingabefeld mit Auswahl oder festem Kürzel am rechten Rand (Währung, Einheit) */
+.input-suffix {
+  display: flex;
+  align-items: stretch;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  background-color: var(--bg-sidebar);
+  transition: border-color 0.15s;
+}
+
+.input-suffix:focus-within {
+  border-color: var(--border-strong-hover);
+}
+
+.input-suffix.readonly {
+  background-color: transparent;
+}
+
+.input-suffix input {
+  flex: 1;
+  min-width: 0;
+  padding: 0.35rem 0.75rem;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-size: 0.95rem;
+  outline: none;
+}
+
+.input-suffix input::placeholder {
+  color: var(--text-faint);
+}
+
+.input-suffix-divider {
+  width: 1px;
+  margin: 6px 0;
+  background-color: var(--border-soft);
+}
+
+/* Festes Kürzel ohne Auswahl */
+.suffix-text {
+  display: flex;
+  align-items: center;
+  padding: 0 0.75rem;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.suffix-select {
+  display: flex;
+}
+
+.suffix-trigger {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0 0.7rem;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  font-weight: 500;
+  outline: none;
+  cursor: pointer;
+  transition: color 0.15s;
+}
+
+.suffix-trigger:hover,
+.suffix-trigger:focus-visible,
+.suffix-trigger.open {
+  color: var(--text);
+}
+
+.suffix-arrow {
+  transition: transform 0.15s ease;
+}
+
+.suffix-trigger.open .suffix-arrow {
+  transform: rotate(180deg);
+}
+
+.suffix-menu {
+  position: fixed;
+  z-index: 80;
+  min-width: 110px;
+  padding: 4px;
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  background-color: rgba(22, 22, 22, 0.78);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45);
+  transform-origin: top right;
+  animation: suffix-menu-pop 0.16s ease;
+}
+
+.suffix-menu.up {
+  transform-origin: bottom right;
+}
+
+@keyframes suffix-menu-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.92) translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.suffix-option {
+  display: block;
+  width: 100%;
+  padding: 0.45rem 0.6rem;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  text-align: left;
+  cursor: pointer;
+  opacity: 0;
+  animation: suffix-option-in 0.18s ease forwards;
+}
+
+@keyframes suffix-option-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.suffix-option:hover {
+  background-color: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+}
+
+.suffix-option.selected {
+  color: #ffffff;
+  font-weight: 600;
+}

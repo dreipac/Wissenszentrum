@@ -1,0 +1,234 @@
+/* Gemeinsame Stile der Trading-Dialoge */
+.tm2-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.tm2-grid.three {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.tm2-grid .full {
+  grid-column: 1 / -1;
+}
+
+.tr-segmented {
+  align-self: flex-start;
+}
+
+.tr-segmented button {
+  padding: 0.25rem 0.9rem;
+}
+
+.field-hint {
+  font-size: 0.74rem;
+  color: var(--text-faint);
+}
+
+select.field-control {
+  cursor: pointer;
+}
+
+/* Zusammenfassung unter dem Formular */
+.tm2-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.75rem 0.9rem;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  background-color: var(--bg-sidebar);
+  font-size: 0.85rem;
+}
+
+.tm2-summary > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  color: var(--text-muted);
+}
+
+.tm2-summary strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.tm2-summary .warn strong,
+.tm2-warn {
+  color: var(--negative);
+}
+
+/* Liste der letzten Bewegungen */
+.tm2-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tm2-list li {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.45rem 0;
+  border-top: 1px solid var(--border-soft);
+  font-size: 0.85rem;
+}
+
+.tm2-list li:first-child {
+  border-top: none;
+}
+
+.tm2-list .grow {
+  flex: 1;
+  min-width: 0;
+}
+
+.tm2-list .muted {
+  font-size: 0.75rem;
+}
+
+.tm2-sub {
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+/* Kopf und Kennzahlen im Positions-Dialog */
+.tr-trade-head {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: -0.25rem;
+}
+
+.tr-status {
+  padding: 0 0.55rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  font-size: 0.72rem;
+  line-height: 20px;
+  color: var(--text-muted);
+}
+
+.tr-status.open {
+  color: var(--text);
+}
+
+.tr-quote-btn {
+  width: auto;
+  height: 24px;
+  margin-left: auto;
+  padding: 0 0.5rem;
+  gap: 0.3rem;
+  font-size: 0.75rem;
+}
+
+.tr-kpis {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.75rem 1rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-lg);
+  background-color: var(--bg-sidebar);
+}
+
+.tr-kpi {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.tr-kpi-label {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+.tr-kpi-value {
+  font-size: 0.92rem;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.tr-kpi-sub {
+  font-size: 0.72rem;
+  color: var(--text-faint);
+}
+
+.tr-text-block p {
+  margin-top: 0.25rem;
+  font-size: 0.88rem;
+  line-height: 1.5;
+  color: #d4d4d4;
+  white-space: pre-wrap;
+}
+
+/* Ausführungen */
+.tr-exec {
+  margin-top: 0.35rem;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.tr-exec-row {
+  display: grid;
+  grid-template-columns: 0.8fr 1.5fr 1fr 1.2fr 1fr 1.2fr;
+  gap: 0.5rem;
+  padding: 0.45rem 0.75rem;
+  border-top: 1px solid var(--border-soft);
+  font-size: 0.8rem;
+}
+
+.tr-exec-row:first-child {
+  border-top: none;
+}
+
+.tr-exec-row.head {
+  background-color: var(--bg-sidebar);
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+
+.tr-exec-row .right {
+  text-align: right;
+}
+
+.tr-pos {
+  color: var(--positive);
+}
+
+.tr-neg {
+  color: var(--negative);
+}
+
+/* Aktions-Panel */
+.tr-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  padding: 1rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  background-color: var(--bg-card);
+  animation: details-in 0.18s ease-out;
+}
+
+.tr-panel h3 {
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.tr-panel-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+@media (max-width: 900px) {
+  .tr-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

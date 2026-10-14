@@ -1,6 +1,7 @@
 // Nur für das Browser-Preview ohne Tauri: einfacher In-Memory-Speicher mit Demo-Terminen.
 // In der echten App wird dieser Code nie benutzt.
 import type { CalendarEvent, EventInput } from "../calendar";
+import type { Note, NoteInput } from "../notes";
 import type { Bucket, BucketInput, Subtask, SubtaskInput, Task, TaskInput } from "../tasks";
 import { addDays, startOfDay, startOfWeek, toDateStr } from "../dates";
 
@@ -157,6 +158,12 @@ export const tasksStore = {
     else tasks.splice(at, 0, task);
     return { ...task };
   },
+  async setSubtaskDone(id: number, done: boolean) {
+    const task = tasks.find((t) => t.subtasks.some((s) => s.id === id));
+    if (!task) throw "Zwischenschritt nicht gefunden.";
+    task.subtasks = task.subtasks.map((s) => (s.id === id ? { ...s, done } : s));
+    return { ...task };
+  },
   async setDone(id: number, done: boolean) {
     const task = tasks.find((t) => t.id === id);
     if (!task) throw "Aufgabe nicht gefunden.";
@@ -167,5 +174,49 @@ export const tasksStore = {
     }
     task.done = done;
     return { ...task };
+  },
+};
+
+// --- Notizen (nur Browser-Preview) -------------------------------------------
+
+let notes: Note[] = [];
+let nextNoteId = 1;
+const utcNow = () => new Date().toISOString().slice(0, 19).replace("T", " ");
+
+const sortedNotes = () =>
+  [...notes].sort(
+    (a, b) => Number(b.pinned) - Number(a.pinned) || b.updatedAt.localeCompare(a.updatedAt) || b.id - a.id,
+  );
+
+export const notesStore = {
+  async list() {
+    return sortedNotes().map((n) => ({ ...n }));
+  },
+  async create(input: NoteInput) {
+    const now = utcNow();
+    const note: Note = { ...input, title: input.title.trim(), folder: input.folder.trim(), id: nextNoteId++, pinned: false, createdAt: now, updatedAt: now };
+    notes.push(note);
+    return { ...note };
+  },
+  async update(id: number, input: NoteInput) {
+    const note = notes.find((n) => n.id === id);
+    if (!note) throw "Notiz nicht gefunden.";
+    Object.assign(note, input, { title: input.title.trim(), folder: input.folder.trim(), updatedAt: utcNow() });
+    return { ...note };
+  },
+  async setPinned(id: number, pinned: boolean) {
+    const note = notes.find((n) => n.id === id);
+    if (!note) throw "Notiz nicht gefunden.";
+    note.pinned = pinned;
+    return { ...note };
+  },
+  async remove(id: number) {
+    if (!notes.some((n) => n.id === id)) throw "Notiz nicht gefunden.";
+    notes = notes.filter((n) => n.id !== id);
+  },
+  async purge(exceptId: number | null) {
+    const before = notes.length;
+    notes = notes.filter((n) => n.pinned || n.id === exceptId || n.title.trim() || n.plain.trim());
+    return before - notes.length;
   },
 };

@@ -77,3 +77,13 @@ export function formatWeekRange(d: Date, length = 7): string {
   }
   return `${fDayMonth.format(a)} ${a.getFullYear()} – ${fDayMonth.format(b)} ${b.getFullYear()}`;
 }
+
+/** Lokale Zeit "YYYY-MM-DD HH:MM" als „Heute, 09:12“, „Gestern, 18:30“ oder „12. Okt“. */
+export function formatLocalWhen(at: string, now = new Date()): string {
+  const d = parseDateTime(at);
+  const days = Math.round((startOfDay(now).getTime() - startOfDay(d).getTime()) / 86_400_000);
+  const time = toTimeStr(d);
+  if (days === 0) return `Heute, ${time}`;
+  if (days === 1) return `Gestern, ${time}`;
+  return fDayMonth.format(d).replace(".", "") + (d.getFullYear() === now.getFullYear() ? "" : ` ${d.getFullYear()}`);
+}

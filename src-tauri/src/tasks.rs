@@ -59,6 +59,8 @@ pub struct Task {
     /// Fälligkeitsdatum als `YYYY-MM-DD`
     pub due_date: Option<String>,
     pub done: bool,
+    /// Zwischenschritte auch auf der Karte im Board anzeigen
+    pub show_subtasks: bool,
     pub subtasks: Vec<Subtask>,
 }
 
@@ -73,6 +75,8 @@ pub struct TaskInput {
     pub priority: String,
     #[serde(default)]
     pub due_date: Option<String>,
+    #[serde(default)]
+    pub show_subtasks: bool,
     /// Vollständige Liste der Zwischenschritte in gewünschter Reihenfolge; fehlende werden gelöscht.
     #[serde(default)]
     pub subtasks: Vec<SubtaskInput>,
@@ -199,7 +203,7 @@ pub fn delete_bucket(conn: &Connection, id: i64) -> Result<(), String> {
 // Aufgaben
 // ---------------------------------------------------------------------------
 
-const TASK_COLUMNS: &str = "id, bucket_id, title, description, priority, due_date, done";
+const TASK_COLUMNS: &str = "id, bucket_id, title, description, priority, due_date, done, show_subtasks";
 
 fn row_to_task(row: &Row) -> rusqlite::Result<Task> {
     Ok(Task {
@@ -210,6 +214,7 @@ fn row_to_task(row: &Row) -> rusqlite::Result<Task> {
         priority: row.get(4)?,
         due_date: row.get(5)?,
         done: row.get::<_, i64>(6)? != 0,
+        show_subtasks: row.get::<_, i64>(7)? != 0,
         subtasks: Vec::new(),
     })
 }
@@ -360,15 +365,16 @@ pub fn create_task(conn: &Connection, input: &TaskInput) -> Result<Task, String>
     }
     let position = next_position(conn, input.bucket_id)?;
     conn.execute(
-        "INSERT INTO tasks (bucket_id, title, description, priority, due_date, position)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        "INSERT INTO tasks (bucket_id, title, description, priority, due_date, position, show_subtasks)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
         params![
             input.bucket_id,
             input.title.trim(),
             input.description,
             input.priority,
             input.due_date,
-            position
+            position,
+            input.show_subtasks as i64
         ],
     )
     .map_err(|e| e.to_string())?;
@@ -390,7 +396,7 @@ pub fn update_task(conn: &Connection, id: i64, input: &TaskInput) -> Result<Task
     conn.execute(
         "UPDATE tasks
          SET bucket_id = ?1, title = ?2, description = ?3, priority = ?4, due_date = ?5,
-             position = COALESCE(?6, position), updated_at = datetime('now')
+             position = COALESCE(?6, position), show_subtasks = ?8, updated_at = datetime('now')
          WHERE id = ?7",
         params![
             input.bucket_id,
@@ -399,7 +405,8 @@ pub fn update_task(conn: &Connection, id: i64, input: &TaskInput) -> Result<Task
             input.priority,
             input.due_date,
             position_sql,
-            id
+            id,
+            input.show_subtasks as i64
         ],
     )
     .map_err(|e| e.to_string())?;
@@ -414,6 +421,20 @@ pub fn delete_task(conn: &Connection, id: i64) -> Result<(), String> {
         return Err("Aufgabe nicht gefunden.".into());
     }
     Ok(())
+}
+
+/// Hakt einen einzelnen Zwischenschritt ab (z. B. direkt auf der Karte) und liefert die ganze Aufgabe zurück.
+pub fn set_subtask_done(conn: &Connection, id: i64, done: bool) -> Result<Task, String> {
+    let task_id: i64 = conn
+        .query_row("SELECT task_id FROM subtasks WHERE id = ?1", params![id], |r| r.get(0))
+        .optional()
+        .map_err(|e| e.to_string())?
+        .ok_or("Zwischenschritt nicht gefunden.")?;
+    conn.execute("UPDATE subtasks SET done = ?1 WHERE id = ?2", params![done as i64, id])
+        .map_err(|e| e.to_string())?;
+    conn.execute("UPDATE tasks SET updated_at = datetime('now') WHERE id = ?1", params![task_id])
+        .map_err(|e| e.to_string())?;
+    get_task(conn, task_id)
 }
 
 /// Verschiebt eine Aufgabe in einen Bucket (`None` = ohne Bucket) und stellt sie direkt vor
@@ -523,6 +544,7 @@ mod tests {
             description: String::new(),
             priority: "medium".into(),
             due_date: None,
+            show_subtasks: false,
             subtasks: Vec::new(),
         }
     }
@@ -859,6 +881,41 @@ mod tests {
         steal.subtasks = vec![step(Some(other.subtasks[0].id), "geklaut", false)];
         assert!(update_task(&c, mine.id, &steal).is_err());
         assert_eq!(get_task(&c, other.id).unwrap().subtasks[0].title, "gehört anderer");
+    }
+
+    #[test]
+    fn show_subtasks_flag_is_stored_and_updated() {
+        let c = conn();
+        let mut i = input("Umzug", None);
+        i.show_subtasks = true;
+        i.subtasks = vec![step(None, "A", false)];
+        let t = create_task(&c, &i).unwrap();
+        assert!(t.show_subtasks);
+        assert!(!create_task(&c, &input("Andere", None)).unwrap().show_subtasks, "Standard: aus");
+
+        let mut off = input("Umzug", None);
+        off.subtasks = vec![step(Some(t.subtasks[0].id), "A", false)];
+        let updated = update_task(&c, t.id, &off).unwrap();
+        assert!(!updated.show_subtasks);
+        assert!(list_tasks(&c).unwrap().iter().all(|t| !t.show_subtasks));
+    }
+
+    #[test]
+    fn set_subtask_done_toggles_single_step() {
+        let c = conn();
+        let mut i = input("Umzug", None);
+        i.subtasks = vec![step(None, "A", false), step(None, "B", false)];
+        let t = create_task(&c, &i).unwrap();
+        let (a, b) = (t.subtasks[0].id, t.subtasks[1].id);
+
+        let after = set_subtask_done(&c, b, true).unwrap();
+        assert_eq!(after.id, t.id, "liefert die zugehörige Aufgabe");
+        assert_eq!(after.subtasks.iter().map(|s| s.done).collect::<Vec<_>>(), [false, true]);
+        assert!(!after.done, "die Aufgabe selbst bleibt offen");
+
+        let reopened = set_subtask_done(&c, b, false).unwrap();
+        assert!(reopened.subtasks.iter().all(|s| !s.done));
+        assert!(set_subtask_done(&c, a + 999, true).is_err());
     }
 
     #[test]

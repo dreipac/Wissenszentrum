@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, MapPin, Plus } from "lucide-react";
 import { Button } from "../components/ui/Button";
 import { SecondaryButton } from "../components/ui/SecondaryButton";
+import { EventDetails } from "../components/calendar/EventDetails";
 import { EventModal } from "../components/calendar/EventModal";
 import { EventPreview, type PreviewTarget } from "../components/calendar/EventPreview";
 import { MiniMonth } from "../components/calendar/MiniMonth";
@@ -94,15 +95,19 @@ export function CalendarView() {
   const [draft, setDraft] = useState<EventDraft | null>(null);
   const [selection, setSelection] = useState<Selection | null>(null);
   const [preview, setPreview] = useState<PreviewTarget | null>(null);
+  // Ausgewählter Termin: bleibt markiert und zeigt seine Details in der Seitenleiste
+  const [selectedId, setSelectedId] = useState<number | null>(null);
 
   const [from, to] = visibleRange(date, mode);
   const { events, error, reload } = useEvents(from, to);
+  const selectedEvent = events.find((e) => e.id === selectedId) ?? null;
 
   // Auswahl und Vorschau gelten nur für die aktuell sichtbare Ansicht
   const dateKey = toDateStr(date);
   useEffect(() => {
     setSelection(null);
     setPreview(null);
+    setSelectedId(null);
   }, [mode, from, dateKey]);
 
   // Beim Blättern gleitet der Inhalt kurz herein (Web Animations API: bleibt ohne Neuaufbau, Scrollposition bleibt erhalten)
@@ -135,12 +140,23 @@ export function CalendarView() {
   /** Einzelklick: Vorschau-Blase neben dem Termin, nichts wird blockiert. */
   const previewEvent = (event: CalendarEvent, el: HTMLElement) => {
     setSelection(null);
+    setSelectedId(event.id);
     setPreview({ event, rect: el.getBoundingClientRect() });
   };
   /** Doppelklick bzw. „Bearbeiten“: Dialog. */
   const openEvent = (event: CalendarEvent) => {
     setPreview(null);
+    setSelectedId(event.id);
     setDraft(event);
+  };
+  const clearEventSelection = () => {
+    setPreview(null);
+    setSelectedId(null);
+  };
+  /** Ein markierter Zeitbereich ersetzt die Termin-Auswahl. */
+  const selectSlot = (s: Selection | null) => {
+    setSelection(s);
+    if (s) setSelectedId(null);
   };
 
   const title =
@@ -162,17 +178,18 @@ export function CalendarView() {
   /** Markierter Bereich → Dialog; ohne Auswahl 09:00–10:00 am gewählten Tag. */
   const createFromSelection = () => (selection ? setDraft(draftFromSelection(selection)) : createOnDay(date));
 
-  // Enter erstellt aus der Auswahl, Escape hebt sie auf
+  // Enter erstellt aus dem markierten Zeitbereich, Escape hebt Zeitbereich und Termin-Auswahl auf
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (draft || !selection) return;
+      if (draft) return;
       const target = e.target as HTMLElement;
       if (/INPUT|TEXTAREA|SELECT/.test(target.tagName)) return;
-      if (e.key === "Enter") {
+      if (e.key === "Escape") {
+        setSelection(null);
+        setSelectedId(null);
+      } else if (e.key === "Enter" && selection) {
         e.preventDefault();
         setDraft(draftFromSelection(selection));
-      } else if (e.key === "Escape") {
-        setSelection(null);
       }
     };
     window.addEventListener("keydown", onKey);
@@ -230,7 +247,7 @@ export function CalendarView() {
                 onCreate={createOnDay}
                 onPreview={previewEvent}
                 onOpenEvent={openEvent}
-                activeEventId={preview?.event.id ?? null}
+                activeEventId={selectedId}
               />
             )}
             {mode !== "month" && (
@@ -240,12 +257,12 @@ export function CalendarView() {
                 today={today}
                 events={events}
                 selection={selection}
-                onSelect={setSelection}
+                onSelect={selectSlot}
                 onCommit={createFromSelection}
                 onOpenDay={openDay}
                 onPreview={previewEvent}
                 onOpenEvent={openEvent}
-                activeEventId={preview?.event.id ?? null}
+                activeEventId={selectedId}
               />
             )}
           </div>
@@ -253,6 +270,8 @@ export function CalendarView() {
 
         <aside className="cal-side">
           <MiniMonth date={date} today={today} onSelect={(d) => setDate(startOfDay(d))} />
+
+          {selectedEvent && <EventDetails event={selectedEvent} onEdit={openEvent} onClose={clearEventSelection} />}
 
           <div className="cal-side-section">
             <span className="card-title">{formatLongDay(date)}</span>
@@ -264,7 +283,7 @@ export function CalendarView() {
                   <li key={e.id}>
                     <button
                       type="button"
-                      className={`card cal-agenda-item${preview?.event.id === e.id ? " active" : ""}`}
+                      className={`card cal-agenda-item${selectedId === e.id ? " active" : ""}`}
                       data-event-id={e.id}
                       onClick={(ev) => previewEvent(e, ev.currentTarget)}
                       onDoubleClick={() => openEvent(e)}

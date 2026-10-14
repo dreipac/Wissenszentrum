@@ -1,18 +1,26 @@
-import { CalendarClock, ClipboardList, FileText, Flame, NotebookText, Plus } from "lucide-react";
+import { CalendarClock, ClipboardList, FileText, Flame, Plus } from "lucide-react";
 import { Button } from "../components/ui/Button";
 import { SecondaryButton } from "../components/ui/SecondaryButton";
-import { notes } from "../data/mock";
 import { formatTimeRange } from "../lib/calendar";
 import { addDays, formatDayMonth, formatLongDay, parseDateTime, startOfDay, toDateTimeStr } from "../lib/dates";
 import { useDialogs } from "../lib/dialogs";
+import { useNavigate } from "../lib/navigation";
+import { formatNoteTime, isEmptyNote, noteTitle, notePreview } from "../lib/notes";
+import { createAndOpenNote } from "../lib/notesActions";
+import { requestOpenNote } from "../lib/notesNav";
 import { daysUntil, formatDue, isOverdue } from "../lib/tasks";
 import { useEvents } from "../lib/useEvents";
+import { useNotes } from "../lib/useNotes";
 import { useTasks } from "../lib/useTasks";
 import "./DashboardView.css";
 
 export function DashboardView() {
-  const { tasks, buckets } = useTasks();
+  const { tasks } = useTasks();
+  const { notes } = useNotes();
   const { openNewTask } = useDialogs();
+  const navigate = useNavigate();
+  // Zuletzt bearbeitete Notizen (unabhängig vom Anpinnen)
+  const recentNotes = notes.filter((n) => !isEmptyNote(n)).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || b.id - a.id).slice(0, 4);
   // Anstehende Termine der nächsten 7 Tage aus der Datenbank
   const today = startOfDay(new Date());
   const { events } = useEvents(toDateTimeStr(today), toDateTimeStr(addDays(today, 7)));
@@ -26,12 +34,6 @@ export function DashboardView() {
   const dueToday = open.filter((t) => t.dueDate !== null && daysUntil(t.dueDate) === 0);
   const focus = [...overdue, ...dueToday];
   const highToday = dueToday.filter((t) => t.priority === "high").length;
-
-  // Fortschritt je Bucket (lose Aufgaben als eigene Zeile)
-  const progress = [
-    ...buckets.map((b) => ({ id: b.id as number | null, name: b.name, items: tasks.filter((t) => t.bucketId === b.id) })),
-    { id: null, name: "Ohne Bucket", items: tasks.filter((t) => t.bucketId === null) },
-  ].filter((row) => row.id !== null || row.items.length > 0);
 
   const stats = [
     {
@@ -52,7 +54,6 @@ export function DashboardView() {
       hint: next ? `Nächster: ${formatDayMonth(parseDateTime(next.startsAt))}${next.allDay ? "" : ` ${next.startsAt.slice(11)}`}` : "Keine anstehenden Termine",
       icon: CalendarClock,
     },
-    { label: "Notizen", value: "24", hint: "3 neu diese Woche", icon: NotebookText },
   ];
 
   return (
@@ -66,7 +67,7 @@ export function DashboardView() {
             </p>
           </div>
           <div className="page-actions">
-            <SecondaryButton>
+            <SecondaryButton onClick={() => void createAndOpenNote(navigate)}>
               <Plus size={16} />
               Schnellnotiz
             </SecondaryButton>
@@ -95,10 +96,12 @@ export function DashboardView() {
         </div>
 
         <div className="dash-grid">
-          <section className="card dash-card wide">
+          <section className="card dash-card">
             <div className="dash-card-head">
               <h2>Fokus für heute</h2>
-              <SecondaryButton className="sm">Alle Aufgaben</SecondaryButton>
+              <SecondaryButton className="sm" onClick={() => navigate("tasks")}>
+                Alle Aufgaben
+              </SecondaryButton>
             </div>
             {focus.length === 0 ? (
               <p className="muted">Nichts fällig – für heute ist alles im Plan.</p>
@@ -140,55 +143,41 @@ export function DashboardView() {
             )}
           </section>
 
-          <section className="card dash-card">
-            <div className="dash-card-head">
-              <h2>Fortschritt nach Bucket</h2>
-            </div>
-            {progress.length === 0 ? (
-              <p className="muted">Noch keine Buckets angelegt.</p>
-            ) : (
-              <ul className="progress-list">
-                {progress.map((row) => {
-                  const done = row.items.filter((t) => t.done).length;
-                  const pct = row.items.length ? (done / row.items.length) * 100 : 0;
-                  return (
-                    <li key={row.id ?? "none"} className="progress-item">
-                      <div className="progress-top">
-                        <span>{row.name}</span>
-                        <span className="muted">
-                          {done}/{row.items.length} erledigt
-                        </span>
-                      </div>
-                      <div className="progress-track">
-                        <div className="progress-fill" style={{ width: `${pct}%` }} />
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </section>
-
-          <section className="card dash-card wide">
+          <section className="card dash-card full">
             <div className="dash-card-head">
               <h2>Zuletzt bearbeitet</h2>
-              <SecondaryButton className="sm">Alle Notizen</SecondaryButton>
+              <SecondaryButton className="sm" onClick={() => navigate("notes")}>
+                Alle Notizen
+              </SecondaryButton>
             </div>
-            <ul className="recent-list">
-              {notes.slice(0, 4).map((n) => (
-                <li key={n.id} className="recent-item">
-                  <span className="recent-icon">
-                    <FileText size={16} />
-                  </span>
-                  <div className="recent-main">
-                    <span className="recent-title">{n.title}</span>
-                    <span className="recent-preview">{n.preview}</span>
-                  </div>
-                  <span className="tag">{n.folder}</span>
-                  <span className="recent-time">{n.updated}</span>
-                </li>
-              ))}
-            </ul>
+            {recentNotes.length === 0 ? (
+              <p className="muted">Noch keine Notizen. Mit „Schnellnotiz“ legst du die erste an.</p>
+            ) : (
+              <ul className="recent-list">
+                {recentNotes.map((n) => (
+                  <li key={n.id}>
+                    <button
+                      type="button"
+                      className="recent-item"
+                      onClick={() => {
+                        requestOpenNote(n.id);
+                        navigate("notes");
+                      }}
+                    >
+                      <span className="recent-icon">
+                        <FileText size={16} />
+                      </span>
+                      <div className="recent-main">
+                        <span className="recent-title">{noteTitle(n)}</span>
+                        <span className="recent-preview">{notePreview(n, 100) || "Kein weiterer Text"}</span>
+                      </div>
+                      {n.folder && <span className="tag">{n.folder}</span>}
+                      <span className="recent-time">{formatNoteTime(n.updatedAt)}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
           </section>
         </div>
       </div>

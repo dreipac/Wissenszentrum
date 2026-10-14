@@ -1,0 +1,82 @@
+.kind-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.kind-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.4rem 0.7rem;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  background-color: var(--bg-sidebar);
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s, background-color 0.15s;
+}
+
+.kind-option:hover {
+  border-color: var(--border-strong-hover);
+  color: var(--text);
+}
+
+.kind-option.active {
+  border-color: #ffffff;
+  background-color: var(--bg-card);
+  color: #ffffff;
+}
+
+.node-text {
+  min-height: 110px;
+}
+
+.edge-path {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.6rem 0.8rem;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  background-color: var(--bg-sidebar);
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
+.edge-path svg {
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.edge-path span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.edge-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.5rem;
+}
+
+.edge-chip {
+  padding: 0.15rem 0.6rem;
+  border: 1px solid var(--border-soft);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+.edge-chip:hover,
+.edge-chip.active {
+  border-color: var(--border-strong-hover);
+  color: var(--text);
+}

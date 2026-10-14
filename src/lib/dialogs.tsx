@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
+import { SettingsModal } from "../components/settings/SettingsModal";
 import { BucketModal } from "../components/tasks/BucketModal";
 import { TaskModal } from "../components/tasks/TaskModal";
 import type { Bucket, Task } from "./tasks";
@@ -6,6 +7,7 @@ import type { Bucket, Task } from "./tasks";
 type Dialog =
   | { kind: "task"; task?: Task; bucketId: number | null }
   | { kind: "bucket"; bucket?: Bucket }
+  | { kind: "settings" }
   | null;
 
 interface Dialogs {
@@ -14,6 +16,7 @@ interface Dialogs {
   openEditTask: (task: Task) => void;
   openNewBucket: () => void;
   openEditBucket: (bucket: Bucket) => void;
+  openSettings: () => void;
 }
 
 const DialogsContext = createContext<Dialogs | null>(null);
@@ -29,6 +32,7 @@ export function DialogsProvider({ children }: { children: ReactNode }) {
       openEditTask: (task) => setDialog({ kind: "task", task, bucketId: task.bucketId }),
       openNewBucket: () => setDialog({ kind: "bucket" }),
       openEditBucket: (bucket) => setDialog({ kind: "bucket", bucket }),
+      openSettings: () => setDialog({ kind: "settings" }),
     }),
     [],
   );
@@ -40,6 +44,7 @@ export function DialogsProvider({ children }: { children: ReactNode }) {
         <TaskModal key={dialog.task?.id ?? "new"} task={dialog.task} bucketId={dialog.bucketId} onClose={close} />
       )}
       {dialog?.kind === "bucket" && <BucketModal key={dialog.bucket?.id ?? "new"} bucket={dialog.bucket} onClose={close} />}
+      {dialog?.kind === "settings" && <SettingsModal onClose={close} />}
     </DialogsContext.Provider>
   );
 }

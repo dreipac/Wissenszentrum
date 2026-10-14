@@ -44,6 +44,10 @@ export const moveTask = (id: number, bucketId: number | null, beforeTaskId: numb
     inTauri ? invoke("move_task", { id, bucketId, beforeTaskId }) : tasksStore.moveTask(id, bucketId, beforeTaskId),
   );
 
+/** Hakt einen einzelnen Zwischenschritt ab, z. B. direkt auf der Karte. */
+export const setSubtaskDone = (id: number, done: boolean): Promise<Task> =>
+  changed(inTauri ? invoke("set_subtask_done", { id, done }) : tasksStore.setSubtaskDone(id, done));
+
 /** Hakt ab/öffnet wieder. Beim Abhaken kann die Bucket-Regel die Aufgabe automatisch verschieben. */
 export const setTaskDone = (id: number, done: boolean): Promise<Task> =>
   changed(inTauri ? invoke("set_task_done", { id, done }) : tasksStore.setDone(id, done));

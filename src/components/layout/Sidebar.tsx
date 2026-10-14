@@ -3,7 +3,9 @@ import {
   CalendarDays,
   CheckSquare,
   LayoutDashboard,
+  Network,
   NotebookText,
+  TrendingUp,
   Plus,
   Settings,
   HelpCircle,
@@ -13,10 +15,12 @@ import {
 import { Button } from "../ui/Button";
 import { SecondaryButton } from "../ui/SecondaryButton";
 import { useDialogs } from "../../lib/dialogs";
+import type { ViewId } from "../../lib/navigation";
+import { createAndOpenNote } from "../../lib/notesActions";
 import { useTasks } from "../../lib/useTasks";
 import "./Sidebar.css";
 
-export type ViewId = "dashboard" | "tasks" | "calendar" | "notes" | "docs";
+export type { ViewId };
 
 const navItems: { id: ViewId; label: string; icon: LucideIcon }[] = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -24,6 +28,11 @@ const navItems: { id: ViewId; label: string; icon: LucideIcon }[] = [
   { id: "calendar", label: "Kalender", icon: CalendarDays },
   { id: "notes", label: "Notizen", icon: NotebookText },
   { id: "docs", label: "Dokumentation", icon: BookOpen },
+];
+
+const tradingItems: { id: ViewId; label: string; icon: LucideIcon }[] = [
+  { id: "trading", label: "Trading", icon: TrendingUp },
+  { id: "strategies", label: "Strategien", icon: Network },
 ];
 
 interface SidebarProps {
@@ -34,7 +43,7 @@ interface SidebarProps {
 
 export function Sidebar({ active, onNavigate, collapsed }: SidebarProps) {
   const { tasks, buckets } = useTasks();
-  const { openNewTask, openNewBucket } = useDialogs();
+  const { openNewTask, openNewBucket, openSettings } = useDialogs();
   const openCount = tasks.filter((t) => !t.done).length;
 
   return (
@@ -45,7 +54,7 @@ export function Sidebar({ active, onNavigate, collapsed }: SidebarProps) {
             <Plus size={16} />
             Neue Aufgabe
           </Button>
-          <SecondaryButton className="sidebar-action-btn">
+          <SecondaryButton className="sidebar-action-btn" onClick={() => void createAndOpenNote(onNavigate)}>
             <Plus size={16} />
             Neue Notiz
           </SecondaryButton>
@@ -65,6 +74,25 @@ export function Sidebar({ active, onNavigate, collapsed }: SidebarProps) {
             </button>
           ))}
         </nav>
+
+        <div className="sidebar-section">
+          <div className="sidebar-section-head">
+            <span>Trading</span>
+          </div>
+          <div className="sidebar-list">
+            {tradingItems.map(({ id, label, icon: Icon }) => (
+              <button
+                key={id}
+                type="button"
+                className={`sidebar-link${active === id ? " active" : ""}`}
+                onClick={() => onNavigate(id)}
+              >
+                <Icon size={17} strokeWidth={1.75} />
+                <span className="sidebar-link-label">{label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
 
         <div className="sidebar-section">
           <div className="sidebar-section-head">
@@ -99,7 +127,7 @@ export function Sidebar({ active, onNavigate, collapsed }: SidebarProps) {
             <button type="button" className="icon-btn" aria-label="Hilfe">
               <HelpCircle size={16} />
             </button>
-            <button type="button" className="icon-btn" aria-label="Einstellungen">
+            <button type="button" className="icon-btn" aria-label="Einstellungen" title="Einstellungen" onClick={openSettings}>
               <Settings size={16} />
             </button>
           </div>

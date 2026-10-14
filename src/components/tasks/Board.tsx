@@ -28,7 +28,7 @@ import { ArrowRight, Plus, Settings2 } from "lucide-react";
 import { moveTask, reorderBuckets } from "../../lib/api/tasks";
 import { useDialogs } from "../../lib/dialogs";
 import { priorityLabel, type Bucket, type Task } from "../../lib/tasks";
-import { DueDate, SubtaskProgress, TaskCheck } from "./parts";
+import { CardSubtasks, DueDate, SubtaskProgress, TaskCheck } from "./parts";
 
 export interface Column {
   /** null = Aufgaben ohne Bucket */
@@ -62,7 +62,7 @@ function TaskCardView({ task }: { task: Task }) {
       <div className="task-card-main">
         <h3 className="task-title">{task.title}</h3>
         {task.description && <p className="task-desc">{task.description}</p>}
-        <SubtaskProgress task={task} />
+        <CardSubtasks task={task} />
         <div className="task-meta">
           <span className="task-priority-label">
             <span className={`priority ${task.priority}`} />
@@ -70,6 +70,7 @@ function TaskCardView({ task }: { task: Task }) {
           </span>
           <DueDate task={task} />
         </div>
+        <SubtaskProgress task={task} />
       </div>
     </>
   );

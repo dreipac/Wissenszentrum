@@ -75,6 +75,7 @@ export function TodayView() {
         priority: "medium",
         dueDate: dateInDays(0),
         description: "",
+        showSubtasks: false,
         subtasks: [],
       });
       setTitle("");
@@ -87,7 +88,7 @@ export function TodayView() {
   if (!loaded) return null;
 
   return (
-    <div className="today">
+    <div className="today-view">
       <div className="card today-card">
         <div className="today-summary">
           <div>

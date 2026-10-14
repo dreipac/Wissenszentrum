@@ -59,6 +59,110 @@ pub(crate) const MIGRATIONS: &[&str] = &[
         position INTEGER NOT NULL DEFAULT 0
     );
     CREATE INDEX idx_subtasks_task_id ON subtasks(task_id);",
+    // 6: Pro Aufgabe einstellbar, ob die Zwischenschritte auf der Karte im Board angezeigt werden (0 = nein)
+    "ALTER TABLE tasks ADD COLUMN show_subtasks INTEGER NOT NULL DEFAULT 0;",
+    // 7: Notizen (content = HTML des Editors, plain = Text für Vorschau/Suche, folder leer = ohne Ordner)
+    "CREATE TABLE notes (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        title      TEXT    NOT NULL DEFAULT '',
+        content    TEXT    NOT NULL DEFAULT '',
+        plain      TEXT    NOT NULL DEFAULT '',
+        folder     TEXT    NOT NULL DEFAULT '',
+        pinned     INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT    NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT    NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX idx_notes_updated_at ON notes(updated_at);",
+    // 8: Trading – Positionen mit Ausführungen, Guthaben, Edelmetalle, Kurse, Schnappschüsse und Einstellungen
+    "CREATE TABLE settings (
+        key   TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+    );
+    CREATE TABLE cash_movements (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        kind        TEXT NOT NULL CHECK (kind IN ('deposit', 'withdrawal')),
+        amount      REAL NOT NULL CHECK (amount > 0),
+        note        TEXT NOT NULL DEFAULT '',
+        occurred_at TEXT NOT NULL,
+        created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE TABLE trades (
+        id               INTEGER PRIMARY KEY AUTOINCREMENT,
+        symbol           TEXT NOT NULL,
+        name             TEXT NOT NULL,
+        asset_class      TEXT NOT NULL CHECK (asset_class IN ('aktie', 'krypto')),
+        currency         TEXT NOT NULL DEFAULT 'CHF',
+        fx_rate          REAL NOT NULL DEFAULT 1 CHECK (fx_rate > 0),
+        status           TEXT NOT NULL CHECK (status IN ('order', 'open', 'closed')),
+        stop_loss        REAL,
+        target           REAL,
+        thesis           TEXT NOT NULL DEFAULT '',
+        close_note       TEXT NOT NULL DEFAULT '',
+        planned_quantity REAL,
+        planned_price    REAL,
+        valid_until      TEXT,
+        created_at       TEXT NOT NULL DEFAULT (datetime('now')),
+        closed_at        TEXT
+    );
+    CREATE INDEX idx_trades_status ON trades(status);
+    CREATE TABLE trade_executions (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        trade_id    INTEGER NOT NULL REFERENCES trades(id) ON DELETE CASCADE,
+        kind        TEXT NOT NULL CHECK (kind IN ('buy', 'sell')),
+        quantity    REAL NOT NULL CHECK (quantity > 0),
+        price       REAL NOT NULL CHECK (price > 0),
+        fee         REAL NOT NULL DEFAULT 0 CHECK (fee >= 0),
+        executed_at TEXT NOT NULL
+    );
+    CREATE INDEX idx_trade_executions_trade_id ON trade_executions(trade_id);
+    CREATE TABLE metals (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        name            TEXT NOT NULL,
+        metal           TEXT NOT NULL CHECK (metal IN ('gold', 'silber', 'platin', 'palladium')),
+        quantity        REAL NOT NULL CHECK (quantity > 0),
+        unit            TEXT NOT NULL CHECK (unit IN ('g', 'kg', 'oz')),
+        cost_chf        REAL,
+        spot_chf_per_oz REAL,
+        spot_updated_at TEXT,
+        note            TEXT NOT NULL DEFAULT ''
+    );
+    CREATE TABLE quotes (
+        symbol     TEXT PRIMARY KEY,
+        price      REAL NOT NULL,
+        updated_at TEXT NOT NULL
+    );
+    CREATE TABLE portfolio_snapshots (
+        day       TEXT PRIMARY KEY,
+        value_chf REAL NOT NULL
+    );",
+    // 9: Strategien als Graph aus Knoten und gerichteten Verbindungen
+    "CREATE TABLE strategies (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        title      TEXT NOT NULL,
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE TABLE strategy_nodes (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        strategy_id INTEGER NOT NULL REFERENCES strategies(id) ON DELETE CASCADE,
+        title       TEXT NOT NULL,
+        kind        TEXT NOT NULL CHECK (kind IN ('company', 'event', 'assumption', 'reaction', 'risk')),
+        text        TEXT NOT NULL DEFAULT '',
+        symbol      TEXT NOT NULL DEFAULT '',
+        x           REAL NOT NULL DEFAULT 0,
+        y           REAL NOT NULL DEFAULT 0
+    );
+    CREATE INDEX idx_strategy_nodes_strategy_id ON strategy_nodes(strategy_id);
+    CREATE TABLE strategy_edges (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        strategy_id INTEGER NOT NULL REFERENCES strategies(id) ON DELETE CASCADE,
+        from_node   INTEGER NOT NULL REFERENCES strategy_nodes(id) ON DELETE CASCADE,
+        to_node     INTEGER NOT NULL REFERENCES strategy_nodes(id) ON DELETE CASCADE,
+        label       TEXT NOT NULL DEFAULT '',
+        polarity    TEXT NOT NULL CHECK (polarity IN ('positive', 'negative')),
+        UNIQUE (from_node, to_node),
+        CHECK (from_node <> to_node)
+    );
+    CREATE INDEX idx_strategy_edges_strategy_id ON strategy_edges(strategy_id);",
 ];
 
 /// Öffnet die Verbindung vor, setzt Pragmas und führt offene Migrationen aus.
@@ -134,6 +238,52 @@ mod tests {
         let tasks = crate::tasks::list_tasks(&c).unwrap();
         assert_eq!(tasks.len(), 1);
         assert!(tasks[0].subtasks.is_empty());
+    }
+
+    #[test]
+    fn migration_6_keeps_tasks_and_hides_subtasks_by_default() {
+        let c = Connection::open_in_memory().unwrap();
+        c.pragma_update(None, "foreign_keys", true).unwrap();
+        for sql in &MIGRATIONS[..5] {
+            c.execute_batch(sql).unwrap();
+        }
+        c.pragma_update(None, "user_version", 5i64).unwrap();
+        c.execute("INSERT INTO tasks (title) VALUES ('Alt')", []).unwrap();
+        c.execute("INSERT INTO subtasks (task_id, title) VALUES (1, 'Schritt')", []).unwrap();
+
+        migrate(&c).unwrap();
+
+        let tasks = crate::tasks::list_tasks(&c).unwrap();
+        assert_eq!(tasks.len(), 1);
+        assert!(!tasks[0].show_subtasks, "bestehende Aufgaben zeigen ihre Zwischenschritte nicht auf der Karte");
+        assert_eq!(tasks[0].subtasks.len(), 1);
+    }
+
+    #[test]
+    fn migration_7_adds_notes_without_touching_existing_data() {
+        let c = Connection::open_in_memory().unwrap();
+        c.pragma_update(None, "foreign_keys", true).unwrap();
+        for sql in &MIGRATIONS[..6] {
+            c.execute_batch(sql).unwrap();
+        }
+        c.pragma_update(None, "user_version", 6i64).unwrap();
+        c.execute("INSERT INTO tasks (title) VALUES ('Alt')", []).unwrap();
+
+        migrate(&c).unwrap();
+
+        assert_eq!(crate::tasks::list_tasks(&c).unwrap().len(), 1);
+        assert!(crate::notes::list_notes(&c).unwrap().is_empty());
+    }
+
+    #[test]
+    fn migration_8_adds_trading_tables() {
+        let c = conn();
+        for table in ["settings", "cash_movements", "trades", "trade_executions", "metals", "quotes", "portfolio_snapshots"] {
+            let n: i64 = c
+                .query_row("SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?1", [table], |r| r.get(0))
+                .unwrap();
+            assert_eq!(n, 1, "Tabelle {table} fehlt");
+        }
     }
 
     #[test]

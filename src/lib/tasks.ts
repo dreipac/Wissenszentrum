@@ -33,6 +33,8 @@ export interface Task {
   /** Fälligkeitsdatum als YYYY-MM-DD */
   dueDate: string | null;
   done: boolean;
+  /** Zwischenschritte auch auf der Karte im Board anzeigen */
+  showSubtasks: boolean;
   subtasks: Subtask[];
 }
 

@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { SegmentBar } from "./parts";
 import { AlignLeft, CalendarDays, Flag, FolderKanban, ListChecks, Plus, X } from "lucide-react";
 import { Modal } from "../ui/Modal";
 import { Button } from "../ui/Button";
@@ -45,6 +46,7 @@ export function TaskModal({ task, bucketId = null, onClose }: TaskModalProps) {
     (task?.subtasks ?? []).map((s) => ({ key: nextKey.current++, id: s.id, title: s.title, done: s.done })),
   );
   const [newStep, setNewStep] = useState("");
+  const [showSubtasks, setShowSubtasks] = useState(task?.showSubtasks ?? false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -79,7 +81,7 @@ export function TaskModal({ task, bucketId = null, onClose }: TaskModalProps) {
       ...steps.filter((s) => s.title.trim()).map((s) => ({ id: s.id, title: s.title.trim(), done: s.done })),
       ...pending,
     ];
-    const input = { title: title.trim(), bucketId: bucket, priority, dueDate: dueDate || null, description, subtasks };
+    const input = { title: title.trim(), bucketId: bucket, priority, dueDate: dueDate || null, description, showSubtasks, subtasks };
     void run(() => (editing ? updateTask(task.id, input) : createTask(input)));
   };
 
@@ -181,19 +183,21 @@ export function TaskModal({ task, bucketId = null, onClose }: TaskModalProps) {
       <div className="tm-row top">
         <ListChecks size={18} className="tm-icon" />
         <div className="tm-row-body">
-          {steps.length > 0 && (
-            <div className="tm-steps-head">
-              <div className="subtask-track">
-                <div
-                  className="subtask-fill"
-                  style={{ width: `${(steps.filter((s) => s.done).length / steps.length) * 100}%` }}
-                />
-              </div>
-              <span>
-                {steps.filter((s) => s.done).length}/{steps.length}
-              </span>
-            </div>
-          )}
+          <div className="tm-steps-head">
+            {steps.length > 0 && (
+              <>
+                <SegmentBar done={steps.filter((s) => s.done).length} total={steps.length} />
+                <span>
+                  {steps.filter((s) => s.done).length}/{steps.length}
+                </span>
+              </>
+            )}
+            <label className="checkbox-row tm-steps-toggle">
+              <input type="checkbox" checked={showSubtasks} onChange={(e) => setShowSubtasks(e.target.checked)} />
+              <span className={`check sm${showSubtasks ? " checked" : ""}`} />
+              Auf der Karte anzeigen
+            </label>
+          </div>
           <ul className="tm-steps">
             {steps.map((step) => (
               <li key={step.key} className={`tm-step${step.done ? " done" : ""}`}>

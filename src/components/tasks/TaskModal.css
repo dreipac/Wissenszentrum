@@ -100,6 +100,23 @@
   color: var(--text-muted);
 }
 
+.tm-steps-head .segment-bar {
+  max-width: 160px;
+}
+
+/* Schalter rechts über der Liste: Zwischenschritte auf der Karte anzeigen */
+.tm-steps-toggle {
+  margin-left: auto;
+  gap: 0.45rem;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.tm-steps-toggle:hover {
+  color: var(--text);
+}
+
 .tm-steps {
   margin: 0;
   padding: 0;
