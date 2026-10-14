@@ -1,0 +1,17 @@
+logs
+*.log
+npm-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+
+# Rust / Tauri
+src-tauri/target
+src-tauri/gen

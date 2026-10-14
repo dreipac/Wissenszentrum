@@ -1,0 +1,101 @@
+.titlebar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: var(--titlebar-height);
+  flex-shrink: 0;
+  background-color: var(--bg-sidebar);
+  border-bottom: 1px solid var(--border);
+  user-select: none;
+}
+
+.titlebar-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding-left: 0.85rem;
+}
+
+.titlebar-toggle {
+  width: 26px;
+  height: 26px;
+  margin-left: 0.5rem;
+}
+
+.brand-mark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  background-color: #ffffff;
+  color: var(--btn-primary-text);
+  font-size: 0.75rem;
+  font-weight: 700;
+  pointer-events: none;
+}
+
+.brand-name {
+  font-size: 0.82rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.titlebar-search {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 380px;
+  height: 24px;
+  padding: 0 0.6rem;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  background-color: var(--bg-app);
+  color: var(--text-faint);
+  font-size: 0.78rem;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+.titlebar-search:hover {
+  border-color: var(--border-strong-hover);
+  color: var(--text-muted);
+}
+
+.titlebar-search span:nth-child(2) {
+  flex: 1;
+  text-align: left;
+}
+
+.window-controls {
+  display: flex;
+  height: 100%;
+}
+
+.window-control {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 100%;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background-color 0.12s, color 0.12s;
+}
+
+.window-control:hover {
+  background-color: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+}
+
+.window-control.close:hover {
+  background-color: #e81123;
+  color: #ffffff;
+}

@@ -1,0 +1,200 @@
+.tm-title {
+  width: 100%;
+  padding: 0.35rem 0;
+  border: none;
+  border-bottom: 1px solid var(--border-strong);
+  background: transparent;
+  color: var(--text);
+  font-size: 1.4rem;
+  font-weight: 600;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.tm-title::placeholder {
+  color: var(--text-faint);
+  font-weight: 500;
+}
+
+.tm-title:focus {
+  border-bottom-color: #ffffff;
+}
+
+.tm-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+}
+
+.tm-icon {
+  flex-shrink: 0;
+  margin-top: 0.45rem;
+  color: var(--text-faint);
+}
+
+.tm-row-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.tm-row-body select.field-control {
+  max-width: 320px;
+  cursor: pointer;
+}
+
+.tm-priority button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.3rem 0.8rem;
+  font-size: 0.85rem;
+}
+
+.tm-priority .priority {
+  margin-top: 0;
+}
+
+.tm-due {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.tm-due .field-control {
+  width: auto;
+  min-width: 150px;
+}
+
+.tm-quick {
+  padding: 0.2rem 0.65rem;
+  border: 1px solid var(--border-soft);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  cursor: pointer;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.tm-quick:hover {
+  color: var(--text);
+  border-color: var(--border-strong-hover);
+}
+
+.tm-description {
+  min-height: 130px;
+}
+
+.bucket-hint {
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.bucket-select {
+  cursor: pointer;
+}
+
+.bucket-delete-note {
+  padding: 0.6rem 0.8rem;
+  border: 1px solid var(--border-soft);
+  border-left: 3px solid var(--negative);
+  border-radius: var(--radius-md);
+  background-color: var(--bg-sidebar);
+  font-size: 0.85rem;
+  line-height: 1.4;
+  color: var(--text-muted);
+}
+
+/* Zwischenschritte */
+.tm-steps-head {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 0.4rem;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.tm-steps {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tm-step {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.15rem 0;
+}
+
+.tm-step .check-btn {
+  margin: 0;
+}
+
+.tm-step-input {
+  flex: 1;
+  min-width: 0;
+  padding: 0.3rem 0.4rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  font-size: 0.92rem;
+  outline: none;
+  transition: border-color 0.15s, background-color 0.15s;
+}
+
+.tm-step-input:hover {
+  background-color: var(--bg-hover);
+}
+
+.tm-step-input:focus {
+  border-color: var(--border-strong-hover);
+  background-color: var(--bg-sidebar);
+}
+
+.tm-step.done .tm-step-input {
+  color: var(--text-muted);
+  text-decoration: line-through;
+}
+
+.tm-step-remove {
+  width: 24px;
+  height: 24px;
+  opacity: 0;
+}
+
+.tm-step:hover .tm-step-remove,
+.tm-step-remove:focus-visible {
+  opacity: 1;
+}
+
+.tm-step-add {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  margin-top: 0.15rem;
+  padding: 0.2rem 0;
+  color: var(--text-muted);
+}
+
+.tm-step-add svg {
+  margin: 0 1px;
+}
+
+.tm-step-add input {
+  flex: 1;
+  min-width: 0;
+  padding: 0.3rem 0.4rem;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-size: 0.92rem;
+  outline: none;
+}
+
+.tm-step-add input::placeholder {
+  color: var(--text-faint);
+}

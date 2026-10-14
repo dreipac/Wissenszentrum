@@ -1,0 +1,74 @@
+/*
+ * Globale Design-Tokens (Dark Mode)
+ * Übernommen aus dem Projekt "trading-journal". Alle Farben der App laufen
+ * über diese Variablen – nie Hex-Werte direkt in Komponenten verwenden.
+ */
+:root {
+  color-scheme: dark;
+
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 400;
+
+  /* Flächen */
+  --bg-app: #1a1a1a;
+  --bg-sidebar: #161616;
+  --bg-card: #1f1f1f;
+  --bg-card-hover: #232323;
+  --bg-hover: #232323;
+  --bg-active: #1c1c1c;
+  --bg-selected: #2a2a2a;
+
+  /* Linien */
+  --border: #2b2b2b;
+  --border-soft: #2c2c2c;
+  --border-strong: #3a3a3a;
+  --border-strong-hover: #4a4a4a;
+
+  /* Text */
+  --text: #f0f0f0;
+  --text-muted: #9a9a9a;
+  --text-faint: #6b6b6b;
+
+  /* Akzent & Status */
+  --accent: #646cff;
+  --positive: #4ade80;
+  --negative: #ff6b6b;
+  --warning: #fbbf24;
+
+  /* Farbe des Balkens an Kalendereinträgen */
+  --event-color: var(--accent);
+
+  /* Primary-Button (weiß auf dunkel) */
+  --btn-primary-bg: #ffffff;
+  --btn-primary-bg-hover: #e6e6e6;
+  --btn-primary-text: #1a1a1a;
+
+  /* Secondary-Button (transparent mit Rand) */
+  --btn-secondary-border: var(--border-strong);
+  --btn-secondary-border-hover: var(--border-strong-hover);
+  --btn-secondary-bg-hover: rgba(255, 255, 255, 0.06);
+
+  /* Form */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 10px;
+  --radius-xl: 12px;
+
+  --shadow-card: 0 2px 6px rgba(0, 0, 0, 0.25);
+  --shadow-pop: 0 20px 50px rgba(0, 0, 0, 0.5);
+
+  /* Layout */
+  --titlebar-height: 36px;
+  --sidebar-width: 244px;
+
+  color: var(--text);
+  background-color: var(--bg-app);
+
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  -webkit-text-size-adjust: 100%;
+}

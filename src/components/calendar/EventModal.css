@@ -1,0 +1,70 @@
+/* Titel: groß, nur mit Linie darunter (wie die Eingabefelder im trading-journal) */
+.ev-title {
+  width: 100%;
+  padding: 0.35rem 0;
+  border: none;
+  border-bottom: 1px solid var(--border-strong);
+  background: transparent;
+  color: var(--text);
+  font-size: 1.5rem;
+  font-weight: 600;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.ev-title::placeholder {
+  color: var(--text-faint);
+  font-weight: 500;
+}
+
+.ev-title:focus {
+  border-bottom-color: #ffffff;
+}
+
+/* Zeilen mit Icon links */
+.ev-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+}
+
+.ev-icon {
+  flex-shrink: 0;
+  margin-top: 0.45rem;
+  color: var(--text-faint);
+}
+
+.ev-row-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.ev-datetime {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.ev-datetime .field-control {
+  width: auto;
+}
+
+.ev-datetime .field-control[type="date"] {
+  min-width: 150px;
+}
+
+.ev-datetime .field-control[type="time"] {
+  min-width: 112px;
+}
+
+.ev-arrow {
+  color: var(--text-faint);
+}
+
+.ev-description {
+  min-height: 200px;
+}

@@ -1,0 +1,339 @@
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 1rem 2rem 0;
+  flex-shrink: 0;
+}
+
+.toolbar-search {
+  width: 260px;
+}
+
+.toolbar-spacer {
+  flex: 1;
+}
+
+.tasks-body {
+  padding-top: 1.25rem;
+}
+
+/* Board */
+.board {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  height: 100%;
+  min-width: min-content;
+}
+
+.bucket {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0;
+  min-width: 240px;
+  max-width: 340px;
+  max-height: 100%;
+  border-radius: var(--radius-lg);
+  background-color: var(--bg-sidebar);
+  border: 1px solid var(--border);
+}
+
+.bucket-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.7rem 0.75rem 0.5rem 1rem;
+}
+
+.bucket-name {
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.bucket-count {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.bucket-head-actions {
+  display: flex;
+  margin-left: auto;
+}
+
+.bucket-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 0.25rem 0.6rem 0.6rem;
+  overflow-y: auto;
+}
+
+.bucket-add {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.45rem 0.5rem;
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-faint);
+  font-size: 0.82rem;
+  cursor: pointer;
+  transition: background-color 0.15s, color 0.15s;
+}
+
+.bucket-add:hover {
+  background-color: var(--bg-hover);
+  color: var(--text);
+}
+
+.bucket-new {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  width: 44px;
+  flex-shrink: 0;
+  height: 44px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-lg);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.88rem;
+  cursor: pointer;
+  transition: background-color 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.bucket-new:hover {
+  background-color: var(--btn-secondary-bg-hover);
+  border-color: var(--border-strong-hover);
+  color: var(--text);
+}
+
+/* Aufgaben-Karte */
+.task-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.7rem;
+  padding: 0.75rem 0.85rem;
+  border-radius: var(--radius-lg);
+  background-color: var(--bg-card);
+  box-shadow: var(--shadow-card);
+  transition: background-color 0.15s;
+}
+
+.task-card:hover {
+  background-color: var(--bg-card-hover);
+}
+
+.task-card.done .task-title {
+  color: var(--text-muted);
+  text-decoration: line-through;
+}
+
+.task-card-main {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.task-title {
+  font-size: 0.9rem;
+  font-weight: 500;
+  line-height: 1.35;
+  word-break: break-word;
+}
+
+.task-desc {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: 0.78rem;
+  line-height: 1.4;
+  color: var(--text-muted);
+}
+
+.task-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.task-priority-label,
+.task-due {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.task-priority-label .priority {
+  margin-top: 0;
+}
+
+.task-due.urgent {
+  color: var(--negative);
+}
+
+/* Abhak-Kästchen als Button */
+.check-btn {
+  margin: 2px 0 0;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+
+.check-btn:hover {
+  border-color: var(--text-muted);
+}
+
+.bucket-empty {
+  padding: 0.5rem;
+  font-size: 0.8rem;
+  color: var(--text-faint);
+}
+
+/* Listenansicht */
+.task-table {
+  padding: 0.25rem 0;
+  overflow: hidden;
+}
+
+.task-row {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 3fr) minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 1fr);
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.65rem 1.25rem;
+  border-top: 1px solid var(--border-soft);
+  font-size: 0.88rem;
+  transition: background-color 0.15s;
+}
+
+.task-row:not(.head):hover {
+  background-color: var(--bg-card-hover);
+}
+
+.task-row.head {
+  border-top: none;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.task-row.done .task-row-title {
+  color: var(--text-muted);
+  text-decoration: line-through;
+}
+
+.task-row-title {
+  font-weight: 500;
+}
+
+.task-row-priority {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.task-row-priority .priority {
+  margin-top: 0;
+}
+
+.list-empty {
+  padding: 2rem 0;
+  text-align: center;
+}
+
+/* Leere Zustände */
+.tasks-empty,
+.timeline-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.6rem;
+  max-width: 560px;
+  margin: 2rem auto 0;
+  padding: 3rem 2rem;
+  text-align: center;
+  color: var(--text-muted);
+}
+
+.tasks-empty h3,
+.timeline-empty h3 {
+  color: var(--text);
+  font-size: 1.1rem;
+}
+
+.tasks-empty p {
+  max-width: 420px;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.tasks-empty-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+/* Klickbare Karten und Zeilen (öffnen den Bearbeiten-Dialog) */
+.task-card,
+.task-row:not(.head) {
+  cursor: pointer;
+}
+
+/* Hinweis auf die Bucket-Automatik */
+.bucket-rule {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin: 0;
+  padding: 0 1rem 0.35rem;
+  font-size: 0.72rem;
+  color: var(--text-faint);
+}
+
+/* Drag & Drop */
+.board.is-dragging {
+  user-select: none;
+  cursor: grabbing;
+}
+
+.task-card.draggable {
+  touch-action: none;
+}
+
+.task-card.ghost {
+  opacity: 0.35;
+}
+
+/* Karte, die gerade getragen wird */
+.task-card.overlay {
+  background-color: var(--bg-card-hover);
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.55), 0 0 0 1px var(--border-strong-hover);
+  cursor: grabbing;
+}
+
+.bucket-head.grabbable {
+  cursor: grab;
+  touch-action: none;
+}
+
+.bucket.dragging {
+  opacity: 0.55;
+  z-index: 5;
+}
+
+.bucket-body.over {
+  background-color: rgba(255, 255, 255, 0.02);
+}
+
+.board-error {
+  margin-bottom: 0.75rem;
+}

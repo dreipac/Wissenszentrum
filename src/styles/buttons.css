@@ -1,0 +1,112 @@
+/*
+ * Globale Buttons (aus trading-journal übernommen).
+ *   .btn            Primary   – weiß auf dunkel
+ *   .btn-secondary  Secondary – transparent mit Rand
+ * Verwendung über <Button> / <SecondaryButton> oder direkt als Klasse.
+ */
+.btn,
+.btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  padding: 0.4rem 0.75rem;
+  border-radius: var(--radius-md);
+  font-family: inherit;
+  font-size: 0.95rem;
+  font-weight: 600;
+  line-height: 1.3;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 0.15s, border-color 0.15s, transform 0.1s ease;
+}
+
+.btn svg,
+.btn-secondary svg {
+  flex-shrink: 0;
+}
+
+.btn:active,
+.btn-secondary:active {
+  transform: scale(0.985);
+}
+
+.btn:disabled,
+.btn-secondary:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.btn:disabled:active,
+.btn-secondary:disabled:active {
+  transform: none;
+}
+
+/* Primary */
+.btn {
+  border: none;
+  background-color: var(--btn-primary-bg);
+  color: var(--btn-primary-text);
+}
+
+.btn:hover {
+  background-color: var(--btn-primary-bg-hover);
+}
+
+.btn:disabled:hover {
+  background-color: var(--btn-primary-bg);
+}
+
+/* Secondary */
+.btn-secondary {
+  border: 1px solid var(--btn-secondary-border);
+  background: transparent;
+  color: var(--text);
+}
+
+.btn-secondary:hover {
+  background-color: var(--btn-secondary-bg-hover);
+  border-color: var(--btn-secondary-border-hover);
+}
+
+.btn-secondary:disabled:hover {
+  background-color: transparent;
+  border-color: var(--btn-secondary-border);
+}
+
+/* Größenvariante für Toolbars */
+.btn.sm,
+.btn-secondary.sm {
+  padding: 0.25rem 0.6rem;
+  font-size: 0.85rem;
+}
+
+/* Destruktive Aktion (z. B. Löschen) */
+.btn-secondary.danger {
+  color: var(--negative);
+}
+
+.btn-secondary.danger:hover {
+  border-color: var(--negative);
+  background-color: rgba(255, 107, 107, 0.08);
+}
+
+/* Reiner Icon-Button (ohne Rahmen) */
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background-color 0.15s, color 0.15s;
+}
+
+.icon-btn:hover {
+  background-color: var(--bg-hover);
+  color: var(--text);
+}

@@ -1,0 +1,232 @@
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.stat-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.stat-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background-color: var(--bg-app);
+  border: 1px solid var(--border-soft);
+  color: var(--text-muted);
+}
+
+.stat-value {
+  margin-top: 0.5rem;
+  font-size: 1.9rem;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.stat-hint {
+  margin-top: 0.15rem;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.dash-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  grid-auto-flow: dense;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.dash-card.wide {
+  grid-column: 1;
+}
+
+.dash-card:not(.wide) {
+  grid-column: 2;
+}
+
+.dash-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.75rem;
+}
+
+.dash-card-head h2 {
+  font-size: 1.02rem;
+  font-weight: 600;
+}
+
+/* Fokus-Liste */
+.focus-list,
+.agenda-list,
+.progress-list,
+.recent-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.focus-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem 0;
+  border-top: 1px solid var(--border-soft);
+}
+
+.focus-item:first-child {
+  border-top: none;
+}
+
+.focus-main {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.focus-title {
+  font-size: 0.92rem;
+  font-weight: 500;
+}
+
+.due {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.due.urgent {
+  color: var(--negative);
+  font-weight: 500;
+}
+
+/* Termine */
+.agenda-item {
+  display: flex;
+  align-items: stretch;
+  gap: 0.75rem;
+  padding: 0.45rem 0;
+}
+
+.agenda-bar {
+  width: 3px;
+  border-radius: 999px;
+  background-color: var(--event-color);
+}
+
+.agenda-main {
+  display: flex;
+  flex-direction: column;
+}
+
+.agenda-title {
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.agenda-time {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+/* Fortschritt */
+.progress-item + .progress-item {
+  margin-top: 0.9rem;
+}
+
+.progress-top {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 0.35rem;
+  font-size: 0.85rem;
+}
+
+.progress-track {
+  height: 6px;
+  border-radius: 999px;
+  background-color: var(--bg-selected);
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  background-color: var(--text);
+}
+
+/* Zuletzt bearbeitet */
+.recent-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem 0;
+  border-top: 1px solid var(--border-soft);
+}
+
+.recent-item:first-child {
+  border-top: none;
+}
+
+.recent-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background-color: var(--bg-app);
+  border: 1px solid var(--border-soft);
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.recent-main {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+.recent-title {
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.recent-preview {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.recent-time {
+  width: 90px;
+  text-align: right;
+  font-size: 0.75rem;
+  font-weight: 300;
+  color: var(--text-muted);
+}
+
+@media (max-width: 1180px) {
+  .stat-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .dash-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .dash-card.wide,
+  .dash-card:not(.wide) {
+    grid-column: 1;
+  }
+}
