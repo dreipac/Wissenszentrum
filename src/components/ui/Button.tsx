@@ -1,6 +1,6 @@
-import { ButtonHTMLAttributes } from "react";
+import type { ComponentProps } from "react";
 
-interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {}
+type ButtonProps = ComponentProps<"button">;
 
 /** Primary-Button – Styles liegen global in styles/buttons.css */
 export function Button({ className, type = "button", ...props }: ButtonProps) {

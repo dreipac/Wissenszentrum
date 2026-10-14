@@ -3,6 +3,7 @@ import { AlignLeft, ArrowRight, Clock, MapPin } from "lucide-react";
 import { Modal } from "../ui/Modal";
 import { Button } from "../ui/Button";
 import { SecondaryButton } from "../ui/SecondaryButton";
+import { ConfirmDialog } from "../ui/ConfirmDialog";
 import type { EventDraft } from "../../lib/calendar";
 import { createEvent, deleteEvent, updateEvent } from "../../lib/api/events";
 import "./EventModal.css";
@@ -66,16 +67,11 @@ export function EventModal({ draft, onClose, onChanged }: EventModalProps) {
       onClose={onClose}
       footer={
         <>
-          {editing &&
-            (confirmDelete ? (
-              <SecondaryButton className="danger" disabled={busy} onClick={() => void run(() => deleteEvent(draft.id!))}>
-                Wirklich löschen?
-              </SecondaryButton>
-            ) : (
-              <SecondaryButton className="danger" disabled={busy} onClick={() => setConfirmDelete(true)}>
-                Löschen
-              </SecondaryButton>
-            ))}
+          {editing && (
+            <SecondaryButton className="danger" disabled={busy} onClick={() => setConfirmDelete(true)}>
+              Löschen
+            </SecondaryButton>
+          )}
           <span className="spacer" />
           <SecondaryButton onClick={onClose}>Abbrechen</SecondaryButton>
           <Button disabled={busy} onClick={save}>
@@ -131,6 +127,16 @@ export function EventModal({ draft, onClose, onChanged }: EventModalProps) {
       </div>
 
       {error && <p className="field-error">{error}</p>}
+
+      {confirmDelete && (
+        <ConfirmDialog
+          title="Termin löschen?"
+          message={`„${title.trim() || "Ohne Titel"}“ wird dauerhaft gelöscht.`}
+          busy={busy}
+          onConfirm={() => void run(() => deleteEvent(draft.id!))}
+          onCancel={() => setConfirmDelete(false)}
+        />
+      )}
     </Modal>
   );
 }

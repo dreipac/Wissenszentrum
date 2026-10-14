@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Modal } from "../ui/Modal";
 import { Button } from "../ui/Button";
 import { SecondaryButton } from "../ui/SecondaryButton";
+import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { createBucket, deleteBucket, updateBucket } from "../../lib/api/tasks";
 import type { Bucket } from "../../lib/tasks";
 import { useTasks } from "../../lib/useTasks";
@@ -52,16 +53,11 @@ export function BucketModal({ bucket, onClose }: BucketModalProps) {
       onClose={onClose}
       footer={
         <>
-          {editing &&
-            (confirmDelete ? (
-              <SecondaryButton className="danger" disabled={busy} onClick={() => void run(() => deleteBucket(bucket.id))}>
-                Wirklich löschen?
-              </SecondaryButton>
-            ) : (
-              <SecondaryButton className="danger" disabled={busy} onClick={() => setConfirmDelete(true)}>
-                Löschen
-              </SecondaryButton>
-            ))}
+          {editing && (
+            <SecondaryButton className="danger" disabled={busy} onClick={() => setConfirmDelete(true)}>
+              Löschen
+            </SecondaryButton>
+          )}
           <span className="spacer" />
           <SecondaryButton onClick={onClose}>Abbrechen</SecondaryButton>
           <Button disabled={busy} onClick={save}>
@@ -100,24 +96,25 @@ export function BucketModal({ bucket, onClose }: BucketModalProps) {
             </option>
           ))}
         </select>
-        <p className="muted bucket-hint">
-          {targets.length === 0
-            ? "Sobald es einen weiteren Bucket gibt, kannst du hier eine Automatik einstellen."
-            : "Wenn du einen Bucket wählst, wandert jede Aufgabe aus diesem Bucket beim Abhaken automatisch dorthin, zum Beispiel nach „Erledigt“. Beim Wiedereröffnen bleibt sie dort."}
-        </p>
       </div>
 
-      {confirmDelete && (
-        <p className="bucket-delete-note">
-          {taskCount === 0
-            ? "Der Bucket ist leer und wird komplett entfernt."
-            : taskCount === 1
-              ? "Die Aufgabe bleibt erhalten und steht danach unter „Ohne Bucket“."
-              : `Die ${taskCount} Aufgaben bleiben erhalten und stehen danach unter „Ohne Bucket“.`}
-        </p>
-      )}
-
       {error && <p className="field-error">{error}</p>}
+
+      {confirmDelete && bucket && (
+        <ConfirmDialog
+          title="Bucket löschen?"
+          message={
+            taskCount === 0
+              ? `„${bucket.name}“ ist leer und wird entfernt.`
+              : taskCount === 1
+                ? `„${bucket.name}“ wird entfernt. Die Aufgabe bleibt erhalten und steht danach unter „Ohne Bucket“.`
+                : `„${bucket.name}“ wird entfernt. Die ${taskCount} Aufgaben bleiben erhalten und stehen danach unter „Ohne Bucket“.`
+          }
+          busy={busy}
+          onConfirm={() => void run(() => deleteBucket(bucket.id))}
+          onCancel={() => setConfirmDelete(false)}
+        />
+      )}
     </Modal>
   );
 }

@@ -3,6 +3,7 @@ import { AlignLeft, CalendarDays, Flag, FolderKanban, ListChecks, Plus, X } from
 import { Modal } from "../ui/Modal";
 import { Button } from "../ui/Button";
 import { SecondaryButton } from "../ui/SecondaryButton";
+import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { createTask, deleteTask, updateTask } from "../../lib/api/tasks";
 import { dateInDays, priorities, priorityLabel, type Priority, type Task } from "../../lib/tasks";
 import { useTasks } from "../../lib/useTasks";
@@ -89,16 +90,11 @@ export function TaskModal({ task, bucketId = null, onClose }: TaskModalProps) {
       onClose={onClose}
       footer={
         <>
-          {editing &&
-            (confirmDelete ? (
-              <SecondaryButton className="danger" disabled={busy} onClick={() => void run(() => deleteTask(task.id))}>
-                Wirklich löschen?
-              </SecondaryButton>
-            ) : (
-              <SecondaryButton className="danger" disabled={busy} onClick={() => setConfirmDelete(true)}>
-                Löschen
-              </SecondaryButton>
-            ))}
+          {editing && (
+            <SecondaryButton className="danger" disabled={busy} onClick={() => setConfirmDelete(true)}>
+              Löschen
+            </SecondaryButton>
+          )}
           <span className="spacer" />
           <SecondaryButton onClick={onClose}>Abbrechen</SecondaryButton>
           <Button disabled={busy} onClick={save}>
@@ -258,6 +254,16 @@ export function TaskModal({ task, bucketId = null, onClose }: TaskModalProps) {
       </div>
 
       {error && <p className="field-error">{error}</p>}
+
+      {confirmDelete && editing && (
+        <ConfirmDialog
+          title="Aufgabe löschen?"
+          message={`„${task.title}“ wird dauerhaft gelöscht, samt Zwischenschritten.`}
+          busy={busy}
+          onConfirm={() => void run(() => deleteTask(task.id))}
+          onCancel={() => setConfirmDelete(false)}
+        />
+      )}
     </Modal>
   );
 }

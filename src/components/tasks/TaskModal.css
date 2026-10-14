@@ -86,24 +86,8 @@
   min-height: 130px;
 }
 
-.bucket-hint {
-  font-size: 0.82rem;
-  line-height: 1.45;
-}
-
 .bucket-select {
   cursor: pointer;
-}
-
-.bucket-delete-note {
-  padding: 0.6rem 0.8rem;
-  border: 1px solid var(--border-soft);
-  border-left: 3px solid var(--negative);
-  border-radius: var(--radius-md);
-  background-color: var(--bg-sidebar);
-  font-size: 0.85rem;
-  line-height: 1.4;
-  color: var(--text-muted);
 }
 
 /* Zwischenschritte */
