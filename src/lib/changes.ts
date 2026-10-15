@@ -1,7 +1,7 @@
 // Kleiner Signalgeber: Nach Änderungen an den Daten laden alle Ansichten, die dasselbe Thema anzeigen, automatisch neu.
 const bus = new EventTarget();
 
-export type ChangeTopic = "tasks" | "notes" | "trading" | "strategies";
+export type ChangeTopic = "tasks" | "notes" | "trading" | "strategies" | "docs";
 
 export const notifyChange = (topic: ChangeTopic) => bus.dispatchEvent(new Event(topic));
 

@@ -1,67 +1,137 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
+  ArrowDown,
+  ArrowUp,
+  Check,
   ChevronDown,
   ChevronRight,
-  Clock,
+  FilePlus2,
   FileText,
   FolderClosed,
+  FolderInput,
   FolderOpen,
+  FolderPlus,
   MoreHorizontal,
   Pencil,
   Plus,
   Search,
   Star,
+  Trash2,
 } from "lucide-react";
 import { Button } from "../components/ui/Button";
 import { SecondaryButton } from "../components/ui/SecondaryButton";
-import { docTree, type DocNode } from "../data/mock";
+import { ConfirmDialog } from "../components/ui/ConfirmDialog";
+import { ContextMenu, type ContextMenuItem } from "../components/ui/ContextMenu";
+import { DocEditor } from "../components/docs/DocEditor";
+import { FolderView } from "../components/docs/FolderView";
+import { MovePageModal, NewPageModal } from "../components/docs/PageModals";
+import { deleteDocPage, setDocFavorite, shiftDocPage } from "../lib/api/docs";
+import { ancestors, buildTree, descendantIds, isFolder, pageTitle, searchPages, type DocKind, type DocNode, type DocPage } from "../lib/docs";
+import { useDocs } from "../lib/useDocs";
 import "./DocsView.css";
 
-function TreeItem({
-  node,
-  depth,
-  openIds,
-  activeId,
-  onToggle,
-  onSelect,
-}: {
+const ACTIVE_KEY = "docsActivePage";
+const EXPANDED_KEY = "docsExpandedPages";
+
+function readStored<T>(key: string, fallback: T): T {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? (JSON.parse(raw) as T) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function writeStored(key: string, value: unknown) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    /* Merken ist nur Komfort */
+  }
+}
+
+interface TreeRowProps {
   node: DocNode;
   depth: number;
-  openIds: Set<string>;
-  activeId: string;
-  onToggle: (id: string) => void;
-  onSelect: (id: string) => void;
-}) {
-  const hasChildren = !!node.children?.length;
-  const open = openIds.has(node.id);
-  const Icon = hasChildren ? (open ? FolderOpen : FolderClosed) : FileText;
+  expanded: Set<number>;
+  activeId: number | null;
+  onToggle: (id: number) => void;
+  onSelect: (id: number) => void;
+  onAdd: (id: number, x: number, y: number) => void;
+  onMenu: (page: DocPage, x: number, y: number) => void;
+}
+
+function TreeRow({ node, depth, expanded, activeId, onToggle, onSelect, onAdd, onMenu }: TreeRowProps) {
+  const { page, children } = node;
+  const open = expanded.has(page.id);
+  const hasChildren = children.length > 0;
+  const folder = isFolder(page);
+  const Icon = folder ? (open ? FolderOpen : FolderClosed) : FileText;
 
   return (
     <li>
-      <button
-        type="button"
-        className={`tree-item${activeId === node.id ? " active" : ""}`}
-        style={{ paddingLeft: `${0.5 + depth * 1}rem` }}
-        onClick={() => (hasChildren ? onToggle(node.id) : onSelect(node.id))}
+      <div
+        className={`tree-row${activeId === page.id ? " active" : ""}`}
+        style={{ paddingLeft: `${0.25 + depth * 0.95}rem` }}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          onMenu(page, e.clientX, e.clientY);
+        }}
       >
-        <span className="tree-chevron">
-          {hasChildren ? open ? <ChevronDown size={13} /> : <ChevronRight size={13} /> : null}
+        <button
+          type="button"
+          className={`tree-toggle${hasChildren ? "" : " hidden"}`}
+          aria-label={open ? "Zuklappen" : "Aufklappen"}
+          aria-expanded={hasChildren ? open : undefined}
+          tabIndex={hasChildren ? 0 : -1}
+          onClick={() => onToggle(page.id)}
+        >
+          {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+        </button>
+        <button
+          type="button"
+          className="tree-item"
+          title={pageTitle(page)}
+          onClick={() => {
+            onSelect(page.id);
+            // Ordner klappen beim Öffnen auf
+            if (folder && !open) onToggle(page.id);
+          }}
+        >
+          <Icon size={15} />
+          <span className={`tree-label${page.title.trim() ? "" : " untitled"}`}>{pageTitle(page)}</span>
+          {page.favorite && <Star size={11} className="tree-fav" fill="currentColor" />}
+        </button>
+        <span className="tree-actions">
+          <button
+            type="button"
+            className="icon-btn"
+            aria-label="Hinzufügen"
+            title="Seite oder Ordner hinzufügen"
+            onClick={(e) => {
+              const r = e.currentTarget.getBoundingClientRect();
+              onAdd(page.id, r.left, r.bottom + 4);
+            }}
+          >
+            <Plus size={13} />
+          </button>
+          <button
+            type="button"
+            className="icon-btn"
+            aria-label="Mehr"
+            onClick={(e) => {
+              const r = e.currentTarget.getBoundingClientRect();
+              onMenu(page, r.right - 190, r.bottom + 4);
+            }}
+          >
+            <MoreHorizontal size={13} />
+          </button>
         </span>
-        <Icon size={15} />
-        <span className="tree-label">{node.title}</span>
-      </button>
+      </div>
       {hasChildren && open && (
         <ul className="tree-list">
-          {node.children!.map((c) => (
-            <TreeItem
-              key={c.id}
-              node={c}
-              depth={depth + 1}
-              openIds={openIds}
-              activeId={activeId}
-              onToggle={onToggle}
-              onSelect={onSelect}
-            />
+          {children.map((c) => (
+            <TreeRow key={c.page.id} node={c} depth={depth + 1} expanded={expanded} activeId={activeId} onToggle={onToggle} onSelect={onSelect} onAdd={onAdd} onMenu={onMenu} />
           ))}
         </ul>
       )}
@@ -70,16 +140,115 @@ function TreeItem({
 }
 
 export function DocsView() {
-  const [openIds, setOpenIds] = useState<Set<string>>(new Set(["d2"]));
-  const [activeId, setActiveId] = useState("d2a");
+  const { pages, loaded, error } = useDocs();
+  const [activeId, setActiveId] = useState<number | null>(() => readStored<number | null>(ACTIVE_KEY, null));
+  const [expanded, setExpanded] = useState<Set<number>>(() => new Set(readStored<number[]>(EXPANDED_KEY, [])));
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [query, setQuery] = useState("");
+  const [dialog, setDialog] = useState<{ kind: "new"; parentId: number | null; docKind: DocKind } | { kind: "move"; page: DocPage } | null>(null);
+  const [deleting, setDeleting] = useState<DocPage | null>(null);
+  const [menu, setMenu] = useState<{ x: number; y: number; items: ContextMenuItem[] } | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
-  const toggle = (id: string) =>
-    setOpenIds((prev) => {
+  const tree = useMemo(() => buildTree(pages), [pages]);
+  const active = pages.find((p) => p.id === activeId) ?? null;
+  const favorites = pages.filter((p) => p.favorite);
+  const hits = useMemo(() => searchPages(pages, query), [pages, query]);
+  const trail = active ? ancestors(pages, active.id) : [];
+  const subpages = active ? pages.filter((p) => p.parentId === active.id).sort((a, b) => a.position - b.position || a.id - b.id) : [];
+
+  // Ohne gültige Auswahl die erste Seite öffnen
+  useEffect(() => {
+    if (!loaded || active || tree.length === 0) return;
+    setActiveId(tree[0].page.id);
+  }, [loaded, active, tree]);
+
+  useEffect(() => writeStored(ACTIVE_KEY, activeId), [activeId]);
+  useEffect(() => writeStored(EXPANDED_KEY, [...expanded]), [expanded]);
+
+  // Die Eltern der geöffneten Seite sichtbar machen
+  useEffect(() => {
+    if (!active) return;
+    const chain = ancestors(pages, active.id).map((p) => p.id);
+    setExpanded((prev) => (chain.every((id) => prev.has(id)) ? prev : new Set([...prev, ...chain])));
+    // nur beim Wechsel der Seite
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active?.id]);
+
+  const select = (id: number) => {
+    setActiveId(id);
+    setEditingId(null);
+  };
+
+  const toggle = (id: number) =>
+    setExpanded((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
       return next;
     });
+
+  const run = async (action: () => Promise<unknown>) => {
+    setActionError(null);
+    try {
+      await action();
+    } catch (e) {
+      setActionError(String(e));
+    }
+  };
+
+  const siblingsOf = (page: DocPage) => pages.filter((p) => p.parentId === page.parentId).sort((a, b) => a.position - b.position || a.id - b.id);
+
+  /** Auswahl, ob unter `parentId` (null = Hauptebene) eine Seite oder ein Ordner entstehen soll */
+  const openAddMenu = (parentId: number | null, x: number, y: number) =>
+    setMenu({
+      x,
+      y,
+      items: [
+        { label: "Neue Seite", icon: FilePlus2, onClick: () => setDialog({ kind: "new", parentId, docKind: "page" }) },
+        { label: "Neuer Ordner", icon: FolderPlus, onClick: () => setDialog({ kind: "new", parentId, docKind: "folder" }) },
+      ],
+    });
+
+  const openMenu = (page: DocPage, x: number, y: number) => {
+    const siblings = siblingsOf(page);
+    const index = siblings.findIndex((p) => p.id === page.id);
+    const items: ContextMenuItem[] = [
+      { label: "Neue Seite darin", icon: FilePlus2, onClick: () => setDialog({ kind: "new", parentId: page.id, docKind: "page" }) },
+      { label: "Neuer Ordner darin", icon: FolderPlus, onClick: () => setDialog({ kind: "new", parentId: page.id, docKind: "folder" }) },
+      { label: page.favorite ? "Favorit entfernen" : "Als Favorit markieren", icon: Star, onClick: () => void run(() => setDocFavorite(page.id, !page.favorite)) },
+    ];
+    if (index > 0) items.push({ label: "Nach oben", icon: ArrowUp, onClick: () => void run(() => shiftDocPage(page.id, -1)) });
+    if (index < siblings.length - 1) items.push({ label: "Nach unten", icon: ArrowDown, onClick: () => void run(() => shiftDocPage(page.id, 1)) });
+    items.push(
+      { label: "Verschieben …", icon: FolderInput, onClick: () => setDialog({ kind: "move", page }) },
+      { label: "Löschen", icon: Trash2, onClick: () => setDeleting(page) },
+    );
+    setMenu({ x, y, items });
+  };
+
+  const remove = async (page: DocPage) => {
+    setDeleting(null);
+    try {
+      await deleteDocPage(page.id);
+      if (activeId === page.id || descendantIds(pages, page.id).includes(activeId ?? -1)) {
+        setActiveId(page.parentId);
+        setEditingId(null);
+      }
+    } catch (e) {
+      setActionError(String(e));
+    }
+  };
+
+  const created = (page: DocPage) => {
+    setActiveId(page.id);
+    setEditingId(isFolder(page) ? null : page.id);
+    setQuery("");
+    if (page.parentId !== null) setExpanded((prev) => new Set([...prev, page.parentId!]));
+  };
+
+  const deletingCount = deleting ? descendantIds(pages, deleting.id).length : 0;
+  const searching = query.trim() !== "";
 
   return (
     <div className="docs-layout">
@@ -87,113 +256,198 @@ export function DocsView() {
         <header className="docs-tree-head">
           <div className="page-title-row">
             <h1 className="page-title">Dokumentation</h1>
-            <button type="button" className="icon-btn" aria-label="Neue Seite">
+            <button
+              type="button"
+              className="icon-btn"
+              aria-label="Hinzufügen"
+              title="Seite oder Ordner hinzufügen"
+              onClick={(e) => {
+                const r = e.currentTarget.getBoundingClientRect();
+                openAddMenu(null, r.right - 170, r.bottom + 4);
+              }}
+            >
               <Plus size={16} />
             </button>
           </div>
           <label className="input">
             <Search size={14} />
-            <input placeholder="Seiten durchsuchen …" />
+            <input placeholder="Seiten durchsuchen …" value={query} onChange={(e) => setQuery(e.target.value)} />
           </label>
         </header>
-        <ul className="tree-list root">
-          {docTree.map((n) => (
-            <TreeItem
-              key={n.id}
-              node={n}
-              depth={0}
-              openIds={openIds}
-              activeId={activeId}
-              onToggle={toggle}
-              onSelect={setActiveId}
-            />
-          ))}
-        </ul>
+
+        <div className="docs-tree-scroll">
+          {searching ? (
+            <ul className="docs-hits">
+              {hits.map(({ page, snippet }) => {
+                const path = ancestors(pages, page.id).map(pageTitle);
+                return (
+                  <li key={page.id}>
+                    <button
+                      type="button"
+                      className={`docs-hit${page.id === activeId ? " active" : ""}`}
+                      onClick={() => {
+                        select(page.id);
+                        setQuery("");
+                      }}
+                    >
+                      <span className="docs-hit-title">{pageTitle(page)}</span>
+                      {path.length > 0 && <span className="docs-hit-path">{path.join(" › ")}</span>}
+                      {snippet && <span className="docs-hit-snippet">{snippet}</span>}
+                    </button>
+                  </li>
+                );
+              })}
+              {hits.length === 0 && <li className="docs-empty-list muted">Keine Seiten gefunden.</li>}
+            </ul>
+          ) : (
+            <>
+              {favorites.length > 0 && (
+                <section className="docs-favorites" aria-label="Favoriten">
+                  <span className="docs-label">Favoriten</span>
+                  {favorites.map((p) => (
+                    <button key={p.id} type="button" className={`tree-item fav${p.id === activeId ? " active" : ""}`} onClick={() => select(p.id)}>
+                      <Star size={13} fill="currentColor" />
+                      <span className="tree-label">{pageTitle(p)}</span>
+                    </button>
+                  ))}
+                </section>
+              )}
+              {tree.length > 0 && favorites.length > 0 && <span className="docs-label docs-tree-label">Seiten</span>}
+              <ul className="tree-list root">
+                {tree.map((n) => (
+                  <TreeRow
+                    key={n.page.id}
+                    node={n}
+                    depth={0}
+                    expanded={expanded}
+                    activeId={activeId}
+                    onToggle={toggle}
+                    onSelect={select}
+                    onAdd={openAddMenu}
+                    onMenu={openMenu}
+                  />
+                ))}
+              </ul>
+              {loaded && tree.length === 0 && <p className="docs-empty-list muted">Noch keine Seiten.</p>}
+            </>
+          )}
+        </div>
       </aside>
 
       <section className="docs-page-pane">
-        <header className="docs-page-head">
-          <nav className="breadcrumbs" aria-label="Pfad">
-            <span>Dokumentation</span>
-            <ChevronRight size={12} />
-            <span>IT-Infrastruktur</span>
-            <ChevronRight size={12} />
-            <span className="current">Netzwerk-Übersicht</span>
-          </nav>
-          <div className="page-actions">
-            <button type="button" className="icon-btn" aria-label="Favorit">
-              <Star size={16} />
-            </button>
-            <SecondaryButton className="sm">
-              <Clock size={14} />
-              Verlauf
-            </SecondaryButton>
-            <Button className="sm">
-              <Pencil size={14} />
-              Bearbeiten
-            </Button>
-            <button type="button" className="icon-btn" aria-label="Mehr">
-              <MoreHorizontal size={16} />
-            </button>
-          </div>
-        </header>
+        {active ? (
+          <>
+            <header className="docs-page-head">
+              <nav className="breadcrumbs" aria-label="Pfad">
+                <span>Dokumentation</span>
+                {trail.map((p) => (
+                  <span key={p.id} className="crumb">
+                    <ChevronRight size={12} />
+                    <button type="button" onClick={() => select(p.id)}>
+                      {pageTitle(p)}
+                    </button>
+                  </span>
+                ))}
+                <ChevronRight size={12} />
+                <span className="current">{pageTitle(active)}</span>
+              </nav>
+              <div className="page-actions">
+                <button
+                  type="button"
+                  className={`icon-btn${active.favorite ? " active" : ""}`}
+                  aria-label={active.favorite ? "Favorit entfernen" : "Als Favorit markieren"}
+                  title={active.favorite ? "Favorit entfernen" : "Als Favorit markieren"}
+                  aria-pressed={active.favorite}
+                  onClick={() => void run(() => setDocFavorite(active.id, !active.favorite))}
+                >
+                  <Star size={16} fill={active.favorite ? "currentColor" : "none"} />
+                </button>
+                {isFolder(active) ? null : editingId === active.id ? (
+                  <Button className="sm" onClick={() => setEditingId(null)}>
+                    <Check size={14} />
+                    Fertig
+                  </Button>
+                ) : (
+                  <SecondaryButton className="sm" onClick={() => setEditingId(active.id)}>
+                    <Pencil size={14} />
+                    Bearbeiten
+                  </SecondaryButton>
+                )}
+                <button
+                  type="button"
+                  className="icon-btn"
+                  aria-label="Mehr"
+                  onClick={(e) => {
+                    const r = e.currentTarget.getBoundingClientRect();
+                    openMenu(active, r.right - 190, r.bottom + 4);
+                  }}
+                >
+                  <MoreHorizontal size={16} />
+                </button>
+              </div>
+            </header>
 
-        <div className="docs-scroll">
-          <article className="doc-article">
-            <h1 className="doc-title">Netzwerk-Übersicht</h1>
-            <div className="doc-meta">
-              <span className="avatar">AD</span>
-              <span>Armin</span>
-              <span className="doc-meta-dot">·</span>
-              <span>Zuletzt aktualisiert vor 2 Tagen</span>
-              <span className="tag">Entwurf</span>
+            {(actionError || error) && <p className="field-error docs-error">{actionError ?? error}</p>}
+
+            {isFolder(active) ? (
+              <FolderView
+                key={active.id}
+                folder={active}
+                items={subpages}
+                pages={pages}
+                onOpen={select}
+                onNew={(docKind) => setDialog({ kind: "new", parentId: active.id, docKind })}
+              />
+            ) : (
+              <DocEditor
+                key={active.id}
+                page={active}
+                editing={editingId === active.id}
+                onEdit={() => setEditingId(active.id)}
+                subpages={subpages}
+                onOpen={select}
+              />
+            )}
+          </>
+        ) : (
+          loaded && (
+            <div className="docs-blank">
+              <h2>Deine Dokumentation</h2>
+              <p className="muted">
+                Halte Bleibendes fest: Anleitungen, Prozesse, Wissen. Seiten lassen sich beliebig verschachteln. Für kurzlebige Gedanken sind die Notizen da.
+              </p>
+              <div className="docs-blank-actions">
+                <Button onClick={() => setDialog({ kind: "new", parentId: null, docKind: "page" })}>
+                  <FilePlus2 size={16} />
+                  Erste Seite anlegen
+                </Button>
+                <SecondaryButton onClick={() => setDialog({ kind: "new", parentId: null, docKind: "folder" })}>
+                  <FolderPlus size={16} />
+                  Ordner anlegen
+                </SecondaryButton>
+              </div>
             </div>
-
-            <h2 id="ziel">Ziel</h2>
-            <p>
-              Diese Seite dokumentiert den Aufbau des Firmennetzwerks: Segmente, wichtige Geräte,
-              Zugänge und Zuständigkeiten. Sie dient als Einstiegspunkt für Wartung und Fehlersuche.
-            </p>
-
-            <h2 id="segmente">Netzwerksegmente</h2>
-            <div className="card doc-table">
-              <div className="doc-row head">
-                <span>Segment</span>
-                <span>Bereich</span>
-                <span>Gateway</span>
-              </div>
-              <div className="doc-row">
-                <span>Büro</span>
-                <span>192.168.10.0/24</span>
-                <span>192.168.10.1</span>
-              </div>
-              <div className="doc-row">
-                <span>Server</span>
-                <span>192.168.20.0/24</span>
-                <span>192.168.20.1</span>
-              </div>
-              <div className="doc-row">
-                <span>Gäste</span>
-                <span>192.168.30.0/24</span>
-                <span>192.168.30.1</span>
-              </div>
-            </div>
-
-            <h2 id="zugaenge">Zugänge</h2>
-            <p>
-              Administrative Zugänge werden ausschließlich über den Passwortmanager verwaltet. Für
-              Fernzugriff ist zuvor das VPN zu aktivieren.
-            </p>
-          </article>
-
-          <aside className="doc-outline">
-            <span className="card-title">Auf dieser Seite</span>
-            <a className="active" href="#ziel">Ziel</a>
-            <a href="#segmente">Netzwerksegmente</a>
-            <a href="#zugaenge">Zugänge</a>
-          </aside>
-        </div>
+          )
+        )}
       </section>
+
+      {dialog?.kind === "new" && <NewPageModal kind={dialog.docKind} tree={tree} parentId={dialog.parentId} onCreated={created} onClose={() => setDialog(null)} />}
+      {dialog?.kind === "move" && <MovePageModal page={dialog.page} tree={tree} onClose={() => setDialog(null)} />}
+      {menu && <ContextMenu x={menu.x} y={menu.y} items={menu.items} onClose={() => setMenu(null)} />}
+      {deleting && (
+        <ConfirmDialog
+          title={isFolder(deleting) ? "Ordner löschen?" : "Seite löschen?"}
+          message={
+            deletingCount === 0
+              ? `„${pageTitle(deleting)}“ wird dauerhaft gelöscht.`
+              : isFolder(deleting)
+                ? `„${pageTitle(deleting)}“ wird samt ${deletingCount} ${deletingCount === 1 ? "Eintrag" : "Einträgen"} dauerhaft gelöscht.`
+                : `„${pageTitle(deleting)}“ wird samt ${deletingCount} ${deletingCount === 1 ? "Unterseite" : "Unterseiten"} dauerhaft gelöscht.`
+          }
+          onConfirm={() => void remove(deleting)}
+          onCancel={() => setDeleting(null)}
+        />
+      )}
     </div>
   );
 }

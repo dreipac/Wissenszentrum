@@ -1,0 +1,346 @@
+.onboarding {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+  padding: 2rem 1.5rem;
+  overflow-y: auto;
+  background-color: var(--bg-app);
+  background-image: radial-gradient(ellipse 70% 60% at 50% 0%, color-mix(in srgb, var(--accent) 9%, transparent), transparent 70%);
+}
+
+.ob-card {
+  width: min(540px, 100%);
+  margin: auto;
+  padding: 2.25rem 2.5rem 2rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 16px;
+  background-color: var(--bg-card);
+  box-shadow: var(--shadow-pop);
+}
+
+/* ---------- Fortschritt ---------- */
+.ob-progress {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0 0 1.75rem;
+  padding: 0;
+  list-style: none;
+  font-size: 0.78rem;
+  color: var(--text-faint);
+}
+
+.ob-progress li {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.ob-progress li + li::before {
+  content: "";
+  width: 28px;
+  height: 1px;
+  margin-right: 0.1rem;
+  background-color: var(--border-strong);
+}
+
+.ob-dot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: 1px solid var(--border-strong);
+  border-radius: 50%;
+  font-size: 0.68rem;
+  font-weight: 600;
+  transition: background-color 0.2s, border-color 0.2s, color 0.2s;
+}
+
+.ob-progress li.current {
+  color: var(--text);
+}
+
+.ob-progress li.current .ob-dot {
+  border-color: #ffffff;
+  background-color: #ffffff;
+  color: var(--btn-primary-text);
+}
+
+.ob-progress li.done {
+  color: var(--text-muted);
+}
+
+.ob-progress li.done .ob-dot {
+  border-color: var(--positive);
+  color: var(--positive);
+}
+
+/* ---------- Schritte ---------- */
+.ob-step {
+  animation: ob-in-forward 0.32s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.ob-step.back {
+  animation-name: ob-in-back;
+}
+
+@keyframes ob-in-forward {
+  from {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes ob-in-back {
+  from {
+    opacity: 0;
+    transform: translateX(-16px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.ob-logo {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  margin-bottom: 1.25rem;
+  border-radius: 14px;
+  background-color: #ffffff;
+  color: var(--btn-primary-text);
+  font-size: 1.6rem;
+  font-weight: 700;
+}
+
+.ob-logo.done {
+  border: 1px solid color-mix(in srgb, var(--positive) 45%, transparent);
+  background-color: color-mix(in srgb, var(--positive) 14%, transparent);
+  color: var(--positive);
+}
+
+.ob-title {
+  margin: 0 0 0.5rem;
+  font-size: 1.5rem;
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+}
+
+.ob-lead {
+  margin: 0 0 1.5rem;
+  font-size: 0.92rem;
+  line-height: 1.55;
+  color: var(--text-muted);
+}
+
+.ob-features {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  margin: 0 0 1.75rem;
+  padding: 0;
+  list-style: none;
+}
+
+.ob-features li {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.8rem;
+}
+
+.ob-feature-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background-color: var(--bg-sidebar);
+  color: var(--text-muted);
+}
+
+.ob-features div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  font-size: 0.85rem;
+  line-height: 1.45;
+}
+
+.ob-features strong {
+  font-weight: 600;
+}
+
+.ob-features span:not(.ob-feature-icon) {
+  color: var(--text-muted);
+}
+
+/* ---------- Formular ---------- */
+.ob-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.9rem;
+}
+
+.ob-card .field-control.invalid {
+  border-color: var(--negative);
+}
+
+.ob-card .field-error {
+  margin: 0.75rem 0 0;
+}
+
+.ob-location {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.ob-label {
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.ob-path-row {
+  display: flex;
+  gap: 0.6rem;
+}
+
+.ob-path {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 0.6rem;
+  min-width: 0;
+  padding: 0 0.8rem;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  background-color: var(--bg-sidebar);
+  font-size: 0.88rem;
+  color: var(--text);
+}
+
+.ob-path svg {
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.ob-path span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ob-file {
+  font-size: 0.78rem;
+  color: var(--text-faint);
+  word-break: break-all;
+}
+
+.ob-file code {
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-size: 0.76rem;
+  color: var(--text-muted);
+}
+
+.ob-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  margin-top: 1rem;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  background-color: var(--bg-sidebar);
+  font-size: 0.82rem;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+.ob-notice svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.ob-notice.warn {
+  border-color: color-mix(in srgb, var(--warning) 40%, transparent);
+  color: var(--warning);
+}
+
+.ob-notice.error {
+  border-color: color-mix(in srgb, var(--negative) 45%, transparent);
+  color: var(--negative);
+}
+
+.ob-summary {
+  display: flex;
+  flex-direction: column;
+  margin: 0 0 1.75rem;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  background-color: var(--bg-sidebar);
+}
+
+.ob-summary div {
+  display: flex;
+  gap: 1rem;
+  padding: 0.65rem 0.9rem;
+  font-size: 0.85rem;
+}
+
+.ob-summary div + div {
+  border-top: 1px solid var(--border-soft);
+}
+
+.ob-summary dt {
+  width: 80px;
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.ob-summary dd {
+  margin: 0;
+  min-width: 0;
+  word-break: break-all;
+}
+
+/* ---------- Aktionen ---------- */
+.ob-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-top: 1.75rem;
+}
+
+.ob-actions.single {
+  justify-content: stretch;
+  margin-top: 0;
+}
+
+.ob-actions.single .ob-primary {
+  flex: 1;
+}
+
+.ob-actions .btn,
+.ob-actions .btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+}

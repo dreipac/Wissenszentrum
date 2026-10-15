@@ -9,7 +9,10 @@ import { NotesView } from "./views/NotesView";
 import { DocsView } from "./views/DocsView";
 import { TradingView } from "./views/TradingView";
 import { StrategiesView } from "./views/StrategiesView";
+import { Onboarding } from "./components/onboarding/Onboarding";
 import { DialogsProvider } from "./lib/dialogs";
+import { getAppState } from "./lib/api/app";
+import { ProfileProvider, type AppState } from "./lib/profile";
 import "./App.css";
 
 const views: Record<ViewId, ComponentType> = {
@@ -24,7 +27,7 @@ const views: Record<ViewId, ComponentType> = {
 
 const SIDEBAR_KEY = "sidebarCollapsed";
 
-function App() {
+function Main() {
   const [view, setView] = useState<ViewId>("dashboard");
   const [collapsed, setCollapsed] = useState(() => {
     try {
@@ -71,6 +74,34 @@ function App() {
         </div>
       </DialogsProvider>
     </NavigationContext.Provider>
+  );
+}
+
+function App() {
+  const [state, setState] = useState<AppState | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    getAppState()
+      .then(setState)
+      .catch((e) => setError(String(e)));
+  }, []);
+
+  if (state?.onboarded && state.profile) {
+    return (
+      <ProfileProvider profile={state.profile} dbPath={state.dbPath}>
+        <Main />
+      </ProfileProvider>
+    );
+  }
+  if (state) return <Onboarding state={state} onDone={setState} />;
+
+  // Kurz beim Start, bis der Zustand da ist: nur der leere Rahmen, damit nichts aufblitzt
+  return (
+    <div className="app-shell">
+      <TitleBar minimal />
+      {error && <p className="field-error app-error">Das Wissenszentrum konnte nicht gestartet werden: {error}</p>}
+    </div>
   );
 }
 

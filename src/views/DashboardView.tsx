@@ -5,6 +5,7 @@ import { formatTimeRange } from "../lib/calendar";
 import { addDays, formatDayMonth, formatLongDay, parseDateTime, startOfDay, toDateTimeStr } from "../lib/dates";
 import { useDialogs } from "../lib/dialogs";
 import { useNavigate } from "../lib/navigation";
+import { useProfile } from "../lib/profile";
 import { formatNoteTime, isEmptyNote, noteTitle, notePreview } from "../lib/notes";
 import { createAndOpenNote } from "../lib/notesActions";
 import { requestOpenNote } from "../lib/notesNav";
@@ -14,7 +15,14 @@ import { useNotes } from "../lib/useNotes";
 import { useTasks } from "../lib/useTasks";
 import "./DashboardView.css";
 
+/** Tageszeit-Gruß: bis 11 Uhr Morgen, bis 17 Uhr Tag, danach Abend. */
+const greeting = (now: Date) => {
+  const h = now.getHours();
+  return h < 11 ? "Guten Morgen" : h < 18 ? "Guten Tag" : "Guten Abend";
+};
+
 export function DashboardView() {
+  const profile = useProfile();
   const { tasks } = useTasks();
   const { notes } = useNotes();
   const { openNewTask } = useDialogs();
@@ -61,7 +69,7 @@ export function DashboardView() {
       <header className="page-header">
         <div className="page-title-row">
           <div>
-            <h1 className="page-title">Guten Morgen, Armin</h1>
+            <h1 className="page-title">{greeting(new Date())}, {profile.firstName}</h1>
             <p className="page-subtitle">
               {formatLongDay(new Date())} · {dueToday.length} {dueToday.length === 1 ? "Aufgabe" : "Aufgaben"} heute fällig
             </p>

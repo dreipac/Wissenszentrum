@@ -1,23 +1,94 @@
 mod db;
+mod docs;
 mod events;
 mod finnhub;
 mod notes;
+mod profile;
 mod strategies;
 mod tasks;
 mod trading;
 
 use db::Db;
 use events::{Event, EventInput};
+use docs::{DocInput, DocPage};
 use notes::{Note, NoteInput};
+use profile::{LocationInfo, Profile};
 use strategies::{EdgeInput, NodeInput, Strategy, StrategyEdge, StrategyNode};
 use trading::{MetalInput, NewExecution, NewTrade, Trade, TradeMeta, TradingState};
 use rusqlite::Connection;
+use serde::Serialize;
+use std::path::PathBuf;
 use std::sync::{Mutex, MutexGuard};
 use tasks::{Bucket, BucketInput, Task, TaskInput};
 use tauri::{Manager, State};
 
 fn lock<'a>(db: &'a State<Db>) -> Result<MutexGuard<'a, Connection>, String> {
     db.0.lock().map_err(|_| "Datenbank ist gesperrt.".to_string())
+}
+
+// --- Erster Start -------------------------------------------------------------
+
+/// Pfade und Zustand des Starts: wo die Konfiguration liegt und welche Datenbank gerade offen ist.
+struct AppInfo {
+    config_file: PathBuf,
+    default_dir: PathBuf,
+    /// Ordner der geöffneten Datenbank, solange das Onboarding noch aussteht: None
+    dir: Mutex<Option<PathBuf>>,
+    /// Hinweis, falls die zuletzt verwendete Datenbank nicht geöffnet werden konnte
+    problem: Mutex<Option<String>>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AppState {
+    onboarded: bool,
+    profile: Option<Profile>,
+    /// Vollständiger Pfad der Datenbankdatei
+    db_path: Option<String>,
+    /// Vorschlag für den Speicherort im Onboarding
+    default_dir: String,
+    problem: Option<String>,
+}
+
+fn app_state_of(db: &State<Db>, info: &State<AppInfo>) -> Result<AppState, String> {
+    let dir = info.dir.lock().map_err(|_| "Zustand ist gesperrt.".to_string())?.clone();
+    let problem = info.problem.lock().map_err(|_| "Zustand ist gesperrt.".to_string())?.clone();
+    let profile = match &dir {
+        Some(_) => {
+            let conn = lock(db)?;
+            profile::read_profile(&conn)?
+        }
+        None => None,
+    };
+    Ok(AppState {
+        onboarded: dir.is_some() && profile.is_some(),
+        db_path: dir.map(|d| profile::db_file(&d).to_string_lossy().into_owned()),
+        profile,
+        default_dir: info.default_dir.to_string_lossy().into_owned(),
+        problem,
+    })
+}
+
+#[tauri::command]
+fn app_state(db: State<Db>, info: State<AppInfo>) -> Result<AppState, String> {
+    app_state_of(&db, &info)
+}
+
+#[tauri::command]
+fn inspect_location(dir: String) -> LocationInfo {
+    profile::inspect_location(&dir)
+}
+
+#[tauri::command]
+fn complete_onboarding(db: State<Db>, info: State<AppInfo>, first_name: String, last_name: String, dir: String) -> Result<AppState, String> {
+    let (conn, dir, _) = profile::onboard(&info.config_file, &dir, &first_name, &last_name)?;
+    {
+        let mut guard = lock(&db)?;
+        *guard = conn;
+    }
+    *info.dir.lock().map_err(|_| "Zustand ist gesperrt.".to_string())? = Some(dir);
+    *info.problem.lock().map_err(|_| "Zustand ist gesperrt.".to_string())? = None;
+    app_state_of(&db, &info)
 }
 
 // --- Kalender ---------------------------------------------------------------
@@ -156,6 +227,50 @@ fn delete_note(db: State<Db>, id: i64) -> Result<(), String> {
 fn purge_empty_notes(db: State<Db>, except_id: Option<i64>) -> Result<usize, String> {
     let conn = lock(&db)?;
     notes::purge_empty_notes(&conn, except_id)
+}
+
+// --- Dokumentation ---------------------------------------------------------
+
+#[tauri::command]
+fn list_doc_pages(db: State<Db>) -> Result<Vec<DocPage>, String> {
+    let conn = lock(&db)?;
+    docs::list_pages(&conn)
+}
+
+#[tauri::command]
+fn create_doc_page(db: State<Db>, parent_id: Option<i64>, title: String, kind: String) -> Result<DocPage, String> {
+    let conn = lock(&db)?;
+    docs::create_page(&conn, parent_id, &title, &kind)
+}
+
+#[tauri::command]
+fn update_doc_page(db: State<Db>, id: i64, input: DocInput) -> Result<DocPage, String> {
+    let conn = lock(&db)?;
+    docs::update_page(&conn, id, &input)
+}
+
+#[tauri::command]
+fn set_doc_favorite(db: State<Db>, id: i64, favorite: bool) -> Result<(), String> {
+    let conn = lock(&db)?;
+    docs::set_favorite(&conn, id, favorite)
+}
+
+#[tauri::command]
+fn move_doc_page(db: State<Db>, id: i64, parent_id: Option<i64>) -> Result<(), String> {
+    let conn = lock(&db)?;
+    docs::move_page(&conn, id, parent_id)
+}
+
+#[tauri::command]
+fn shift_doc_page(db: State<Db>, id: i64, delta: i64) -> Result<(), String> {
+    let conn = lock(&db)?;
+    docs::shift_page(&conn, id, delta)
+}
+
+#[tauri::command]
+fn delete_doc_page(db: State<Db>, id: i64) -> Result<usize, String> {
+    let conn = lock(&db)?;
+    docs::delete_page(&conn, id)
 }
 
 // --- Strategien -------------------------------------------------------------
@@ -367,16 +482,45 @@ async fn search_symbols(db: State<'_, Db>, query: String) -> Result<Vec<finnhub:
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
-            // Windows: %APPDATA%\com.armin.wissenszentrum\wissenszentrum.db
-            let dir = app.path().app_data_dir()?;
-            std::fs::create_dir_all(&dir)?;
-            let conn = Connection::open(dir.join("wissenszentrum.db"))?;
-            db::init(&conn)?;
+            // Windows: %APPDATA%\com.armin.wissenszentrum\config.json merkt sich den Speicherort der Datenbank
+            let data_dir = app.path().app_data_dir()?;
+            std::fs::create_dir_all(&data_dir)?;
+            let config_file = data_dir.join("config.json");
+            let configured = profile::read_config(&config_file);
+            let default_dir = configured
+                .clone()
+                .or_else(|| app.path().document_dir().ok().map(|d| d.join("Wissenszentrum")))
+                .unwrap_or_else(|| data_dir.clone());
+
+            // Nur mit Konfiguration und gespeichertem Profil gilt das Onboarding als abgeschlossen
+            let mut opened: Option<(Connection, PathBuf)> = None;
+            let mut problem = None;
+            if let Some(dir) = configured {
+                match profile::open_database(&dir) {
+                    Ok(conn) if matches!(profile::read_profile(&conn), Ok(Some(_))) => opened = Some((conn, dir)),
+                    Ok(_) => {}
+                    Err(e) => problem = Some(format!("Die Datenbank unter „{}“ konnte nicht geöffnet werden. {e}", dir.display())),
+                }
+            }
+            let (conn, dir) = match opened {
+                Some((conn, dir)) => (conn, Some(dir)),
+                None => {
+                    // Platzhalter bis zum Onboarding, damit alle Befehle eine Verbindung vorfinden
+                    let conn = Connection::open_in_memory()?;
+                    db::init(&conn)?;
+                    (conn, None)
+                }
+            };
             app.manage(Db(Mutex::new(conn)));
+            app.manage(AppInfo { config_file, default_dir, dir: Mutex::new(dir), problem: Mutex::new(problem) });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            app_state,
+            inspect_location,
+            complete_onboarding,
             list_events,
             create_event,
             update_event,
@@ -399,6 +543,13 @@ pub fn run() {
             set_note_pinned,
             delete_note,
             purge_empty_notes,
+            list_doc_pages,
+            create_doc_page,
+            update_doc_page,
+            set_doc_favorite,
+            move_doc_page,
+            shift_doc_page,
+            delete_doc_page,
             list_strategies,
             create_strategy,
             rename_strategy,

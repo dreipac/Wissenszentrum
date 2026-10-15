@@ -4,11 +4,13 @@ import "./TitleBar.css";
 
 
 interface TitleBarProps {
-  sidebarCollapsed: boolean;
-  onToggleSidebar: () => void;
+  sidebarCollapsed?: boolean;
+  onToggleSidebar?: () => void;
+  /** Nur Marke und Fenstersteuerung, z. B. im Onboarding */
+  minimal?: boolean;
 }
 
-export function TitleBar({ sidebarCollapsed, onToggleSidebar }: TitleBarProps) {
+export function TitleBar({ sidebarCollapsed = false, onToggleSidebar, minimal = false }: TitleBarProps) {
   const ToggleIcon = sidebarCollapsed ? PanelLeftOpen : PanelLeftClose;
   return (
     <header className="titlebar" data-tauri-drag-region>
@@ -19,22 +21,26 @@ export function TitleBar({ sidebarCollapsed, onToggleSidebar }: TitleBarProps) {
         <span className="brand-name" data-tauri-drag-region>
           Wissenszentrum
         </span>
-        <button
-          type="button"
-          className="icon-btn titlebar-toggle"
-          aria-label={sidebarCollapsed ? "Seitenleiste einblenden" : "Seitenleiste ausblenden"}
-          title={`${sidebarCollapsed ? "Seitenleiste einblenden" : "Seitenleiste ausblenden"} (Strg B)`}
-          onClick={onToggleSidebar}
-        >
-          <ToggleIcon size={16} />
-        </button>
+        {!minimal && (
+          <button
+            type="button"
+            className="icon-btn titlebar-toggle"
+            aria-label={sidebarCollapsed ? "Seitenleiste einblenden" : "Seitenleiste ausblenden"}
+            title={`${sidebarCollapsed ? "Seitenleiste einblenden" : "Seitenleiste ausblenden"} (Strg B)`}
+            onClick={onToggleSidebar}
+          >
+            <ToggleIcon size={16} />
+          </button>
+        )}
       </div>
 
-      <button type="button" className="titlebar-search">
-        <Search size={14} />
-        <span>Suchen oder Befehl eingeben …</span>
-        <span className="kbd">Strg K</span>
-      </button>
+      {!minimal && (
+        <button type="button" className="titlebar-search">
+          <Search size={14} />
+          <span>Suchen oder Befehl eingeben …</span>
+          <span className="kbd">Strg K</span>
+        </button>
+      )}
 
       <div className="window-controls">
         <button

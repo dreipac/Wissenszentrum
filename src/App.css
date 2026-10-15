@@ -17,3 +17,7 @@
   min-height: 0;
   background-color: var(--bg-app);
 }
+
+.app-error {
+  margin: 2rem;
+}

@@ -163,6 +163,21 @@ pub(crate) const MIGRATIONS: &[&str] = &[
         CHECK (from_node <> to_node)
     );
     CREATE INDEX idx_strategy_edges_strategy_id ON strategy_edges(strategy_id);",
+    // 10: Dokumentation als Baum aus Seiten (Wiki)
+    "CREATE TABLE doc_pages (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        parent_id  INTEGER REFERENCES doc_pages(id) ON DELETE CASCADE,
+        title      TEXT NOT NULL DEFAULT '',
+        content    TEXT NOT NULL DEFAULT '',
+        plain      TEXT NOT NULL DEFAULT '',
+        position   INTEGER NOT NULL DEFAULT 0,
+        favorite   INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX idx_doc_pages_parent_id ON doc_pages(parent_id);",
+    // 11: Ordner in der Dokumentation (Einträge sind Seiten oder Ordner)
+    "ALTER TABLE doc_pages ADD COLUMN kind TEXT NOT NULL DEFAULT 'page' CHECK (kind IN ('page', 'folder'));",
 ];
 
 /// Öffnet die Verbindung vor, setzt Pragmas und führt offene Migrationen aus.
@@ -192,6 +207,23 @@ mod tests {
         let c = Connection::open_in_memory().unwrap();
         init(&c).unwrap();
         c
+    }
+
+    #[test]
+    fn migration_11_marks_existing_doc_entries_as_pages() {
+        let c = Connection::open_in_memory().unwrap();
+        c.pragma_update(None, "foreign_keys", true).unwrap();
+        for sql in &MIGRATIONS[..10] {
+            c.execute_batch(sql).unwrap();
+        }
+        c.pragma_update(None, "user_version", 10i64).unwrap();
+        c.execute("INSERT INTO doc_pages (title, content) VALUES ('Alt', '<p>x</p>')", []).unwrap();
+
+        migrate(&c).unwrap();
+
+        let pages = crate::docs::list_pages(&c).unwrap();
+        assert_eq!((pages[0].title.as_str(), pages[0].kind.as_str(), pages[0].content.as_str()), ("Alt", "page", "<p>x</p>"));
+        assert!(c.execute("INSERT INTO doc_pages (title, kind) VALUES ('X', 'kaputt')", []).is_err(), "ungültige Art wird abgelehnt");
     }
 
     #[test]

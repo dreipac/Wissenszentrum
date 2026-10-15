@@ -3,13 +3,15 @@ import { Modal } from "../ui/Modal";
 import { Button } from "../ui/Button";
 import { SecondaryButton } from "../ui/SecondaryButton";
 import { getApiKey, saveApiKey } from "../../lib/api/trading";
+import { useProfile } from "../../lib/profile";
 
 interface SettingsModalProps {
   onClose: () => void;
 }
 
-/** Einstellungen. Bisher: Finnhub-API-Key für Aktien- und Krypto-Kurse. */
+/** Einstellungen: Profil und Speicherort (nur Anzeige) und Finnhub-API-Key für Aktien- und Krypto-Kurse. */
 export function SettingsModal({ onClose }: SettingsModalProps) {
+  const profile = useProfile();
   const [apiKey, setApiKey] = useState("");
   const [saved, setSaved] = useState("");
   const [busy, setBusy] = useState(false);
@@ -56,6 +58,15 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
         </>
       }
     >
+      <div className="field">
+        <label htmlFor="settings-name">Profil</label>
+        <input id="settings-name" className="field-control" value={profile.fullName} readOnly />
+      </div>
+      <div className="field">
+        <label htmlFor="settings-db">Speicherort der Datenbank</label>
+        <input id="settings-db" className="field-control" value={profile.dbPath ?? ""} readOnly title={profile.dbPath ?? ""} />
+      </div>
+
       <div className="field">
         <label htmlFor="settings-finnhub">Finnhub API-Key</label>
         <input

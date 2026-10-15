@@ -15,6 +15,7 @@ import {
 import { Button } from "../ui/Button";
 import { SecondaryButton } from "../ui/SecondaryButton";
 import { useDialogs } from "../../lib/dialogs";
+import { useProfile } from "../../lib/profile";
 import type { ViewId } from "../../lib/navigation";
 import { createAndOpenNote } from "../../lib/notesActions";
 import { useTasks } from "../../lib/useTasks";
@@ -42,6 +43,7 @@ interface SidebarProps {
 }
 
 export function Sidebar({ active, onNavigate, collapsed }: SidebarProps) {
+  const profile = useProfile();
   const { tasks, buckets } = useTasks();
   const { openNewTask, openNewBucket, openSettings } = useDialogs();
   const openCount = tasks.filter((t) => !t.done).length;
@@ -114,9 +116,9 @@ export function Sidebar({ active, onNavigate, collapsed }: SidebarProps) {
 
         <div className="sidebar-footer">
           <div className="sidebar-user">
-            <span className="avatar">AD</span>
+            <span className="avatar">{profile.initials}</span>
             <div className="sidebar-user-text">
-              <span className="sidebar-user-name">Armin</span>
+              <span className="sidebar-user-name">{profile.fullName}</span>
               <span className="sidebar-user-sub">Lokaler Arbeitsbereich</span>
             </div>
           </div>
