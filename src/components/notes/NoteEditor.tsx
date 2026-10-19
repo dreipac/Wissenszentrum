@@ -105,6 +105,7 @@ export function NoteEditor({ note, folders }: NoteEditorProps) {
   }, [save]);
 
   const fileInput = useRef<HTMLInputElement>(null);
+  const pressedOnBackground = useRef(false);
   const insertFiles = useRef<(files: File[], pos?: number) => void>(() => undefined);
   const [fileError, setFileError] = useState<string | null>(null);
 
@@ -322,7 +323,9 @@ export function NoteEditor({ note, folders }: NoteEditorProps) {
       <div
         className="note-editor-scroll"
         data-editor-theme={editorTheme}
-        onClick={(e) => e.target === e.currentTarget && editor?.commands.focus("end")}
+        onMouseDown={(e) => (pressedOnBackground.current = e.target === e.currentTarget)}
+        // Nur ein Klick, der auch auf der freien Fläche begann (sonst löscht das Markieren über den Rand hinaus die Markierung)
+        onClick={(e) => pressedOnBackground.current && e.target === e.currentTarget && editor?.commands.focus("end")}
       >
         <article className="note-article">
           <input

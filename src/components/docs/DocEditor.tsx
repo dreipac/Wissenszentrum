@@ -69,6 +69,7 @@ export function DocEditor({ page, editing, subpages, onOpen }: DocEditorProps) {
   const titleRef = useRef<HTMLInputElement>(null);
   const articleRef = useRef<HTMLElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
+  const pressedOnBackground = useRef(false);
   const anyFileInput = useRef<HTMLInputElement>(null);
   const insertAttachments = useRef<(files: File[], pos?: number) => void>(() => undefined);
   const [tableMoving, setTableMoving] = useState(false);
@@ -254,7 +255,10 @@ export function DocEditor({ page, editing, subpages, onOpen }: DocEditorProps) {
         </>
       )}
 
-      <div className="docs-scroll" data-editor-theme={editorTheme} onClick={(e) => editing && e.target === e.currentTarget && editor?.commands.focus("end")}>
+      <div className="docs-scroll" data-editor-theme={editorTheme} onMouseDown={(e) => (pressedOnBackground.current = e.target === e.currentTarget)}
+        // Nur ein Klick, der auch auf der freien Fläche begann: Wer im Text markiert und außerhalb loslässt, löst sonst einen Klick auf diese Fläche aus und die Markierung wäre weg
+        onClick={(e) => editing && pressedOnBackground.current && e.target === e.currentTarget && editor?.commands.focus("end")}
+      >
         <article ref={articleRef} className="doc-article">
           <input
             ref={titleRef}

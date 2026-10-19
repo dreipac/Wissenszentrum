@@ -4862,7 +4862,7 @@ dependencies = [
 
 [[package]]
 name = "wissenszentrum"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "futures-util",
  "reqwest 0.12.28",
