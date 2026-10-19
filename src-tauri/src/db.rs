@@ -178,6 +178,37 @@ pub(crate) const MIGRATIONS: &[&str] = &[
     CREATE INDEX idx_doc_pages_parent_id ON doc_pages(parent_id);",
     // 11: Ordner in der Dokumentation (Einträge sind Seiten oder Ordner)
     "ALTER TABLE doc_pages ADD COLUMN kind TEXT NOT NULL DEFAULT 'page' CHECK (kind IN ('page', 'folder'));",
+    // 12: Zwischenstände des Gesamtvermögens im Tagesverlauf (Zeit in UTC, Wert in CHF)
+    "CREATE TABLE portfolio_samples (
+        ts        TEXT PRIMARY KEY,
+        value_chf REAL NOT NULL
+    );",
+    // 13: Farbe der Buckets (Schlüssel aus einer festen Palette, leer = keine Farbe)
+    "ALTER TABLE buckets ADD COLUMN color TEXT NOT NULL DEFAULT '';",
+    // 14: Beginn von Aufgaben für den Zeitplan (Datum YYYY-MM-DD, leer = nur Fälligkeit)
+    "ALTER TABLE tasks ADD COLUMN start_date TEXT;",
+    // 15: Bilder der Dokumentation (die Seiten verweisen per ID darauf)
+    "CREATE TABLE doc_images (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        mime       TEXT NOT NULL,
+        data       BLOB NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );",
+    // 16: Logbuch zu Positionen (Beobachtungen, Fehler, „besser machen“; optional einer Strategie zugeordnet)
+    "CREATE TABLE trade_journal (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        trade_id    INTEGER NOT NULL REFERENCES trades(id) ON DELETE CASCADE,
+        strategy_id INTEGER REFERENCES strategies(id) ON DELETE SET NULL,
+        kind        TEXT NOT NULL CHECK (kind IN ('observation', 'mistake', 'improve', 'good')),
+        topic       TEXT NOT NULL DEFAULT '',
+        text        TEXT NOT NULL,
+        next_time   TEXT NOT NULL DEFAULT '',
+        price       REAL,
+        pnl_pct     REAL,
+        created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX idx_trade_journal_trade_id ON trade_journal(trade_id);
+    CREATE INDEX idx_trade_journal_strategy_id ON trade_journal(strategy_id);",
 ];
 
 /// Öffnet die Verbindung vor, setzt Pragmas und führt offene Migrationen aus.

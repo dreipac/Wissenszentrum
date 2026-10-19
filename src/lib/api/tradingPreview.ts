@@ -9,6 +9,7 @@ import type {
   NewTrade,
   Quote,
   RefreshResult,
+  Sample,
   Snapshot,
   SymbolMatch,
   Trade,
@@ -25,6 +26,7 @@ let movements: CashMovement[] = [];
 let metals: Metal[] = [];
 let quotes: Quote[] = [];
 let snapshots: Snapshot[] = [];
+let samples: Sample[] = [];
 let apiKey = "";
 
 const utcNow = () => new Date().toISOString().slice(0, 19).replace("T", " ");
@@ -112,6 +114,7 @@ export const tradingPreview = {
       metals: [...metals].sort((a, b) => b.id - a.id),
       quotes,
       snapshots: [...snapshots].sort((a, b) => a.day.localeCompare(b.day)),
+      samples: [...samples],
       hasApiKey: apiKey.trim() !== "",
     });
   },
@@ -249,6 +252,14 @@ export const tradingPreview = {
     snapshots = [...snapshots.filter((s) => s.day !== day), { day, valueChf }];
   },
 
+  async saveSample(valueChf: number): Promise<void> {
+    const value = Math.round(valueChf * 100) / 100;
+    const last = samples[samples.length - 1];
+    const age = last ? (Date.now() - Date.parse(`${last.ts.replace(" ", "T")}Z`)) / 1000 : Infinity;
+    if (last && ((Math.abs(last.valueChf - value) < 0.005 && age < 600) || age < 30)) return;
+    samples = [...samples, { ts: utcNow(), valueChf: value }];
+  },
+
   async getApiKey(): Promise<string> {
     return apiKey;
   },
@@ -265,7 +276,8 @@ export const tradingPreview = {
     for (const s of symbols) {
       const t = trades.find((x) => x.symbol === s)!;
       const last = quotes.find((q) => q.symbol === s)?.price ?? t.avgPrice ?? t.plannedPrice ?? 100;
-      await this.setQuote(s, Math.round(last * 1.02 * 100) / 100);
+      // zufällige Bewegung bis ±0,6 %
+      await this.setQuote(s, Math.max(0.01, Math.round(last * (1 + (Math.random() - 0.5) * 0.012) * 100) / 100));
     }
     return { updated: symbols.length, failed: [] };
   },

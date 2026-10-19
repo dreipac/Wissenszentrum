@@ -1,23 +1,24 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Minus, PanelLeftClose, PanelLeftOpen, Search, Square, X } from "lucide-react";
+import { Logo } from "../ui/Logo";
 import "./TitleBar.css";
 
 
 interface TitleBarProps {
   sidebarCollapsed?: boolean;
   onToggleSidebar?: () => void;
+  /** Öffnet den Schnellzugriff (Suche und Befehle) */
+  onSearch?: () => void;
   /** Nur Marke und Fenstersteuerung, z. B. im Onboarding */
   minimal?: boolean;
 }
 
-export function TitleBar({ sidebarCollapsed = false, onToggleSidebar, minimal = false }: TitleBarProps) {
+export function TitleBar({ sidebarCollapsed = false, onToggleSidebar, onSearch, minimal = false }: TitleBarProps) {
   const ToggleIcon = sidebarCollapsed ? PanelLeftOpen : PanelLeftClose;
   return (
     <header className="titlebar" data-tauri-drag-region>
       <div className="titlebar-brand" data-tauri-drag-region>
-        <span className="brand-mark" aria-hidden>
-          W
-        </span>
+        <Logo size={20} className="brand-logo" />
         <span className="brand-name" data-tauri-drag-region>
           Wissenszentrum
         </span>
@@ -35,7 +36,7 @@ export function TitleBar({ sidebarCollapsed = false, onToggleSidebar, minimal = 
       </div>
 
       {!minimal && (
-        <button type="button" className="titlebar-search">
+        <button type="button" className="titlebar-search" aria-label="Suchen oder Befehl eingeben" onClick={onSearch}>
           <Search size={14} />
           <span>Suchen oder Befehl eingeben …</span>
           <span className="kbd">Strg K</span>

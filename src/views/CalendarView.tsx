@@ -19,6 +19,7 @@ import {
 import {
   addDays,
   addMonths,
+  parseDateTime,
   formatLongDay,
   formatMonthYear,
   formatWeekRange,
@@ -31,6 +32,7 @@ import {
   weekDays,
 } from "../lib/dates";
 import { useEvents } from "../lib/useEvents";
+import { useOpenTarget } from "../lib/openTarget";
 import "../components/calendar/Calendar.css";
 
 type Mode = "day" | "workweek" | "week" | "month";
@@ -98,10 +100,16 @@ export function CalendarView() {
   // Ausgewählter Termin: bleibt markiert und zeigt seine Details in der Seitenleiste
   const [selectedId, setSelectedId] = useState<number | null>(null);
 
+  // Aus der Suche: zum Tag des Termins springen und ihn markieren, sobald er geladen ist
+  const [wanted, setWanted] = useState<number | null>(null);
+  useOpenTarget("event", (t) => {
+    setDate(startOfDay(parseDateTime(`${t.date} 00:00`)));
+    setWanted(t.id);
+  });
+
   const [from, to] = visibleRange(date, mode);
   const { events, error, reload } = useEvents(from, to);
   const selectedEvent = events.find((e) => e.id === selectedId) ?? null;
-
   // Auswahl und Vorschau gelten nur für die aktuell sichtbare Ansicht
   const dateKey = toDateStr(date);
   useEffect(() => {
@@ -109,6 +117,14 @@ export function CalendarView() {
     setPreview(null);
     setSelectedId(null);
   }, [mode, from, dateKey]);
+
+  // Muss nach dem Zurücksetzen oben stehen, damit die gewünschte Auswahl nicht gleich wieder gelöscht wird
+  useEffect(() => {
+    if (wanted === null) return;
+    if (selectedId === wanted) setWanted(null);
+    else if (events.some((e) => e.id === wanted)) setSelectedId(wanted);
+  }, [wanted, events, selectedId]);
+
 
   // Beim Blättern gleitet der Inhalt kurz herein (Web Animations API: bleibt ohne Neuaufbau, Scrollposition bleibt erhalten)
   const animRef = useRef<HTMLDivElement>(null);

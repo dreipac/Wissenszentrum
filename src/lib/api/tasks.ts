@@ -51,3 +51,7 @@ export const setSubtaskDone = (id: number, done: boolean): Promise<Task> =>
 /** Hakt ab/öffnet wieder. Beim Abhaken kann die Bucket-Regel die Aufgabe automatisch verschieben. */
 export const setTaskDone = (id: number, done: boolean): Promise<Task> =>
   changed(inTauri ? invoke("set_task_done", { id, done }) : tasksStore.setDone(id, done));
+
+/** Ändert nur Beginn und Fälligkeit, z. B. beim Verschieben oder Ziehen im Zeitplan. */
+export const setTaskDates = (id: number, startDate: string | null, dueDate: string | null): Promise<Task> =>
+  changed(inTauri ? invoke("set_task_dates", { id, startDate, dueDate }) : tasksStore.setDates(id, startDate, dueDate));

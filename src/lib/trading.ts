@@ -80,6 +80,13 @@ export interface Snapshot {
   valueChf: number;
 }
 
+/** Zwischenstand des Gesamtvermögens im Tagesverlauf. */
+export interface Sample {
+  /** UTC, `YYYY-MM-DD HH:MM:SS` */
+  ts: string;
+  valueChf: number;
+}
+
 export interface TradingState {
   trades: Trade[];
   movements: CashMovement[];
@@ -87,6 +94,7 @@ export interface TradingState {
   metals: Metal[];
   quotes: Quote[];
   snapshots: Snapshot[];
+  samples: Sample[];
   hasApiKey: boolean;
 }
 

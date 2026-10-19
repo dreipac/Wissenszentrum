@@ -176,3 +176,16 @@
   font-size: 0.8rem;
   color: var(--text-faint);
 }
+
+/* Farbpunkt der Buckets; ohne Farbe ein hohler Kreis, damit die Namen bündig bleiben */
+.sidebar-dot {
+  width: 8px;
+  height: 8px;
+  flex-shrink: 0;
+  border: 1px solid var(--border-strong-hover);
+  border-radius: 50%;
+}
+
+.sidebar-dot.colored {
+  border-color: transparent;
+}

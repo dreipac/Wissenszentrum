@@ -10,14 +10,76 @@
   background-image: radial-gradient(ellipse 70% 60% at 50% 0%, color-mix(in srgb, var(--accent) 9%, transparent), transparent 70%);
 }
 
-.ob-card {
-  width: min(540px, 100%);
-  margin: auto;
-  padding: 2.25rem 2.5rem 2rem;
-  border: 1px solid var(--border-strong);
-  border-radius: 16px;
-  background-color: var(--bg-card);
-  box-shadow: var(--shadow-pop);
+/* ---------- Schritte 1–3: Inhalt links auf dem Hintergrund, rechts unten ragt die App groß ins Bild ---------- */
+.onboarding.flow {
+  position: relative;
+  justify-content: flex-start;
+  padding: 2rem clamp(1.5rem, 8vw, 7rem);
+  overflow: hidden;
+}
+
+.ob-flow {
+  position: relative;
+  z-index: 1;
+  width: min(460px, 100%);
+}
+
+.ob-flow-logo {
+  display: block;
+  margin-bottom: 1.75rem;
+  user-select: none;
+}
+
+/* Nur ein Ausschnitt: links oben im Bild, also die Seitenleiste und ein Stück des Inhalts, der Rest läuft aus dem Fenster */
+.ob-peek {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.ob-peek-glow {
+  position: absolute;
+  right: -12%;
+  bottom: -26%;
+  width: 78%;
+  height: 90%;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--accent) 55%, transparent), transparent);
+  filter: blur(60px);
+  opacity: 0.5;
+}
+
+.ob-peek-img {
+  position: absolute;
+  top: 19%;
+  left: 52%;
+  width: max(1250px, 112vw);
+  max-width: none;
+  height: auto;
+  user-select: none;
+  animation: ob-peek-in 0.8s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes ob-peek-in {
+  from {
+    opacity: 0;
+    transform: translate(40px, 40px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (max-width: 920px) {
+  .onboarding.flow {
+    justify-content: center;
+  }
+
+  .ob-peek {
+    display: none;
+  }
 }
 
 /* ---------- Fortschritt ---------- */
@@ -109,20 +171,6 @@
   }
 }
 
-.ob-logo {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 52px;
-  height: 52px;
-  margin-bottom: 1.25rem;
-  border-radius: 14px;
-  background-color: #ffffff;
-  color: var(--btn-primary-text);
-  font-size: 1.6rem;
-  font-weight: 700;
-}
-
 .ob-logo.done {
   border: 1px solid color-mix(in srgb, var(--positive) 45%, transparent);
   background-color: color-mix(in srgb, var(--positive) 14%, transparent);
@@ -131,7 +179,7 @@
 
 .ob-title {
   margin: 0 0 0.5rem;
-  font-size: 1.5rem;
+  font-size: 1.85rem;
   font-weight: 600;
   line-height: 1.25;
   letter-spacing: -0.01em;
@@ -144,50 +192,6 @@
   color: var(--text-muted);
 }
 
-.ob-features {
-  display: flex;
-  flex-direction: column;
-  gap: 0.9rem;
-  margin: 0 0 1.75rem;
-  padding: 0;
-  list-style: none;
-}
-
-.ob-features li {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.8rem;
-}
-
-.ob-feature-icon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  flex-shrink: 0;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-md);
-  background-color: var(--bg-sidebar);
-  color: var(--text-muted);
-}
-
-.ob-features div {
-  display: flex;
-  flex-direction: column;
-  gap: 0.1rem;
-  font-size: 0.85rem;
-  line-height: 1.45;
-}
-
-.ob-features strong {
-  font-weight: 600;
-}
-
-.ob-features span:not(.ob-feature-icon) {
-  color: var(--text-muted);
-}
-
 /* ---------- Formular ---------- */
 .ob-fields {
   display: grid;
@@ -195,11 +199,11 @@
   gap: 0.9rem;
 }
 
-.ob-card .field-control.invalid {
+.ob-flow .field-control.invalid {
   border-color: var(--negative);
 }
 
-.ob-card .field-error {
+.ob-flow .field-error {
   margin: 0.75rem 0 0;
 }
 
@@ -343,4 +347,148 @@
   align-items: center;
   justify-content: center;
   gap: 0.45rem;
+}
+
+.ob-actions.stack {
+  flex-direction: column;
+  align-items: stretch;
+  margin-top: 0;
+}
+
+.ob-actions.stack .ob-primary {
+  flex: none;
+  width: 100%;
+}
+
+.ob-path.empty span {
+  color: var(--text-faint);
+}
+
+.ob-after {
+  margin: 1.25rem 0 0.9rem;
+}
+
+/* ---------- Willkommensseite: freie Fläche ohne Karte ---------- */
+.ob-hero {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: min(520px, 100%);
+  margin: auto;
+  text-align: center;
+  animation: ob-hero-in 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes ob-hero-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.ob-hero-mark {
+  position: relative;
+  margin-bottom: 1.75rem;
+}
+
+/* Weicher Schein in den Farben des Logos direkt hinter dem Zeichen */
+.ob-hero-glow {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 210px;
+  height: 210px;
+  margin: -105px 0 0 -105px;
+  border-radius: 50%;
+  background: conic-gradient(from 30deg, #3b82f6, #8b5cf6, #f97316, #22c55e, #3b82f6);
+  filter: blur(64px);
+  opacity: 0.3;
+}
+
+.ob-hero-logo {
+  position: relative;
+  display: block;
+  filter: drop-shadow(0 16px 28px rgba(0, 0, 0, 0.45));
+  user-select: none;
+}
+
+.ob-hero-title {
+  margin: 0 0 0.9rem;
+  font-size: 2.25rem;
+  font-weight: 600;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+  color: var(--text);
+}
+
+/* Erste Zeile leiser, zweite in voller Textfarbe: Betonung ohne Farbe */
+.ob-hero-title span {
+  display: block;
+  margin-bottom: 0.15rem;
+  font-size: 1.55rem;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  color: var(--text-muted);
+}
+
+.ob-hero-lead {
+  max-width: 400px;
+  margin: 0 0 2rem;
+  font-size: 0.98rem;
+  line-height: 1.6;
+  color: var(--text-muted);
+}
+
+.ob-hero-notice {
+  max-width: 420px;
+  margin: -0.5rem 0 1.5rem;
+  text-align: left;
+}
+
+.ob-hero-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  width: 300px;
+  max-width: 100%;
+}
+
+.ob-hero-actions .btn,
+.ob-hero-actions .btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  width: 100%;
+}
+
+.ob-notice-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  margin: -2px -4px 0 auto;
+  flex-shrink: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: inherit;
+  opacity: 0.7;
+  cursor: pointer;
+  transition: opacity 0.15s, background-color 0.15s;
+}
+
+.ob-notice-close:hover {
+  opacity: 1;
+  background-color: color-mix(in srgb, currentColor 14%, transparent);
+}
+
+.ob-notice .ob-notice-close svg {
+  margin-top: 0;
 }

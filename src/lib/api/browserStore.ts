@@ -89,8 +89,14 @@ function checkBucket(input: BucketInput, ownId: number | null): string {
   return name;
 }
 
+function checkDates(start: string | null, due: string | null) {
+  if (start !== null && due === null) throw "Ein Beginn braucht auch ein Fälligkeitsdatum.";
+  if (start !== null && due !== null && start > due) throw "Der Beginn darf nicht nach dem Fälligkeitsdatum liegen.";
+}
+
 function checkTask(input: TaskInput) {
   if (!input.title.trim()) throw "Der Titel darf nicht leer sein.";
+  checkDates(input.startDate, input.dueDate);
   if (input.bucketId !== null && !buckets.some((b) => b.id === input.bucketId)) {
     throw "Der gewählte Bucket existiert nicht mehr.";
   }
@@ -104,7 +110,7 @@ export const tasksStore = {
     return sortedTasks().map((t) => ({ ...t }));
   },
   async createBucket(input: BucketInput) {
-    const bucket = { id: nextBucketId++, name: checkBucket(input, null), onCompleteBucketId: input.onCompleteBucketId };
+    const bucket: Bucket = { id: nextBucketId++, name: checkBucket(input, null), onCompleteBucketId: input.onCompleteBucketId, color: input.color };
     buckets.push(bucket);
     return { ...bucket };
   },
@@ -113,6 +119,7 @@ export const tasksStore = {
     if (!bucket) throw "Bucket nicht gefunden.";
     bucket.name = checkBucket(input, id);
     bucket.onCompleteBucketId = input.onCompleteBucketId;
+    bucket.color = input.color;
     return { ...bucket };
   },
   async reorderBuckets(ids: number[]) {
@@ -156,6 +163,14 @@ export const tasksStore = {
     const at = beforeTaskId === null || beforeTaskId === id ? -1 : tasks.findIndex((t) => t.id === beforeTaskId);
     if (at === -1) tasks.push(task);
     else tasks.splice(at, 0, task);
+    return { ...task };
+  },
+  async setDates(id: number, startDate: string | null, dueDate: string | null) {
+    checkDates(startDate, dueDate);
+    const task = tasks.find((t) => t.id === id);
+    if (!task) throw "Aufgabe nicht gefunden.";
+    task.startDate = startDate;
+    task.dueDate = dueDate;
     return { ...task };
   },
   async setSubtaskDone(id: number, done: boolean) {

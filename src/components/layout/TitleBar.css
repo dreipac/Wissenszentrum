@@ -23,18 +23,12 @@
   margin-left: 0.5rem;
 }
 
-.brand-mark {
-  display: flex;
-  align-items: center;
-  justify-content: center;
+.brand-logo {
+  display: block;
   width: 20px;
   height: 20px;
-  border-radius: 6px;
-  background-color: #ffffff;
-  color: var(--btn-primary-text);
-  font-size: 0.75rem;
-  font-weight: 700;
   pointer-events: none;
+  user-select: none;
 }
 
 .brand-name {

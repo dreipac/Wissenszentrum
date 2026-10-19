@@ -36,7 +36,7 @@ export function FolderView({ folder, items, pages, onOpen, onNew }: FolderViewPr
   return (
     <div className="doc-body">
       <div className="docs-scroll">
-        <article className="doc-article">
+        <article className="doc-article wide">
           <div className="folder-head">
             <span className="folder-icon" aria-hidden>
               <FolderClosed size={22} />
@@ -73,20 +73,19 @@ export function FolderView({ folder, items, pages, onOpen, onNew }: FolderViewPr
           {items.length === 0 ? (
             <p className="muted folder-empty">Dieser Ordner ist noch leer.</p>
           ) : (
-            <ul className="doc-cards">
+            <ul className="doc-list">
               {items.map((item) => {
                 const children = pages.filter((p) => p.parentId === item.id).length;
+                const folder = isFolder(item);
                 return (
                   <li key={item.id}>
-                    <button type="button" className="doc-card" onClick={() => onOpen(item.id)}>
-                      <span className="doc-card-icon">{isFolder(item) ? <FolderClosed size={18} /> : <FileText size={18} />}</span>
-                      <span className="doc-card-text">
-                        <span className="doc-card-title">{pageTitle(item)}</span>
-                        <span className="doc-card-sub">
-                          {isFolder(item) ? countLabel(children) : children > 0 ? `${children} ${children === 1 ? "Unterseite" : "Unterseiten"}` : `Bearbeitet ${formatNoteTime(item.updatedAt)}`}
-                        </span>
+                    <button type="button" className="doc-row" onClick={() => onOpen(item.id)}>
+                      {folder ? <FolderClosed size={16} /> : <FileText size={16} />}
+                      <span className="doc-row-title">{pageTitle(item)}</span>
+                      <span className="doc-row-meta">
+                        {folder ? countLabel(children) : children > 0 ? `${children} ${children === 1 ? "Unterseite" : "Unterseiten"}` : `Bearbeitet ${formatNoteTime(item.updatedAt)}`}
                       </span>
-                      <ChevronRight size={15} />
+                      <ChevronRight size={14} />
                     </button>
                   </li>
                 );

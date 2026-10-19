@@ -1,3 +1,4 @@
+import { useEditorTheme } from "../../lib/editorTheme";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { EditorContent, useEditor, useEditorState } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
@@ -192,6 +193,7 @@ export function NoteEditor({ note, folders }: NoteEditorProps) {
     }
   };
 
+  const { theme: editorTheme } = useEditorTheme();
   const status = error ? "Speichern fehlgeschlagen" : saving ? "Speichert …" : `Zuletzt bearbeitet: ${formatNoteTime(note.updatedAt)}`;
 
   return (
@@ -272,6 +274,7 @@ export function NoteEditor({ note, folders }: NoteEditorProps) {
 
       <div
         className="note-editor-scroll"
+        data-editor-theme={editorTheme}
         onClick={(e) => e.target === e.currentTarget && editor?.commands.focus("end")}
       >
         <article className="note-article">

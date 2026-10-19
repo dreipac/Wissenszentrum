@@ -8,7 +8,15 @@ import { ChevronRight, FileText, FolderClosed } from "lucide-react";
 import { updateDocPage } from "../../lib/api/docs";
 import { isEmptyPage, isFolder, pageTitle, type DocPage } from "../../lib/docs";
 import { formatNoteTime } from "../../lib/notes";
+import { addDocImage } from "../../lib/api/docImages";
+import { prepareImage } from "../../lib/imageProcess";
+import { useEditorTheme } from "../../lib/editorTheme";
+import { DocImage } from "./DocImage";
+import { SizedTableRow } from "./SizedTableRow";
+import { TextSize } from "./TextSize";
 import { DocToolbar } from "./DocToolbar";
+import { NodeBar } from "./NodeBar";
+import { TableHandle } from "./TableHandle";
 import { TableBar } from "./TableBar";
 
 const AUTOSAVE_MS = 600;
@@ -27,11 +35,13 @@ function readOutline(editor: Editor): OutlineItem[] {
   return items;
 }
 
+/** Nur die Bilddateien aus einer Dateiliste. */
+const imageFiles = (list: FileList | null | undefined): File[] => [...(list ?? [])].filter((f) => f.type.startsWith("image/"));
+
 interface DocEditorProps {
   page: DocPage;
   /** true = bearbeiten, false = lesen */
   editing: boolean;
-  onEdit: () => void;
   /** Unterseiten dieser Seite, werden unter dem Text aufgelistet */
   subpages: DocPage[];
   onOpen: (id: number) => void;
@@ -42,7 +52,7 @@ interface DocEditorProps {
  * speichert der Editor automatisch kurz nach dem Tippen. Der lokale Zustand gehört dem Editor: Änderungen der
  * Seitenliste überschreiben nichts, während man schreibt. Pro Seite neu einsetzen (`key={page.id}`).
  */
-export function DocEditor({ page, editing, onEdit, subpages, onOpen }: DocEditorProps) {
+export function DocEditor({ page, editing, subpages, onOpen }: DocEditorProps) {
   const [title, setTitle] = useState(page.title);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -56,6 +66,10 @@ export function DocEditor({ page, editing, onEdit, subpages, onOpen }: DocEditor
   const timer = useRef<number | undefined>(undefined);
   const titleRef = useRef<HTMLInputElement>(null);
   const articleRef = useRef<HTMLElement>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
+  const [tableMoving, setTableMoving] = useState(false);
+  const insertImages = useRef<(files: File[], pos?: number) => void>(() => undefined);
+  const [imageError, setImageError] = useState<string | null>(null);
 
   const save = useCallback(async () => {
     window.clearTimeout(timer.current);
@@ -87,13 +101,38 @@ export function DocEditor({ page, editing, onEdit, subpages, onOpen }: DocEditor
       }),
       TaskList,
       TaskItem.configure({ nested: true }),
-      TableKit.configure({ table: { resizable: false } }),
+      // Spaltenbreite lässt sich an den Trennlinien mit der Maus ziehen
+      TableKit.configure({ table: { resizable: true, cellMinWidth: 60, handleWidth: 6 }, tableRow: false }),
+      SizedTableRow,
+      TextSize,
+      DocImage,
       Placeholder.configure({ placeholder: "Schreibe hier die Dokumentation …" }),
     ],
     content: page.content,
-    editable: editing,
+    // Immer bearbeitbar erzeugen: die Tabellenerweiterung richtet das Ziehen der Spaltenbreite nur dann ein; der Lesemodus
+    // wird gleich danach gesetzt (siehe unten) und sperrt das Ziehen wieder
+    editable: true,
     // Klasse note-prose liefert die Grundgestaltung (Listen, Zitate, Code), doc-prose ergänzt Tabellen und Größen
-    editorProps: { attributes: { class: "note-prose doc-prose", spellcheck: "true" } },
+    editorProps: {
+      attributes: { class: "note-prose doc-prose", spellcheck: "true" },
+      // Bilder aus der Zwischenablage oder per Drag & Drop einfügen
+      handlePaste: (_view, event) => {
+        const files = imageFiles(event.clipboardData?.files);
+        if (files.length === 0) return false;
+        event.preventDefault();
+        insertImages.current(files);
+        return true;
+      },
+      handleDrop: (view, event, _slice, moved) => {
+        // Verschobene Bilder und Texte übernimmt der Editor selbst, auch in Tabellenzellen hinein
+        if (moved) return false;
+        const files = imageFiles(event.dataTransfer?.files);
+        if (files.length === 0) return false;
+        event.preventDefault();
+        insertImages.current(files, view.posAtCoords({ left: event.clientX, top: event.clientY })?.pos);
+        return true;
+      },
+    },
     onCreate: ({ editor }) => setOutline(readOutline(editor)),
     onUpdate: ({ editor }) => {
       draft.current.content = editor.getHTML();
@@ -103,6 +142,25 @@ export function DocEditor({ page, editing, onEdit, subpages, onOpen }: DocEditor
       schedule();
     },
   });
+
+  // Bilder verkleinern, speichern und an der Stelle einfügen (Cursor, Ablageort oder Ende)
+  insertImages.current = (files, pos) => {
+    if (!editor) return;
+    setImageError(null);
+    void (async () => {
+      for (const file of files) {
+        try {
+          const prepared = await prepareImage(file);
+          const imageId = await addDocImage(prepared.blob, prepared.mime);
+          const attrs = { imageId, width: Math.min(prepared.width, 560) };
+          if (pos !== undefined) editor.chain().focus().insertContentAt(pos, { type: "docImage", attrs }).run();
+          else editor.chain().focus().insertDocImage(attrs).run();
+        } catch (e) {
+          setImageError(String(e));
+        }
+      }
+    })();
+  };
 
   // Lesen/Bearbeiten umschalten; beim Verlassen des Bearbeitens sofort speichern
   useEffect(() => {
@@ -152,13 +210,14 @@ export function DocEditor({ page, editing, onEdit, subpages, onOpen }: DocEditor
     if (dom instanceof HTMLElement) dom.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
-  const status = error ? "Speichern fehlgeschlagen" : saving ? "Speichert …" : `Zuletzt bearbeitet ${formatNoteTime(page.updatedAt)}`;
+  const { theme: editorTheme } = useEditorTheme();
+  const status = imageError ?? (error ? "Speichern fehlgeschlagen" : saving ? "Speichert …" : `Zuletzt bearbeitet ${formatNoteTime(page.updatedAt)}`);
 
   return (
     <div className="doc-body">
       {editing && (
         <>
-          <DocToolbar editor={editor} linkOpen={linkOpen} onLink={openLink} />
+          <DocToolbar editor={editor} linkOpen={linkOpen} onLink={openLink} onImage={() => fileInput.current?.click()} />
 
           {linkOpen && (
             <form className="note-linkbar" onSubmit={applyLink}>
@@ -175,7 +234,7 @@ export function DocEditor({ page, editing, onEdit, subpages, onOpen }: DocEditor
         </>
       )}
 
-      <div className="docs-scroll" onClick={(e) => editing && e.target === e.currentTarget && editor?.commands.focus("end")}>
+      <div className="docs-scroll" data-editor-theme={editorTheme} onClick={(e) => editing && e.target === e.currentTarget && editor?.commands.focus("end")}>
         <article ref={articleRef} className="doc-article">
           <input
             ref={titleRef}
@@ -202,26 +261,37 @@ export function DocEditor({ page, editing, onEdit, subpages, onOpen }: DocEditor
           </div>
 
           <EditorContent editor={editor} />
-          <TableBar editor={editor} anchor={articleRef} />
+          <TableBar editor={editor} anchor={articleRef} hidden={tableMoving} />
+          <NodeBar editor={editor} anchor={articleRef} />
+          <TableHandle editor={editor} anchor={articleRef} onMoving={setTableMoving} />
+          {editing && (
+            <input
+              ref={fileInput}
+              type="file"
+              accept="image/*"
+              multiple
+              hidden
+              onChange={(e) => {
+                insertImages.current(imageFiles(e.target.files));
+                e.target.value = "";
+              }}
+            />
+          )}
 
           {!editing && empty && (
-            <div className="doc-empty">
-              <p className="muted">Diese Seite ist noch leer.</p>
-              <button type="button" className="btn-secondary sm" onClick={onEdit}>
-                Jetzt schreiben
-              </button>
-            </div>
+            <p className="muted doc-empty">Diese Seite ist noch leer.</p>
           )}
 
           {subpages.length > 0 && (
             <section className="doc-subpages" aria-label="Unterseiten">
               <span className="card-title">Unterseiten</span>
-              <ul>
+              <ul className="doc-list">
                 {subpages.map((s) => (
                   <li key={s.id}>
-                    <button type="button" onClick={() => onOpen(s.id)}>
-                      {isFolder(s) ? <FolderClosed size={15} /> : <FileText size={15} />}
-                      <span>{pageTitle(s)}</span>
+                    <button type="button" className="doc-row" onClick={() => onOpen(s.id)}>
+                      {isFolder(s) ? <FolderClosed size={16} /> : <FileText size={16} />}
+                      <span className="doc-row-title">{pageTitle(s)}</span>
+                      <span className="doc-row-meta">Bearbeitet {formatNoteTime(s.updatedAt)}</span>
                       <ChevronRight size={14} />
                     </button>
                   </li>

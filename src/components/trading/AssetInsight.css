@@ -1,0 +1,106 @@
+/* Kursverlauf und Kennzahlen eines Wertpapiers (Position und Asset) */
+.ai {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.ai-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.ai-price {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.ai-price strong {
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+.ai-change {
+  font-size: 0.8rem;
+}
+
+.ai-change em {
+  font-style: normal;
+  color: var(--text-faint);
+}
+
+.ai-chart {
+  min-height: 230px;
+  padding: 0.5rem 0.25rem 0;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-lg);
+  background-color: var(--bg-sidebar);
+  transition: opacity 0.15s;
+}
+
+.ai-chart.loading {
+  opacity: 0.6;
+}
+
+.ai-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+  min-height: 230px;
+  padding: 1rem;
+  text-align: center;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.ai-empty strong {
+  color: var(--text);
+  font-weight: 500;
+}
+
+.ai-empty span {
+  max-width: 420px;
+  font-size: 0.78rem;
+  color: var(--text-faint);
+}
+
+.ai-facts {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.75rem 1rem;
+  margin: 0;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-lg);
+  background-color: var(--bg-sidebar);
+}
+
+.ai-facts div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.ai-facts dt {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+.ai-facts dd {
+  margin: 0;
+  font-size: 0.88rem;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 760px) {
+  .ai-facts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

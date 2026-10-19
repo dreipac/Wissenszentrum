@@ -27,6 +27,8 @@ import { FolderView } from "../components/docs/FolderView";
 import { MovePageModal, NewPageModal } from "../components/docs/PageModals";
 import { deleteDocPage, setDocFavorite, shiftDocPage } from "../lib/api/docs";
 import { ancestors, buildTree, descendantIds, isFolder, pageTitle, searchPages, type DocKind, type DocNode, type DocPage } from "../lib/docs";
+import { useOpenTarget } from "../lib/openTarget";
+import { clearPendingDoc, onOpenDocRequest, peekPendingDoc } from "../lib/docsNav";
 import { useDocs } from "../lib/useDocs";
 import "./DocsView.css";
 
@@ -52,7 +54,6 @@ function writeStored(key: string, value: unknown) {
 
 interface TreeRowProps {
   node: DocNode;
-  depth: number;
   expanded: Set<number>;
   activeId: number | null;
   onToggle: (id: number) => void;
@@ -61,7 +62,7 @@ interface TreeRowProps {
   onMenu: (page: DocPage, x: number, y: number) => void;
 }
 
-function TreeRow({ node, depth, expanded, activeId, onToggle, onSelect, onAdd, onMenu }: TreeRowProps) {
+function TreeRow({ node, expanded, activeId, onToggle, onSelect, onAdd, onMenu }: TreeRowProps) {
   const { page, children } = node;
   const open = expanded.has(page.id);
   const hasChildren = children.length > 0;
@@ -72,7 +73,6 @@ function TreeRow({ node, depth, expanded, activeId, onToggle, onSelect, onAdd, o
     <li>
       <div
         className={`tree-row${activeId === page.id ? " active" : ""}`}
-        style={{ paddingLeft: `${0.25 + depth * 0.95}rem` }}
         onContextMenu={(e) => {
           e.preventDefault();
           onMenu(page, e.clientX, e.clientY);
@@ -102,6 +102,7 @@ function TreeRow({ node, depth, expanded, activeId, onToggle, onSelect, onAdd, o
           <span className={`tree-label${page.title.trim() ? "" : " untitled"}`}>{pageTitle(page)}</span>
           {page.favorite && <Star size={11} className="tree-fav" fill="currentColor" />}
         </button>
+        {hasChildren && <span className="tree-count">{children.length}</span>}
         <span className="tree-actions">
           <button
             type="button"
@@ -129,9 +130,9 @@ function TreeRow({ node, depth, expanded, activeId, onToggle, onSelect, onAdd, o
         </span>
       </div>
       {hasChildren && open && (
-        <ul className="tree-list">
+        <ul className="tree-list nested">
           {children.map((c) => (
-            <TreeRow key={c.page.id} node={c} depth={depth + 1} expanded={expanded} activeId={activeId} onToggle={onToggle} onSelect={onSelect} onAdd={onAdd} onMenu={onMenu} />
+            <TreeRow key={c.page.id} node={c} expanded={expanded} activeId={activeId} onToggle={onToggle} onSelect={onSelect} onAdd={onAdd} onMenu={onMenu} />
           ))}
         </ul>
       )}
@@ -141,7 +142,7 @@ function TreeRow({ node, depth, expanded, activeId, onToggle, onSelect, onAdd, o
 
 export function DocsView() {
   const { pages, loaded, error } = useDocs();
-  const [activeId, setActiveId] = useState<number | null>(() => readStored<number | null>(ACTIVE_KEY, null));
+  const [activeId, setActiveId] = useState<number | null>(() => peekPendingDoc() ?? readStored<number | null>(ACTIVE_KEY, null));
   const [expanded, setExpanded] = useState<Set<number>>(() => new Set(readStored<number[]>(EXPANDED_KEY, [])));
   const [editingId, setEditingId] = useState<number | null>(null);
   const [query, setQuery] = useState("");
@@ -162,6 +163,22 @@ export function DocsView() {
     if (!loaded || active || tree.length === 0) return;
     setActiveId(tree[0].page.id);
   }, [loaded, active, tree]);
+
+  // „Neue Seite“ aus dem Schnellzugriff
+  useOpenTarget("new-doc", () => setDialog({ kind: "new", parentId: active && isFolder(active) ? active.id : null, docKind: "page" }));
+
+  // Wünsche „Seite öffnen“ (z. B. vom Dashboard) entgegennehmen
+  useEffect(() => {
+    clearPendingDoc();
+    return onOpenDocRequest(() => {
+      const id = peekPendingDoc();
+      clearPendingDoc();
+      if (id === null) return;
+      setActiveId(id);
+      setEditingId(null);
+      setQuery("");
+    });
+  }, []);
 
   useEffect(() => writeStored(ACTIVE_KEY, activeId), [activeId]);
   useEffect(() => writeStored(EXPANDED_KEY, [...expanded]), [expanded]);
@@ -247,6 +264,8 @@ export function DocsView() {
     if (page.parentId !== null) setExpanded((prev) => new Set([...prev, page.parentId!]));
   };
 
+  const folderCount = pages.filter(isFolder).length;
+  const pageCount = pages.length - folderCount;
   const deletingCount = deleting ? descendantIds(pages, deleting.id).length : 0;
   const searching = query.trim() !== "";
 
@@ -312,13 +331,11 @@ export function DocsView() {
                   ))}
                 </section>
               )}
-              {tree.length > 0 && favorites.length > 0 && <span className="docs-label docs-tree-label">Seiten</span>}
               <ul className="tree-list root">
                 {tree.map((n) => (
                   <TreeRow
                     key={n.page.id}
                     node={n}
-                    depth={0}
                     expanded={expanded}
                     activeId={activeId}
                     onToggle={toggle}
@@ -332,6 +349,11 @@ export function DocsView() {
             </>
           )}
         </div>
+        {!searching && pages.length > 0 && (
+          <footer className="docs-tree-foot">
+            {folderCount} {folderCount === 1 ? "Ordner" : "Ordner"} · {pageCount} {pageCount === 1 ? "Seite" : "Seiten"}
+          </footer>
+        )}
       </aside>
 
       <section className="docs-page-pane">
@@ -403,8 +425,7 @@ export function DocsView() {
                 key={active.id}
                 page={active}
                 editing={editingId === active.id}
-                onEdit={() => setEditingId(active.id)}
-                subpages={subpages}
+                  subpages={subpages}
                 onOpen={select}
               />
             )}

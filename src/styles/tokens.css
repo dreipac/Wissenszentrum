@@ -37,6 +37,16 @@
   --negative: #ff6b6b;
   --warning: #fbbf24;
 
+  /* Bucket-Farben: gedämpft, damit sie sich in den dunklen Flächen ruhig einfügen */
+  --bucket-blue: #6b8cff;
+  --bucket-green: #55c08a;
+  --bucket-amber: #e0b04a;
+  --bucket-red: #e8716f;
+  --bucket-purple: #a688f0;
+  --bucket-pink: #e67fae;
+  --bucket-teal: #4fbfc4;
+  --bucket-gray: #8d8d8d;
+
   /* Farbe des Balkens an Kalendereinträgen */
   --event-color: var(--accent);
 
@@ -59,6 +69,17 @@
   --shadow-card: 0 2px 6px rgba(0, 0, 0, 0.25);
   --shadow-pop: 0 20px 50px rgba(0, 0, 0, 0.5);
 
+  /* Editor (Notizen, Dokumentation): Textfarbe und feine Linien */
+  --editor-text: #d4d4d4;
+  --editor-line: rgba(255, 255, 255, 0.07);
+  --editor-hover: rgba(255, 255, 255, 0.06);
+  --editor-danger-hover: rgba(255, 107, 107, 0.12);
+
+  /* Aufklappmenüs (Glas) */
+  --menu-bg: rgba(22, 22, 22, 0.78);
+  --menu-shadow: 0 10px 28px rgba(0, 0, 0, 0.45);
+  --menu-hover: rgba(255, 255, 255, 0.08);
+
   /* Layout */
   --titlebar-height: 36px;
   --sidebar-width: 244px;
@@ -72,3 +93,55 @@
   -moz-osx-font-smoothing: grayscale;
   -webkit-text-size-adjust: 100%;
 }
+
+/*
+ * Heller Editor: gilt nur in Flächen mit data-editor-theme="light" (Notizen und Dokumentation, siehe
+ * Einstellungen → Darstellung). Dieselben Token-Namen, andere Werte – alle Komponenten darin passen sich an.
+ * Ein ruhiges, warmes Papierweiß statt reinem Weiß; Akzent und Statusfarben etwas dunkler für Kontrast.
+ */
+[data-editor-theme="light"] {
+  color-scheme: light;
+
+  --bg-app: #fbfbfa;
+  --bg-sidebar: #f3f3f1;
+  --bg-card: #ffffff;
+  --bg-card-hover: #f7f7f5;
+  --bg-hover: #efefec;
+  --bg-active: #f5f5f3;
+  --bg-selected: #e8e8e4;
+
+  --border: #e3e3de;
+  --border-soft: #e7e7e2;
+  --border-strong: #d3d3cc;
+  --border-strong-hover: #b9b9b0;
+
+  --text: #1d1d1b;
+  --text-muted: #6a6a64;
+  --text-faint: #96968e;
+
+  --accent: #4f56e6;
+  --positive: #1f9d55;
+  --negative: #d64545;
+  --warning: #c98a0a;
+
+  --btn-primary-bg: #1d1d1b;
+  --btn-primary-bg-hover: #3a3a36;
+  --btn-primary-text: #ffffff;
+  --btn-secondary-bg-hover: rgba(0, 0, 0, 0.05);
+
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.08);
+  --shadow-pop: 0 12px 32px rgba(0, 0, 0, 0.18);
+
+  --editor-text: #2b2b28;
+  --editor-line: rgba(0, 0, 0, 0.08);
+  --editor-hover: rgba(0, 0, 0, 0.05);
+  --editor-danger-hover: rgba(214, 69, 69, 0.1);
+
+  --menu-bg: rgba(255, 255, 255, 0.9);
+  --menu-shadow: 0 10px 28px rgba(0, 0, 0, 0.18);
+  --menu-hover: rgba(0, 0, 0, 0.06);
+
+  background-color: var(--bg-app);
+  color: var(--text);
+}
+

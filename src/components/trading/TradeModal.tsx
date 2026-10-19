@@ -4,10 +4,16 @@ import { Modal } from "../ui/Modal";
 import { Button } from "../ui/Button";
 import { SecondaryButton } from "../ui/SecondaryButton";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
+import { addJournal } from "../../lib/api/journal";
 import { addExecution, deleteTrade, executeOrder, setQuote, updateTrade } from "../../lib/api/trading";
 import { formatMoney, formatPercent, formatSigned } from "../../lib/format";
 import { assetClassLabel, formatPrice, formatQuantity, quantityWithUnit, type Trade } from "../../lib/trading";
 import { formatNoteTime } from "../../lib/notes";
+import { AssetInsight } from "./AssetInsight";
+import { TradeJournal } from "./Journal";
+import { entryTime, KIND_LABEL, TOPIC_LABEL } from "../../lib/journal";
+import { useJournal } from "../../lib/useJournal";
+import { useStrategies } from "../../lib/useStrategies";
 import { CurrencySuffix, Field, NumberField, TextSuffix, fromInput, nowInput, parseNumber } from "./fields";
 import { useQtyValue } from "./useQtyValue";
 import "./TradingModals.css";
@@ -31,6 +37,11 @@ export function TradeModal({ trade, price, quoteAt, cash, onClose }: TradeModalP
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const { entries } = useJournal();
+  const { strategies } = useStrategies();
+  const ownEntries = entries.filter((e) => e.tradeId === trade.id);
+  const relatedStrategyId = strategies.find((st) => st.nodes.some((n) => n.symbol.trim().toUpperCase() === trade.symbol.toUpperCase()))?.id ?? null;
+  const toImprove = ownEntries.filter((e) => e.kind === "improve" || e.kind === "mistake");
 
   // Formularfelder der Panels
   const [px, setPx] = useState("");
@@ -39,6 +50,9 @@ export function TradeModal({ trade, price, quoteAt, cash, onClose }: TradeModalP
   const [at, setAt] = useState(nowInput);
   const [fx, setFx] = useState("");
   const [note, setNote] = useState("");
+  // Rückblick beim Schließen
+  const [reviewGood, setReviewGood] = useState("");
+  const [reviewBetter, setReviewBetter] = useState("");
   const [name, setName] = useState("");
   const [stop, setStop] = useState("");
   const [target, setTarget] = useState("");
@@ -70,6 +84,8 @@ export function TradeModal({ trade, price, quoteAt, cash, onClose }: TradeModalP
     setPanel(p);
     setFee("");
     setNote("");
+    setReviewGood("");
+    setReviewBetter("");
     setAt(nowInput());
     setFx(String(trade.fxRate));
     if (p === "buy" || p === "sell" || p === "execute") {
@@ -129,7 +145,15 @@ export function TradeModal({ trade, price, quoteAt, cash, onClose }: TradeModalP
       fxRate: panel === "execute" && !isChf ? rate : null,
       closeNote: sellsAll ? note : "",
     };
-    void run(() => (panel === "execute" ? executeOrder(trade.id, input) : addExecution(trade.id, input)));
+    const good = sellsAll ? reviewGood.trim() : "";
+    const better = sellsAll ? reviewBetter.trim() : "";
+    const review = { tradeId: trade.id, topic: "" as const, price: p, pnlPct: trade.avgPrice > 0 ? (p / trade.avgPrice - 1) * 100 : null };
+    void run(async () => {
+      await (panel === "execute" ? executeOrder(trade.id, input) : addExecution(trade.id, input));
+      // Der Rückblick wird Teil des Logbuchs; „Besser machen“ wird zur Regel der passenden Strategie
+      if (good) await addJournal({ ...review, kind: "good", text: good, nextTime: "", strategyId: null });
+      if (better) await addJournal({ ...review, kind: "improve", text: better, nextTime: "", strategyId: relatedStrategyId });
+    });
   };
 
   const submitEdit = () => {
@@ -254,6 +278,23 @@ export function TradeModal({ trade, price, quoteAt, cash, onClose }: TradeModalP
         ))}
       </div>
 
+      <AssetInsight symbol={trade.symbol} assetClass={trade.assetClass} currency={cur} price={price}
+        entry={trade.status === "order" ? trade.plannedPrice : trade.avgPrice}
+        markers={ownEntries.map((e) => ({
+          t: entryTime(e),
+          label: `${KIND_LABEL[e.kind]}${e.topic ? ` · ${TOPIC_LABEL[e.topic]}` : ""}: ${e.text.length > 80 ? `${e.text.slice(0, 80)} …` : e.text}`,
+          color: e.kind === "mistake" ? "var(--negative)" : e.kind === "improve" ? "var(--warning)" : e.kind === "good" ? "var(--positive)" : "var(--accent)",
+        }))}
+      />
+
+      <TradeJournal
+        trade={{ id: trade.id, symbol: trade.symbol, currency: cur }}
+        price={price ?? (trade.status === "open" ? trade.avgPrice : null)}
+        pnlPct={trade.status === "open" ? pnlPct : null}
+        entries={entries}
+        strategies={strategies}
+      />
+
       {trade.thesis && (
         <div className="tr-text-block">
           <span className="tm2-sub">Grund / These</span>
@@ -337,6 +378,26 @@ export function TradeModal({ trade, price, quoteAt, cash, onClose }: TradeModalP
                       onChange={(e) => setNote(e.target.value)}
                     />
                   </Field>
+                </div>
+              )}
+              {sellsAll && (
+                <div className="full jr-review">
+                  {toImprove.length > 0 && (
+                    <div className="jr-review-hint">
+                      <strong>Aus deinem Logbuch</strong>
+                      {toImprove.map((e) => (
+                        <span key={e.id}>{e.nextTime || e.text}</span>
+                      ))}
+                    </div>
+                  )}
+                  <div className="tm2-grid">
+                    <Field label="Was lief gut? (optional)" id="tp-good">
+                      <textarea id="tp-good" className="field-control" rows={2} value={reviewGood} onChange={(e) => setReviewGood(e.target.value)} />
+                    </Field>
+                    <Field label="Was würde ich anders machen? (optional)" id="tp-better" hint={relatedStrategyId !== null ? "Wird zur Regel der passenden Strategie." : undefined}>
+                      <textarea id="tp-better" className="field-control" rows={2} value={reviewBetter} onChange={(e) => setReviewBetter(e.target.value)} />
+                    </Field>
+                  </div>
                 </div>
               )}
             </div>

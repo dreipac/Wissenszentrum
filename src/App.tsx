@@ -13,6 +13,10 @@ import { Onboarding } from "./components/onboarding/Onboarding";
 import { DialogsProvider } from "./lib/dialogs";
 import { getAppState } from "./lib/api/app";
 import { ProfileProvider, type AppState } from "./lib/profile";
+import { SyncProvider } from "./lib/useSync";
+import { EditorThemeProvider } from "./lib/editorTheme";
+import { SyncBanner } from "./components/sync/SyncBanner";
+import { CommandPalette } from "./components/search/CommandPalette";
 import "./App.css";
 
 const views: Record<ViewId, ComponentType> = {
@@ -36,6 +40,7 @@ function Main() {
       return false;
     }
   });
+  const [searchOpen, setSearchOpen] = useState(false);
   const View = views[view];
 
   const toggleSidebar = () => setCollapsed((c) => !c);
@@ -48,12 +53,17 @@ function Main() {
     }
   }, [collapsed]);
 
-  // Strg+B blendet die Seitenleiste ein/aus
+  // Strg+B blendet die Seitenleiste ein/aus, Strg+K öffnet den Schnellzugriff
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "b") {
+      if (!(e.ctrlKey || e.metaKey)) return;
+      const key = e.key.toLowerCase();
+      if (key === "b") {
         e.preventDefault();
         setCollapsed((c) => !c);
+      } else if (key === "k") {
+        e.preventDefault();
+        setSearchOpen((open) => !open);
       }
     };
     window.addEventListener("keydown", onKey);
@@ -64,14 +74,16 @@ function Main() {
     <NavigationContext.Provider value={setView}>
       <DialogsProvider>
         <div className="app-shell">
-          <TitleBar sidebarCollapsed={collapsed} onToggleSidebar={toggleSidebar} />
+          <TitleBar sidebarCollapsed={collapsed} onToggleSidebar={toggleSidebar} onSearch={() => setSearchOpen(true)} />
           <div className="app-body">
             <Sidebar active={view} onNavigate={setView} collapsed={collapsed} />
             <main className="app-content">
               <View />
             </main>
+            <SyncBanner />
           </div>
         </div>
+        {searchOpen && <CommandPalette onClose={() => setSearchOpen(false)} onToggleSidebar={toggleSidebar} />}
       </DialogsProvider>
     </NavigationContext.Provider>
   );
@@ -89,8 +101,12 @@ function App() {
 
   if (state?.onboarded && state.profile) {
     return (
-      <ProfileProvider profile={state.profile} dbPath={state.dbPath}>
-        <Main />
+      <ProfileProvider profile={state.profile} dbPath={state.dbPath} onChange={(profile) => setState((prev) => (prev ? { ...prev, profile } : prev))}>
+        <SyncProvider>
+          <EditorThemeProvider>
+            <Main />
+          </EditorThemeProvider>
+        </SyncProvider>
       </ProfileProvider>
     );
   }

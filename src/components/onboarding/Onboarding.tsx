@@ -1,21 +1,21 @@
+import { Logo } from "../ui/Logo";
+import preview1600 from "../../assets/onboarding-preview-1600.webp";
+import preview2200 from "../../assets/onboarding-preview-2200.webp";
+import preview2800 from "../../assets/onboarding-preview-2800.webp";
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { AlertTriangle, ArrowLeft, ArrowRight, Check, FolderOpen, Info, Layers, Lock, MapPin } from "lucide-react";
+import { AlertTriangle, ArrowLeft, ArrowRight, Check, Database, FolderOpen, Info, X } from "lucide-react";
 import { TitleBar } from "../layout/TitleBar";
 import { Button } from "../ui/Button";
 import { SecondaryButton } from "../ui/SecondaryButton";
-import { completeOnboarding, inspectLocation, pickFolder } from "../../lib/api/app";
+import { completeOnboarding, inspectDatabase, inspectLocation, openExistingDatabase, pickDatabaseFile, pickFolder } from "../../lib/api/app";
 import { dbFileIn, type AppState, type LocationInfo } from "../../lib/profile";
 import "./Onboarding.css";
 
-type Step = 0 | 1 | 2 | 3;
+/** 0 Willkommen, 1 Name, 2 Speicherort, 3 Fertig, 4 vorhandene Datenbank öffnen */
+type Step = 0 | 1 | 2 | 3 | 4;
 
 const STEP_LABELS = ["Profil", "Speicherort", "Fertig"];
 
-const features = [
-  { icon: Layers, title: "Alles an einem Ort", text: "Aufgaben, Kalender, Notizen, Trading und Strategien in einer App." },
-  { icon: Lock, title: "Lokal und privat", text: "Deine Daten bleiben auf diesem Rechner und werden nirgends hochgeladen." },
-  { icon: MapPin, title: "Du bestimmst den Speicherort", text: "Wähle selbst, wo deine Datenbank liegt, und sichere sie, wie du willst." },
-];
 
 interface OnboardingProps {
   state: AppState;
@@ -34,8 +34,18 @@ export function Onboarding({ state, onDone }: OnboardingProps) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [triedNames, setTriedNames] = useState(false);
+  // Hinweis „Datenbank nicht gefunden“ auf der Willkommensseite wegklicken
+  const [problemClosed, setProblemClosed] = useState(false);
   const firstRef = useRef<HTMLInputElement>(null);
   const namesTouched = useRef(false);
+
+  // Vorhandene Datenbank öffnen
+  const [mode, setMode] = useState<"new" | "open">("new");
+  const [file, setFile] = useState("");
+  const [fileInfo, setFileInfo] = useState<LocationInfo | null>(null);
+  const [openFirst, setOpenFirst] = useState("");
+  const [openLast, setOpenLast] = useState("");
+  const [triedOpen, setTriedOpen] = useState(false);
 
   const go = (next: Step) => {
     setDirection(next > step ? "forward" : "back");
@@ -67,6 +77,18 @@ export function Onboarding({ state, onDone }: OnboardingProps) {
     if (step === 1) firstRef.current?.focus();
   }, [step]);
 
+  // Gewählte Datei prüfen: gültig, älter, neuer, wessen Name?
+  useEffect(() => {
+    if (!file) return setFileInfo(null);
+    let cancelled = false;
+    inspectDatabase(file)
+      .then((i) => !cancelled && setFileInfo(i))
+      .catch(() => !cancelled && setFileInfo(null));
+    return () => {
+      cancelled = true;
+    };
+  }, [file]);
+
   const nameOk = firstName.trim() !== "" && lastName.trim() !== "";
   const invalidFile = info?.exists === true && !info.valid;
 
@@ -85,12 +107,51 @@ export function Onboarding({ state, onDone }: OnboardingProps) {
     }
   };
 
+  const startOpen = () => {
+    setMode("open");
+    go(4);
+  };
+
+  const pickFile = async () => {
+    try {
+      const picked = await pickDatabaseFile(file || state.defaultDir);
+      if (picked) {
+        setFile(picked);
+        setError(null);
+      }
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+
+  const openNeedsName = fileInfo?.valid === true && fileInfo.profile === null;
+  const openNamesOk = openFirst.trim() !== "" && openLast.trim() !== "";
+  const canOpen = fileInfo?.valid === true && (!openNeedsName || openNamesOk);
+
+  const openExisting = async (e: FormEvent) => {
+    e.preventDefault();
+    setTriedOpen(true);
+    if (!canOpen || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      setResult(await openExistingDatabase({ path: file, firstName: openNeedsName ? openFirst : "", lastName: openNeedsName ? openLast : "" }));
+      setDirection("forward");
+      setStep(3);
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const finish = async (e: FormEvent) => {
     e.preventDefault();
     if (invalidFile || busy) return;
     setBusy(true);
     setError(null);
     try {
+      setMode("new");
       setResult(await completeOnboarding({ firstName, lastName, dir }));
       setDirection("forward");
       setStep(3);
@@ -104,9 +165,52 @@ export function Onboarding({ state, onDone }: OnboardingProps) {
   return (
     <div className="app-shell">
       <TitleBar minimal />
-      <main className="onboarding">
-        <div className="ob-card">
-          {step > 0 && (
+      <main className={`onboarding${step > 0 ? " flow" : ""}`}>
+        {step === 0 && (
+          <section className="ob-hero" aria-label="Willkommen">
+            <div className="ob-hero-mark">
+              <span className="ob-hero-glow" aria-hidden="true" />
+              <Logo size={132} className="ob-hero-logo" />
+            </div>
+            <h1 className="ob-hero-title">
+              <span>Willkommen im</span>
+              Wissenszentrum
+            </h1>
+            <p className="ob-hero-lead">Dein zentraler Ort für Wissen, Aufgaben, Termine, Notizen, Trading und mehr.</p>
+
+            {state.problem && !problemClosed && (
+              <div className="ob-notice warn ob-hero-notice" role="alert">
+                <AlertTriangle size={15} />
+                <span>{state.problem} Richte den Speicherort neu ein oder öffne die Datenbank erneut.</span>
+                <button type="button" className="ob-notice-close" aria-label="Hinweis schließen" title="Schließen" onClick={() => setProblemClosed(true)}>
+                  <X size={14} />
+                </button>
+              </div>
+            )}
+
+            <div className="ob-hero-actions">
+              <Button
+                autoFocus
+                onClick={() => {
+                  setMode("new");
+                  go(1);
+                }}
+              >
+                Einrichtung starten
+                <ArrowRight size={16} />
+              </Button>
+              <SecondaryButton onClick={startOpen}>
+                <Database size={16} />
+                Bestehende Datenbank öffnen
+              </SecondaryButton>
+            </div>
+          </section>
+        )}
+
+        {step > 0 && (
+        <div className="ob-flow">
+          <Logo size={44} className="ob-flow-logo" />
+          {step > 0 && step < 4 && !(step === 3 && mode === "open") && (
             <ol className="ob-progress" aria-label="Fortschritt">
               {STEP_LABELS.map((label, i) => (
                 <li key={label} className={step === 3 || i + 1 < step ? "done" : i + 1 === step ? "current" : ""} aria-current={i + 1 === step && step < 3 ? "step" : undefined}>
@@ -118,41 +222,6 @@ export function Onboarding({ state, onDone }: OnboardingProps) {
           )}
 
           <div key={step} className={`ob-step ${direction}`}>
-            {step === 0 && (
-              <>
-                <span className="ob-logo" aria-hidden>
-                  W
-                </span>
-                <h1 className="ob-title">Willkommen im Wissenszentrum</h1>
-                <p className="ob-lead">Dein persönlicher Arbeitsbereich. Die Einrichtung dauert nur eine Minute.</p>
-                <ul className="ob-features">
-                  {features.map(({ icon: Icon, title, text }) => (
-                    <li key={title}>
-                      <span className="ob-feature-icon">
-                        <Icon size={16} />
-                      </span>
-                      <div>
-                        <strong>{title}</strong>
-                        <span>{text}</span>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-                {state.problem && (
-                  <div className="ob-notice warn" role="alert">
-                    <AlertTriangle size={15} />
-                    <span>{state.problem} Wähle den Speicherort unten erneut, um fortzufahren.</span>
-                  </div>
-                )}
-                <div className="ob-actions single">
-                  <Button className="ob-primary" autoFocus onClick={() => go(1)}>
-                    Einrichtung starten
-                    <ArrowRight size={16} />
-                  </Button>
-                </div>
-              </>
-            )}
-
             {step === 1 && (
               <form onSubmit={submitNames} noValidate>
                 <h1 className="ob-title">Wie heißt du?</h1>
@@ -256,13 +325,106 @@ export function Onboarding({ state, onDone }: OnboardingProps) {
               </form>
             )}
 
+            {step === 4 && (
+              <form onSubmit={(e) => void openExisting(e)} noValidate>
+                <h1 className="ob-title">Bestehende Datenbank öffnen</h1>
+                <p className="ob-lead">Wähle die Datei deiner Datenbank, zum Beispiel aus einem Backup oder von einem anderen Rechner.</p>
+
+                <div className="ob-location">
+                  <span className="ob-label">Datenbankdatei</span>
+                  <div className="ob-path-row">
+                    <div className={`ob-path${file ? "" : " empty"}`} title={file}>
+                      <Database size={16} />
+                      <span>{file || "Keine Datei gewählt"}</span>
+                    </div>
+                    <SecondaryButton onClick={() => void pickFile()}>{file ? "Ändern …" : "Datei wählen …"}</SecondaryButton>
+                  </div>
+                </div>
+
+                {fileInfo?.newer ? (
+                  <div className="ob-notice error" role="alert">
+                    <AlertTriangle size={15} />
+                    <span>Diese Datenbank stammt aus einer neueren Version des Wissenszentrums. Bitte aktualisiere zuerst die App.</span>
+                  </div>
+                ) : fileInfo && !fileInfo.exists ? (
+                  <div className="ob-notice error" role="alert">
+                    <AlertTriangle size={15} />
+                    <span>Die Datei wurde nicht gefunden.</span>
+                  </div>
+                ) : fileInfo && !fileInfo.valid ? (
+                  <div className="ob-notice error" role="alert">
+                    <AlertTriangle size={15} />
+                    <span>Das ist keine Datenbank des Wissenszentrums.</span>
+                  </div>
+                ) : fileInfo ? (
+                  <div className="ob-notice info">
+                    <Info size={15} />
+                    <span>
+                      Datenbank{fileInfo.profile ? ` von ${fileInfo.profile.firstName} ${fileInfo.profile.lastName}` : ""} gefunden. Ihre Daten werden übernommen.
+                      {fileInfo.needsUpdate && " Sie stammt aus einer älteren Version und wird aktualisiert. Davor legt das Programm eine Sicherung neben der Datei an."}
+                    </span>
+                  </div>
+                ) : null}
+
+                {openNeedsName && (
+                  <>
+                    <p className="ob-lead ob-after">In dieser Datenbank ist noch kein Name hinterlegt. Wie heißt du?</p>
+                    <div className="ob-fields">
+                      <div className="field">
+                        <label htmlFor="ob-open-first">Vorname</label>
+                        <input
+                          id="ob-open-first"
+                          className={`field-control${triedOpen && !openFirst.trim() ? " invalid" : ""}`}
+                          value={openFirst}
+                          maxLength={60}
+                          placeholder="Vorname"
+                          onChange={(e) => setOpenFirst(e.target.value)}
+                        />
+                      </div>
+                      <div className="field">
+                        <label htmlFor="ob-open-last">Nachname</label>
+                        <input
+                          id="ob-open-last"
+                          className={`field-control${triedOpen && !openLast.trim() ? " invalid" : ""}`}
+                          value={openLast}
+                          maxLength={60}
+                          placeholder="Nachname"
+                          onChange={(e) => setOpenLast(e.target.value)}
+                        />
+                      </div>
+                    </div>
+                    {triedOpen && !openNamesOk && <p className="field-error">Bitte gib Vor- und Nachnamen ein.</p>}
+                  </>
+                )}
+
+                {error && <p className="field-error">{error}</p>}
+                <div className="ob-actions">
+                  <SecondaryButton
+                    disabled={busy}
+                    onClick={() => {
+                      setMode("new");
+                      go(0);
+                    }}
+                  >
+                    <ArrowLeft size={16} />
+                    Zurück
+                  </SecondaryButton>
+                  <Button type="submit" className="ob-primary" disabled={busy || !canOpen}>
+                    {busy ? "Wird geöffnet …" : "Datenbank öffnen"}
+                  </Button>
+                </div>
+              </form>
+            )}
+
             {step === 3 && result && (
               <>
                 <span className="ob-logo done" aria-hidden>
                   <Check size={26} strokeWidth={2.5} />
                 </span>
-                <h1 className="ob-title">Alles bereit, {result.profile?.firstName ?? firstName.trim()}</h1>
-                <p className="ob-lead">Dein Wissenszentrum ist eingerichtet. Du kannst jetzt loslegen.</p>
+                <h1 className="ob-title">
+                  {mode === "open" ? "Willkommen zurück" : "Alles bereit"}, {result.profile?.firstName ?? firstName.trim()}
+                </h1>
+                <p className="ob-lead">{mode === "open" ? "Deine Datenbank ist geöffnet. Alle deine Daten sind da." : "Dein Wissenszentrum ist eingerichtet. Du kannst jetzt loslegen."}</p>
                 <dl className="ob-summary">
                   <div>
                     <dt>Name</dt>
@@ -283,6 +445,21 @@ export function Onboarding({ state, onDone }: OnboardingProps) {
             )}
           </div>
         </div>
+        )}
+
+        {step > 0 && (
+          <div className="ob-peek" aria-hidden="true">
+            <span className="ob-peek-glow" />
+            <img
+              src={preview2200}
+              srcSet={`${preview1600} 1600w, ${preview2200} 2200w, ${preview2800} 2800w`}
+              sizes="max(1250px, 112vw)"
+              alt=""
+              className="ob-peek-img"
+              draggable={false}
+            />
+          </div>
+        )}
       </main>
     </div>
   );

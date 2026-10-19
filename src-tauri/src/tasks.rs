@@ -19,6 +19,8 @@ pub struct Bucket {
     pub name: String,
     /// Ziel-Bucket, in den abgehakte Aufgaben automatisch verschoben werden (None = nichts tun)
     pub on_complete_bucket_id: Option<i64>,
+    /// Farbschlüssel aus `BUCKET_COLORS`, leer = keine Farbe
+    pub color: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -27,7 +29,12 @@ pub struct BucketInput {
     pub name: String,
     #[serde(default)]
     pub on_complete_bucket_id: Option<i64>,
+    #[serde(default)]
+    pub color: String,
 }
+
+/// Erlaubte Farben der Buckets; die Darstellung legt das Frontend fest.
+const BUCKET_COLORS: [&str; 8] = ["blue", "green", "amber", "red", "purple", "pink", "teal", "gray"];
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -58,6 +65,8 @@ pub struct Task {
     pub priority: String,
     /// Fälligkeitsdatum als `YYYY-MM-DD`
     pub due_date: Option<String>,
+    /// Beginn als `YYYY-MM-DD`; zusammen mit der Fälligkeit ergibt das den Balken im Zeitplan
+    pub start_date: Option<String>,
     pub done: bool,
     /// Zwischenschritte auch auf der Karte im Board anzeigen
     pub show_subtasks: bool,
@@ -76,6 +85,8 @@ pub struct TaskInput {
     #[serde(default)]
     pub due_date: Option<String>,
     #[serde(default)]
+    pub start_date: Option<String>,
+    #[serde(default)]
     pub show_subtasks: bool,
     /// Vollständige Liste der Zwischenschritte in gewünschter Reihenfolge; fehlende werden gelöscht.
     #[serde(default)]
@@ -86,13 +97,14 @@ pub struct TaskInput {
 // Buckets
 // ---------------------------------------------------------------------------
 
-const BUCKET_COLUMNS: &str = "id, name, on_complete_bucket_id";
+const BUCKET_COLUMNS: &str = "id, name, on_complete_bucket_id, color";
 
 fn row_to_bucket(row: &Row) -> rusqlite::Result<Bucket> {
     Ok(Bucket {
         id: row.get(0)?,
         name: row.get(1)?,
         on_complete_bucket_id: row.get(2)?,
+        color: row.get(3)?,
     })
 }
 
@@ -117,6 +129,9 @@ fn validate_bucket(conn: &Connection, input: &BucketInput, own_id: Option<i64>) 
     let name = input.name.trim();
     if name.is_empty() {
         return Err("Der Name darf nicht leer sein.".into());
+    }
+    if !input.color.is_empty() && !BUCKET_COLORS.contains(&input.color.as_str()) {
+        return Err("Unbekannte Farbe.".into());
     }
     if name.chars().count() > MAX_BUCKET_NAME {
         return Err(format!("Der Name darf höchstens {MAX_BUCKET_NAME} Zeichen lang sein."));
@@ -148,9 +163,9 @@ fn validate_bucket(conn: &Connection, input: &BucketInput, own_id: Option<i64>) 
 pub fn create_bucket(conn: &Connection, input: &BucketInput) -> Result<Bucket, String> {
     let name = validate_bucket(conn, input, None)?;
     conn.execute(
-        "INSERT INTO buckets (name, on_complete_bucket_id, position)
-         VALUES (?1, ?2, (SELECT COALESCE(MAX(position), -1) + 1 FROM buckets))",
-        params![name, input.on_complete_bucket_id],
+        "INSERT INTO buckets (name, on_complete_bucket_id, color, position)
+         VALUES (?1, ?2, ?3, (SELECT COALESCE(MAX(position), -1) + 1 FROM buckets))",
+        params![name, input.on_complete_bucket_id, input.color],
     )
     .map_err(|e| e.to_string())?;
     get_bucket(conn, conn.last_insert_rowid())
@@ -160,8 +175,8 @@ pub fn update_bucket(conn: &Connection, id: i64, input: &BucketInput) -> Result<
     let name = validate_bucket(conn, input, Some(id))?;
     let changed = conn
         .execute(
-            "UPDATE buckets SET name = ?1, on_complete_bucket_id = ?2 WHERE id = ?3",
-            params![name, input.on_complete_bucket_id, id],
+            "UPDATE buckets SET name = ?1, on_complete_bucket_id = ?2, color = ?3 WHERE id = ?4",
+            params![name, input.on_complete_bucket_id, input.color, id],
         )
         .map_err(|e| e.to_string())?;
     if changed == 0 {
@@ -203,7 +218,7 @@ pub fn delete_bucket(conn: &Connection, id: i64) -> Result<(), String> {
 // Aufgaben
 // ---------------------------------------------------------------------------
 
-const TASK_COLUMNS: &str = "id, bucket_id, title, description, priority, due_date, done, show_subtasks";
+const TASK_COLUMNS: &str = "id, bucket_id, title, description, priority, due_date, done, show_subtasks, start_date";
 
 fn row_to_task(row: &Row) -> rusqlite::Result<Task> {
     Ok(Task {
@@ -215,6 +230,7 @@ fn row_to_task(row: &Row) -> rusqlite::Result<Task> {
         due_date: row.get(5)?,
         done: row.get::<_, i64>(6)? != 0,
         show_subtasks: row.get::<_, i64>(7)? != 0,
+        start_date: row.get(8)?,
         subtasks: Vec::new(),
     })
 }
@@ -301,6 +317,21 @@ fn is_date(s: &str) -> bool {
         && b.iter().enumerate().all(|(i, c)| matches!(i, 4 | 7) || c.is_ascii_digit())
 }
 
+/// Prüft Beginn und Fälligkeit: gültige Daten, Beginn nur zusammen mit Fälligkeit, Beginn nicht nach der Fälligkeit.
+fn validate_dates(start: Option<&str>, due: Option<&str>) -> Result<(), String> {
+    for d in [start, due].into_iter().flatten() {
+        if !is_date(d) {
+            return Err("Ungültiges Datumsformat (erwartet: YYYY-MM-DD).".into());
+        }
+    }
+    match (start, due) {
+        (Some(_), None) => Err("Ein Beginn braucht auch ein Fälligkeitsdatum.".into()),
+        // Das Format YYYY-MM-DD lässt sich als Text vergleichen
+        (Some(s), Some(d)) if s > d => Err("Der Beginn darf nicht nach dem Fälligkeitsdatum liegen.".into()),
+        _ => Ok(()),
+    }
+}
+
 fn validate_task(conn: &Connection, input: &TaskInput) -> Result<(), String> {
     if input.title.trim().is_empty() {
         return Err("Der Titel darf nicht leer sein.".into());
@@ -308,11 +339,7 @@ fn validate_task(conn: &Connection, input: &TaskInput) -> Result<(), String> {
     if !PRIORITIES.contains(&input.priority.as_str()) {
         return Err(format!("Unbekannte Priorität: {}", input.priority));
     }
-    if let Some(d) = &input.due_date {
-        if !is_date(d) {
-            return Err("Ungültiges Datumsformat (erwartet: YYYY-MM-DD).".into());
-        }
-    }
+    validate_dates(input.start_date.as_deref(), input.due_date.as_deref())?;
     validate_subtasks(&input.subtasks)?;
     if let Some(id) = input.bucket_id {
         let exists: bool = conn
@@ -365,8 +392,8 @@ pub fn create_task(conn: &Connection, input: &TaskInput) -> Result<Task, String>
     }
     let position = next_position(conn, input.bucket_id)?;
     conn.execute(
-        "INSERT INTO tasks (bucket_id, title, description, priority, due_date, position, show_subtasks)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        "INSERT INTO tasks (bucket_id, title, description, priority, due_date, position, show_subtasks, start_date)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
         params![
             input.bucket_id,
             input.title.trim(),
@@ -374,7 +401,8 @@ pub fn create_task(conn: &Connection, input: &TaskInput) -> Result<Task, String>
             input.priority,
             input.due_date,
             position,
-            input.show_subtasks as i64
+            input.show_subtasks as i64,
+            input.start_date
         ],
     )
     .map_err(|e| e.to_string())?;
@@ -396,7 +424,7 @@ pub fn update_task(conn: &Connection, id: i64, input: &TaskInput) -> Result<Task
     conn.execute(
         "UPDATE tasks
          SET bucket_id = ?1, title = ?2, description = ?3, priority = ?4, due_date = ?5,
-             position = COALESCE(?6, position), show_subtasks = ?8, updated_at = datetime('now')
+             position = COALESCE(?6, position), show_subtasks = ?8, start_date = ?9, updated_at = datetime('now')
          WHERE id = ?7",
         params![
             input.bucket_id,
@@ -406,10 +434,26 @@ pub fn update_task(conn: &Connection, id: i64, input: &TaskInput) -> Result<Task
             input.due_date,
             position_sql,
             id,
-            input.show_subtasks as i64
+            input.show_subtasks as i64,
+            input.start_date
         ],
     )
     .map_err(|e| e.to_string())?;
+    get_task(conn, id)
+}
+
+/// Ändert nur Beginn und Fälligkeit (Verschieben und Ziehen im Zeitplan).
+pub fn set_task_dates(conn: &Connection, id: i64, start: Option<&str>, due: Option<&str>) -> Result<Task, String> {
+    validate_dates(start, due)?;
+    let changed = conn
+        .execute(
+            "UPDATE tasks SET start_date = ?1, due_date = ?2, updated_at = datetime('now') WHERE id = ?3",
+            params![start, due, id],
+        )
+        .map_err(|e| e.to_string())?;
+    if changed == 0 {
+        return Err("Aufgabe nicht gefunden.".into());
+    }
     get_task(conn, id)
 }
 
@@ -534,7 +578,7 @@ mod tests {
     }
 
     fn bucket(name: &str, target: Option<i64>) -> BucketInput {
-        BucketInput { name: name.into(), on_complete_bucket_id: target }
+        BucketInput { name: name.into(), on_complete_bucket_id: target, color: String::new() }
     }
 
     fn input(title: &str, bucket: Option<i64>) -> TaskInput {
@@ -544,6 +588,7 @@ mod tests {
             description: String::new(),
             priority: "medium".into(),
             due_date: None,
+            start_date: None,
             show_subtasks: false,
             subtasks: Vec::new(),
         }
@@ -954,5 +999,63 @@ mod tests {
         // Regel der Quelle zeigt nicht mehr ins Leere
         assert_eq!(get_bucket(&c, src.id).unwrap().on_complete_bucket_id, None);
         assert!(delete_bucket(&c, target.id).is_err());
+    }
+
+    #[test]
+    fn bucket_colors_are_validated_stored_and_default_to_none() {
+        let c = conn();
+        let plain = create_bucket(&c, &bucket("Ohne", None)).unwrap();
+        assert_eq!(plain.color, "", "ohne Angabe keine Farbe");
+
+        let blue = create_bucket(&c, &BucketInput { color: "blue".into(), ..bucket("Blau", None) }).unwrap();
+        assert_eq!(blue.color, "blue");
+        assert!(create_bucket(&c, &BucketInput { color: "#ff0000".into(), ..bucket("Falsch", None) }).is_err(), "nur Farben der Palette");
+
+        let changed = update_bucket(&c, blue.id, &BucketInput { color: "teal".into(), ..bucket("Blau", None) }).unwrap();
+        assert_eq!(changed.color, "teal");
+        let cleared = update_bucket(&c, blue.id, &bucket("Blau", None)).unwrap();
+        assert_eq!(cleared.color, "", "Farbe lässt sich wieder entfernen");
+        assert!(update_bucket(&c, blue.id, &BucketInput { color: "x".into(), ..bucket("Blau", None) }).is_err());
+    }
+
+    #[test]
+    fn start_date_is_validated_and_stored() {
+        let c = conn();
+        let mut i = input("Projekt", None);
+        i.start_date = Some("2026-10-10".into());
+        assert!(create_task(&c, &i).unwrap_err().contains("Fälligkeitsdatum"), "Beginn ohne Fälligkeit");
+        i.due_date = Some("2026-10-05".into());
+        assert!(create_task(&c, &i).unwrap_err().contains("nicht nach"), "Beginn nach Fälligkeit");
+        i.due_date = Some("2026-10-20".into());
+        i.start_date = Some("10.10.2026".into());
+        assert!(create_task(&c, &i).is_err(), "falsches Format");
+
+        i.start_date = Some("2026-10-10".into());
+        let t = create_task(&c, &i).unwrap();
+        assert_eq!((t.start_date.as_deref(), t.due_date.as_deref()), (Some("2026-10-10"), Some("2026-10-20")));
+        assert_eq!(list_tasks(&c).unwrap()[0].start_date.as_deref(), Some("2026-10-10"));
+
+        // gleicher Tag ist erlaubt (eintägig)
+        i.start_date = Some("2026-10-20".into());
+        assert!(update_task(&c, t.id, &i).is_ok());
+    }
+
+    #[test]
+    fn set_task_dates_moves_and_clears() {
+        let c = conn();
+        let mut i = input("Aufgabe", None);
+        i.due_date = Some("2026-10-20".into());
+        let t = create_task(&c, &i).unwrap();
+
+        let moved = set_task_dates(&c, t.id, Some("2026-10-18"), Some("2026-10-22")).unwrap();
+        assert_eq!((moved.start_date.as_deref(), moved.due_date.as_deref()), (Some("2026-10-18"), Some("2026-10-22")));
+        let single = set_task_dates(&c, t.id, None, Some("2026-10-25")).unwrap();
+        assert_eq!((single.start_date, single.due_date.as_deref()), (None, Some("2026-10-25")));
+        let none = set_task_dates(&c, t.id, None, None).unwrap();
+        assert_eq!((none.start_date, none.due_date), (None, None));
+
+        assert!(set_task_dates(&c, t.id, Some("2026-10-30"), Some("2026-10-20")).is_err());
+        assert!(set_task_dates(&c, t.id, Some("2026-10-30"), None).is_err());
+        assert!(set_task_dates(&c, 999, None, Some("2026-10-20")).is_err());
     }
 }

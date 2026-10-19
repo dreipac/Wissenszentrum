@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { useEditorState, type Editor } from "@tiptap/react";
+import { TEXT_SIZES } from "./TextSize";
 import {
   Bold,
   CheckSquare,
   ChevronDown,
   Code,
+  ImagePlus,
   Italic,
   Link2,
   List,
@@ -14,6 +16,9 @@ import {
   SquareCode,
   Strikethrough,
   Table2,
+  Underline,
+  Undo2,
+  Redo2,
   type LucideIcon,
 } from "lucide-react";
 
@@ -21,10 +26,11 @@ interface ToolButtonProps {
   icon: LucideIcon;
   label: string;
   active?: boolean;
+  disabled?: boolean;
   onClick: () => void;
 }
 
-function ToolButton({ icon: Icon, label, active, onClick }: ToolButtonProps) {
+function ToolButton({ icon: Icon, label, active, disabled, onClick }: ToolButtonProps) {
   return (
     <button
       type="button"
@@ -32,6 +38,7 @@ function ToolButton({ icon: Icon, label, active, onClick }: ToolButtonProps) {
       aria-label={label}
       title={label}
       aria-pressed={active}
+      disabled={disabled}
       // mousedown verhindern, damit der Editor seine Textauswahl behält
       onMouseDown={(e) => e.preventDefault()}
       onClick={onClick}
@@ -56,8 +63,24 @@ function applyBlock(editor: Editor, block: Block) {
   else chain.setHeading({ level: Number(block[1]) as 1 | 2 | 3 }).run();
 }
 
-/** Auswahl der Absatzart (Text, Überschrift 1–3) als Menü im Stil der App. */
-function BlockMenu({ editor, current }: { editor: Editor | null; current: Block }) {
+interface SelectOption<T extends string> {
+  id: T;
+  label: string;
+}
+
+interface ToolSelectProps<T extends string> {
+  label: string;
+  options: SelectOption<T>[];
+  current: T;
+  /** Text im Auslöser; Standard ist die Beschriftung der aktuellen Option */
+  display?: string;
+  menuClass?: string;
+  triggerClass?: string;
+  onPick: (id: T) => void;
+}
+
+/** Auswahlmenü der Werkzeugleiste im Stil der App (Absatzart, Schriftgröße). */
+function ToolSelect<T extends string>({ label, options, current, display, menuClass = "", triggerClass = "", onPick }: ToolSelectProps<T>) {
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   const menu = useRef<HTMLDivElement>(null);
@@ -93,39 +116,40 @@ function BlockMenu({ editor, current }: { editor: Editor | null; current: Block 
     if (r) setPos({ left: r.left, top: r.bottom + 6 });
   };
 
-  const label = BLOCKS.find((b) => b.id === current)?.label ?? "Text";
+  const shown = display ?? options.find((o) => o.id === current)?.label ?? options[0]?.label;
 
   return (
     <>
       <button
         ref={trigger}
         type="button"
-        className={`block-trigger${pos ? " open" : ""}`}
-        aria-label="Absatzart"
+        className={`block-trigger ${triggerClass}${pos ? " open" : ""}`}
+        aria-label={label}
+        title={label}
         aria-expanded={pos !== null}
         onMouseDown={(e) => e.preventDefault()}
         onClick={toggle}
       >
-        <span>{label}</span>
+        <span>{shown}</span>
         <ChevronDown size={13} />
       </button>
       {pos && (
-        <div ref={menu} className="suffix-menu block-menu" style={{ left: pos.left, top: pos.top, transformOrigin: "top left" }} role="listbox">
-          {BLOCKS.map((b, i) => (
+        <div ref={menu} className={`suffix-menu block-menu ${menuClass}`} style={{ left: pos.left, top: pos.top, transformOrigin: "top left" }} role="listbox">
+          {options.map((o, i) => (
             <button
-              key={b.id}
+              key={o.id}
               type="button"
               role="option"
-              aria-selected={b.id === current}
-              className={`suffix-option block-option ${b.id}${b.id === current ? " selected" : ""}`}
+              aria-selected={o.id === current}
+              className={`suffix-option block-option ${o.id}${o.id === current ? " selected" : ""}`}
               style={{ animationDelay: `${i * 25}ms` }}
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => {
-                if (editor) applyBlock(editor, b.id);
+                onPick(o.id);
                 setPos(null);
               }}
             >
-              {b.label}
+              {o.label}
             </button>
           ))}
         </div>
@@ -133,6 +157,8 @@ function BlockMenu({ editor, current }: { editor: Editor | null; current: Block 
     </>
   );
 }
+
+const SIZE_OPTIONS: SelectOption<string>[] = [{ id: "default", label: "Standard" }, ...TEXT_SIZES.map((n) => ({ id: String(n), label: String(n) }))];
 
 const GRID_COLS = 10;
 const GRID_ROWS = 8;
@@ -226,10 +252,12 @@ interface DocToolbarProps {
   /** Link-Leiste ist offen */
   linkOpen: boolean;
   onLink: () => void;
+  /** Öffnet die Dateiauswahl für Bilder */
+  onImage: () => void;
 }
 
 /** Werkzeugleiste des Editors: eine ruhige Zeile wie bei den Notizen, dazu ein Menü für die Absatzart. */
-export function DocToolbar({ editor, linkOpen, onLink }: DocToolbarProps) {
+export function DocToolbar({ editor, linkOpen, onLink, onImage }: DocToolbarProps) {
   const s = useEditorState({
     editor,
     selector: ({ editor: e }) =>
@@ -238,6 +266,9 @@ export function DocToolbar({ editor, linkOpen, onLink }: DocToolbarProps) {
             block: (e.isActive("heading", { level: 1 }) ? "h1" : e.isActive("heading", { level: 2 }) ? "h2" : e.isActive("heading", { level: 3 }) ? "h3" : "paragraph") as Block,
             bold: e.isActive("bold"),
             italic: e.isActive("italic"),
+            underline: e.isActive("underline"),
+            canUndo: e.can().undo(),
+            canRedo: e.can().redo(),
             strike: e.isActive("strike"),
             code: e.isActive("code"),
             bullet: e.isActive("bulletList"),
@@ -245,6 +276,7 @@ export function DocToolbar({ editor, linkOpen, onLink }: DocToolbarProps) {
             task: e.isActive("taskList"),
             quote: e.isActive("blockquote"),
             codeBlock: e.isActive("codeBlock"),
+            size: (e.getAttributes("textSize").size as number | undefined) ?? null,
             link: e.isActive("link"),
             table: e.isActive("table"),
           }
@@ -254,10 +286,23 @@ export function DocToolbar({ editor, linkOpen, onLink }: DocToolbarProps) {
 
   return (
     <div className="note-toolbar doc-toolbar">
-      <BlockMenu editor={editor} current={s?.block ?? "paragraph"} />
+      <ToolButton icon={Undo2} label="Rückgängig (Strg Z)" disabled={!s?.canUndo} onClick={() => c()?.undo().run()} />
+      <ToolButton icon={Redo2} label="Wiederholen (Strg Y)" disabled={!s?.canRedo} onClick={() => c()?.redo().run()} />
+      <span className="note-toolbar-sep" />
+      <ToolSelect label="Absatzart" options={BLOCKS} current={s?.block ?? "paragraph"} onPick={(id) => editor && applyBlock(editor, id)} />
+      <ToolSelect
+        label="Schriftgröße"
+        options={SIZE_OPTIONS}
+        current={s?.size ? String(s.size) : "default"}
+        display={s?.size ? String(s.size) : "Größe"}
+        triggerClass="size-trigger"
+        menuClass="size-menu"
+        onPick={(id) => (id === "default" ? c()?.unsetTextSize().run() : c()?.setTextSize(Number(id)).run())}
+      />
       <span className="note-toolbar-sep" />
       <ToolButton icon={Bold} label="Fett (Strg B)" active={s?.bold} onClick={() => c()?.toggleBold().run()} />
       <ToolButton icon={Italic} label="Kursiv (Strg I)" active={s?.italic} onClick={() => c()?.toggleItalic().run()} />
+      <ToolButton icon={Underline} label="Unterstrichen (Strg U)" active={s?.underline} onClick={() => c()?.toggleUnderline().run()} />
       <ToolButton icon={Strikethrough} label="Durchgestrichen" active={s?.strike} onClick={() => c()?.toggleStrike().run()} />
       <ToolButton icon={Code} label="Code" active={s?.code} onClick={() => c()?.toggleCode().run()} />
       <span className="note-toolbar-sep" />
@@ -270,6 +315,7 @@ export function DocToolbar({ editor, linkOpen, onLink }: DocToolbarProps) {
       <ToolButton icon={Minus} label="Trennlinie" onClick={() => c()?.setHorizontalRule().run()} />
       <span className="note-toolbar-sep" />
       <ToolButton icon={Link2} label="Link" active={s?.link || linkOpen} onClick={onLink} />
+      <ToolButton icon={ImagePlus} label="Bild einfügen" onClick={onImage} />
       <TablePicker editor={editor} active={s?.table === true} />
     </div>
   );

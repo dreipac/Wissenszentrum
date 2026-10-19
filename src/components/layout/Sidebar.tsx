@@ -9,13 +9,17 @@ import {
   Plus,
   Settings,
   HelpCircle,
-  DatabaseBackup,
+  RefreshCw,
   type LucideIcon,
 } from "lucide-react";
 import { Button } from "../ui/Button";
 import { SecondaryButton } from "../ui/SecondaryButton";
 import { useDialogs } from "../../lib/dialogs";
 import { useProfile } from "../../lib/profile";
+import { bucketAccent } from "../../lib/tasks";
+import { stateLabel, stateTone } from "../../lib/sync";
+import { useSync } from "../../lib/useSync";
+import "../sync/Sync.css";
 import type { ViewId } from "../../lib/navigation";
 import { createAndOpenNote } from "../../lib/notesActions";
 import { useTasks } from "../../lib/useTasks";
@@ -44,8 +48,9 @@ interface SidebarProps {
 
 export function Sidebar({ active, onNavigate, collapsed }: SidebarProps) {
   const profile = useProfile();
+  const sync = useSync();
   const { tasks, buckets } = useTasks();
-  const { openNewTask, openNewBucket, openSettings } = useDialogs();
+  const { openNewTask, openNewBucket, openSettings, openBucketMenu, openBoardMenu } = useDialogs();
   const openCount = tasks.filter((t) => !t.done).length;
 
   return (
@@ -103,10 +108,23 @@ export function Sidebar({ active, onNavigate, collapsed }: SidebarProps) {
               <Plus size={14} />
             </button>
           </div>
-          <div className="sidebar-list">
+          <div
+            className="sidebar-list"
+            onContextMenu={(e) => {
+              e.preventDefault();
+              if (e.target === e.currentTarget || (e.target as Element).closest(".sidebar-empty")) openBoardMenu(e.clientX, e.clientY);
+            }}
+          >
             {buckets.length === 0 && <p className="sidebar-empty">Noch keine Buckets</p>}
             {buckets.map((b) => (
-              <button key={b.id} type="button" className="sidebar-link small" onClick={() => onNavigate("tasks")}>
+              <button key={b.id} type="button" className="sidebar-link small"
+                onClick={() => onNavigate("tasks")}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  openBucketMenu(b, e.clientX, e.clientY);
+                }}
+              >
+                <span className={`sidebar-dot${b.color ? " colored" : ""}`} style={b.color ? { backgroundColor: bucketAccent(b) } : undefined} aria-hidden />
                 <span className="sidebar-link-label">{b.name}</span>
                 <span className="sidebar-count">{tasks.filter((t) => t.bucketId === b.id && !t.done).length}</span>
               </button>
@@ -123,13 +141,20 @@ export function Sidebar({ active, onNavigate, collapsed }: SidebarProps) {
             </div>
           </div>
           <div className="sidebar-footer-actions">
-            <button type="button" className="icon-btn" aria-label="Backup">
-              <DatabaseBackup size={16} />
+            <button
+              type="button"
+              className={`icon-btn sync-btn ${stateTone(sync.status?.state ?? "off")}`}
+              aria-label="Abgleich zwischen Rechnern"
+              title={sync.status?.enabled ? `Abgleich: ${stateLabel[sync.status.state]}` : "Abgleich zwischen Rechnern einrichten"}
+              onClick={() => openSettings("sync")}
+            >
+              <RefreshCw size={16} />
+              <span className="sync-dot" aria-hidden />
             </button>
             <button type="button" className="icon-btn" aria-label="Hilfe">
               <HelpCircle size={16} />
             </button>
-            <button type="button" className="icon-btn" aria-label="Einstellungen" title="Einstellungen" onClick={openSettings}>
+            <button type="button" className="icon-btn" aria-label="Einstellungen" title="Einstellungen" onClick={() => openSettings()}>
               <Settings size={16} />
             </button>
           </div>

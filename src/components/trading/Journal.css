@@ -1,0 +1,459 @@
+/* Logbuch zu Positionen */
+.jr {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.jr-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.jr-count {
+  padding: 0 0.45rem;
+  border: 1px solid var(--border-soft);
+  border-radius: 999px;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+
+/* Farben je Art als gemeinsame Variable */
+.jr-chip,
+.jr-kind,
+.jr-entry {
+  --jr-color: var(--accent);
+}
+
+.jr-chip.mistake,
+.jr-kind.mistake,
+.jr-entry.mistake {
+  --jr-color: var(--negative);
+}
+
+.jr-chip.improve,
+.jr-kind.improve,
+.jr-entry.improve {
+  --jr-color: var(--warning);
+}
+
+.jr-chip.good,
+.jr-kind.good,
+.jr-entry.good {
+  --jr-color: var(--positive);
+}
+
+.jr-composer {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-lg);
+  background-color: var(--bg-sidebar);
+}
+
+.jr-kinds {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.jr-kind {
+  padding: 0.2rem 0.65rem;
+  border: 1px solid var(--border-soft);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.76rem;
+  cursor: pointer;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.jr-kind:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+
+.jr-kind.active {
+  border-color: color-mix(in srgb, var(--jr-color) 55%, transparent);
+  background-color: color-mix(in srgb, var(--jr-color) 14%, transparent);
+  color: var(--text);
+}
+
+.jr-text {
+  resize: vertical;
+  min-height: 56px;
+  font-family: inherit;
+  line-height: 1.5;
+}
+
+.jr-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.jr-options select {
+  flex: 1;
+  min-width: 160px;
+  padding-block: 0.3rem;
+  font-size: 0.82rem;
+}
+
+.jr-composer-foot {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.jr-meta {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.74rem;
+  color: var(--text-faint);
+}
+
+.jr-list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.jr-entry {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 0.75rem 0.25rem 0.75rem 1rem;
+  border-top: 1px solid var(--border-soft);
+}
+
+.jr-entry:first-child {
+  border-top: none;
+}
+
+.jr-entry::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0.95rem;
+  bottom: 0.95rem;
+  width: 2px;
+  border-radius: 1px;
+  background-color: var(--jr-color);
+}
+
+.jr-entry.editing {
+  padding-left: 0;
+}
+
+.jr-entry.editing::before {
+  display: none;
+}
+
+.jr-entry-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.jr-chip {
+  padding: 0.05rem 0.5rem;
+  border-radius: 999px;
+  background-color: color-mix(in srgb, var(--jr-color) 15%, transparent);
+  color: var(--jr-color);
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
+.jr-topic,
+.jr-trade {
+  padding: 0.05rem 0.45rem;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.7rem;
+}
+
+.jr-trade {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.jr-trade.static {
+  cursor: default;
+}
+
+button.jr-trade:hover {
+  border-color: var(--border-strong-hover);
+}
+
+.jr-spacer {
+  flex: 1;
+}
+
+.jr-actions {
+  display: flex;
+  gap: 0.1rem;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+
+.jr-entry:hover .jr-actions,
+.jr-actions:focus-within {
+  opacity: 1;
+}
+
+.jr-entry-text,
+.jr-next {
+  margin: 0;
+  font-size: 0.88rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.jr-next span {
+  margin-right: 0.35rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--jr-color);
+}
+
+.jr-entry-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.2rem 0.75rem;
+  font-size: 0.72rem;
+  color: var(--text-faint);
+}
+
+/* Übersicht im Tab „Logbuch“ */
+.jr-page {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 260px;
+  gap: 1rem;
+  align-items: start;
+}
+
+.jr-filters {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.jr-filter-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.jr-filter-group h3 {
+  margin-bottom: 0.15rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.jr-filter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.35rem 0.6rem;
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.84rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.jr-filter:hover {
+  background-color: var(--bg-hover);
+  color: var(--text);
+}
+
+.jr-filter.active {
+  background-color: var(--bg-selected);
+  color: var(--text);
+}
+
+.jr-filter span:last-child {
+  font-size: 0.74rem;
+  color: var(--text-faint);
+}
+
+.jr-pattern {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.76rem;
+  color: var(--text-faint);
+}
+
+.jr-pattern-bar {
+  flex: 1;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 2px;
+  background-color: var(--border-soft);
+}
+
+.jr-pattern-bar i {
+  display: block;
+  height: 100%;
+  background-color: var(--warning);
+}
+
+@media (max-width: 900px) {
+  .jr-page {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Rückblick beim Schließen und Regeln */
+.jr-review {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  grid-column: 1 / -1;
+}
+
+.jr-review-hint {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  background-color: var(--bg-sidebar);
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.jr-review-hint strong {
+  font-size: 0.7rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.jr-rules {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.jr-rules li {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
+.jr-rules li::before {
+  content: "";
+  flex-shrink: 0;
+  width: 6px;
+  height: 6px;
+  margin-top: 0.45rem;
+  border-radius: 50%;
+  background-color: var(--warning);
+}
+
+.jr-rules small {
+  display: block;
+  font-size: 0.72rem;
+  color: var(--text-faint);
+}
+
+/* Checkliste bei „Neue Position“ */
+.jr-checklist {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  background-color: var(--bg-sidebar);
+}
+
+.jr-checklist h3 {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.jr-checklist-strategy {
+  font-size: 0.74rem;
+  color: var(--text-muted);
+}
+
+.jr-checklist ul {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin: 0.25rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.jr-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  width: 100%;
+  padding: 0.15rem 0;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-size: 0.84rem;
+  line-height: 1.4;
+  text-align: left;
+  cursor: pointer;
+}
+
+.jr-check.done > span:last-child {
+  color: var(--text-faint);
+  text-decoration: line-through;
+}
+
+.jr-check-box {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  margin-top: 1px;
+  border: 1px solid var(--border-strong);
+  border-radius: 50%;
+  color: var(--btn-primary-text);
+  transition: background-color 0.15s, border-color 0.15s;
+}
+
+.jr-check.done .jr-check-box {
+  border-color: var(--text);
+  background-color: var(--text);
+}

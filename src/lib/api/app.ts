@@ -35,7 +35,35 @@ const previewState = (): AppState => {
 export const getAppState = (): Promise<AppState> => (inTauri ? invoke("app_state") : Promise.resolve(previewState()));
 
 export const inspectLocation = (dir: string): Promise<LocationInfo> =>
-  inTauri ? invoke("inspect_location", { dir }) : Promise.resolve({ dbPath: dbFileIn(dir), exists: false, valid: false, profile: null });
+  inTauri
+    ? invoke("inspect_location", { dir })
+    : Promise.resolve({ dbPath: dbFileIn(dir), exists: false, valid: false, needsUpdate: false, newer: false, profile: null });
+
+/** Prüft eine einzelne Datenbankdatei, ohne etwas zu verändern. */
+export const inspectDatabase = (path: string): Promise<LocationInfo> =>
+  inTauri
+    ? invoke("inspect_database_file", { path })
+    : Promise.resolve({ dbPath: path, exists: true, valid: /\.(db|sqlite3?)$/i.test(path.trim()), needsUpdate: false, newer: false, profile: null });
+
+export interface OpenExistingInput {
+  path: string;
+  /** Nur nötig, wenn in der Datenbank noch kein Name steht */
+  firstName: string;
+  lastName: string;
+}
+
+/** Übernimmt eine vorhandene Datenbankdatei. Ältere Dateien werden nach einer Sicherung aktualisiert. */
+export async function openExistingDatabase({ path, firstName, lastName }: OpenExistingInput): Promise<AppState> {
+  if (inTauri) return invoke("open_existing_database", { path, firstName, lastName });
+  if (!firstName.trim() || !lastName.trim()) throw "In dieser Datenbank ist noch kein Name hinterlegt. Bitte gib deinen Namen ein.";
+  const dir = path.replace(/[\\/][^\\/]*$/, "");
+  try {
+    localStorage.setItem(PREVIEW_KEY, JSON.stringify({ profile: { firstName: firstName.trim(), lastName: lastName.trim() }, dir }));
+  } catch {
+    /* nur Vorschau */
+  }
+  return previewState();
+}
 
 export async function completeOnboarding({ firstName, lastName, dir }: OnboardingInput): Promise<AppState> {
   if (inTauri) return invoke("complete_onboarding", { firstName, lastName, dir });
@@ -48,6 +76,24 @@ export async function completeOnboarding({ firstName, lastName, dir }: Onboardin
   return previewState();
 }
 
+/** Öffnet den Dateidialog des Systems für eine Datenbankdatei; null, wenn abgebrochen. */
+export async function pickDatabaseFile(defaultPath: string): Promise<string | null> {
+  if (inTauri) {
+    const result = await open({
+      directory: false,
+      multiple: false,
+      defaultPath,
+      title: "Datenbank des Wissenszentrums öffnen",
+      filters: [
+        { name: "Datenbank", extensions: ["db", "sqlite", "sqlite3"] },
+        { name: "Alle Dateien", extensions: ["*"] },
+      ],
+    });
+    return typeof result === "string" ? result : null;
+  }
+  return window.prompt("Pfad der Datenbankdatei (nur in der Vorschau)", defaultPath)?.trim() || null;
+}
+
 /** Öffnet den Ordnerdialog des Systems; null, wenn abgebrochen. Im Browser-Preview ersetzt eine Eingabe den Dialog. */
 export async function pickFolder(defaultPath: string): Promise<string | null> {
   if (inTauri) {
@@ -55,4 +101,22 @@ export async function pickFolder(defaultPath: string): Promise<string | null> {
     return typeof result === "string" ? result : null;
   }
   return window.prompt("Speicherort (nur in der Vorschau)", defaultPath)?.trim() || null;
+}
+
+/** Ändert Vor- und Nachname; liefert das gespeicherte (bereinigte) Profil. */
+export async function updateProfile(firstName: string, lastName: string): Promise<Profile> {
+  if (inTauri) return invoke("update_profile", { firstName, lastName });
+  const first = firstName.split(/\s+/).filter(Boolean).join(" ");
+  const last = lastName.split(/\s+/).filter(Boolean).join(" ");
+  if (!first) throw "Bitte gib deinen Vornamen ein.";
+  if (!last) throw "Bitte gib deinen Nachnamen ein.";
+  const saved = readPreview();
+  if (saved) {
+    try {
+      localStorage.setItem(PREVIEW_KEY, JSON.stringify({ ...saved, profile: { firstName: first, lastName: last } }));
+    } catch {
+      /* nur Vorschau */
+    }
+  }
+  return { firstName: first, lastName: last };
 }

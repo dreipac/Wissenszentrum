@@ -189,6 +189,17 @@
   text-overflow: ellipsis;
 }
 
+.dash-card-links {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.recent-kind {
+  font-size: 0.72rem;
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+
 .recent-time {
   width: 90px;
   text-align: right;

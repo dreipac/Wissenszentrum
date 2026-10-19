@@ -76,13 +76,15 @@ interface TableBarProps {
   editor: Editor | null;
   /** Element, an dem die Position gemessen wird (muss `position: relative` haben) */
   anchor: RefObject<HTMLElement | null>;
+  /** Ausgeblendet, solange die Tabelle verschoben wird */
+  hidden?: boolean;
 }
 
 const BAR_HEIGHT = 38;
 const GAP = 8;
 
 /** Schwebende Leiste mit den Tabellenoptionen, direkt über der Tabelle, in der der Cursor steht. */
-export function TableBar({ editor, anchor }: TableBarProps) {
+export function TableBar({ editor, anchor, hidden }: TableBarProps) {
   const [place, setPlace] = useState<Place | null>(null);
 
   const s = useEditorState({
@@ -115,7 +117,7 @@ export function TableBar({ editor, anchor }: TableBarProps) {
     };
   }, [editor, anchor]);
 
-  if (!editor || !place) return null;
+  if (!editor || !place || hidden) return null;
   const c = () => editor.chain().focus();
 
   return (

@@ -288,7 +288,7 @@
 .note-prose {
   min-height: 40vh;
   outline: none;
-  color: #d4d4d4;
+  color: var(--editor-text);
 }
 
 .note-prose > * + * {
@@ -420,8 +420,8 @@
 }
 
 .note-prose ul[data-type="taskList"] input[type="checkbox"]:checked {
-  background-color: #ffffff;
-  border-color: #ffffff;
+  background-color: var(--text);
+  border-color: var(--text);
 }
 
 .note-prose ul[data-type="taskList"] input[type="checkbox"]:checked::after {

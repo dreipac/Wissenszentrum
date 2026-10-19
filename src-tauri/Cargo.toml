@@ -1,6 +1,6 @@
 [package]
 name = "wissenszentrum"
-version = "0.1.0"
+version = "1.0.0"
 description = "Wissenszentrum – All-in-One Dokumentations- und Verwaltungstool"
 authors = ["Armin"]
 edition = "2021"
@@ -16,8 +16,9 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 tauri = { version = "2", features = [] }
-rusqlite = { version = "0.32", features = ["bundled"] }
+rusqlite = { version = "0.32", features = ["bundled", "backup"] }
 reqwest = { version = "0.12", features = ["json"] }
+futures-util = "0.3"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tauri-plugin-dialog = "2.8.3"

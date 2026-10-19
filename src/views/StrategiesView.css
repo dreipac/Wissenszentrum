@@ -616,3 +616,40 @@ button.inspector-link-label.negative {
 .graph-empty .btn-primary {
   margin-top: 0.4rem;
 }
+
+/* Regeln fürs nächste Mal: schwebende Karte oben links in der Fläche */
+.strat-rules {
+  position: absolute;
+  top: 1rem;
+  left: 1rem;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  max-width: 340px;
+  padding: 0.35rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background-color: rgba(31, 31, 31, 0.94);
+  box-shadow: var(--shadow-card);
+}
+
+.strat-rules.open {
+  padding: 0.5rem 0.75rem 0.75rem;
+}
+
+.strat-rules-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.2rem 0.4rem;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.strat-rules-toggle:hover {
+  color: var(--text);
+}

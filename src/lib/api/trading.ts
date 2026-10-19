@@ -62,6 +62,10 @@ export const setQuote = (symbol: string, price: number): Promise<void> =>
 export const saveSnapshot = (day: string, valueChf: number): Promise<void> =>
   inTauri ? invoke("save_snapshot", { day, valueChf }) : tradingPreview.saveSnapshot(day, valueChf);
 
+/** Hält den Gesamtwert für den Tagesverlauf fest (das Backend lässt Unverändertes aus). Löst kein Neuladen aus. */
+export const saveSample = (valueChf: number): Promise<void> =>
+  inTauri ? invoke("save_sample", { valueChf }) : tradingPreview.saveSample(valueChf);
+
 export const getApiKey = (): Promise<string> => (inTauri ? invoke("get_api_key") : tradingPreview.getApiKey());
 
 /** Prüft den Key mit einer Testabfrage und speichert ihn (leer = entfernen). */

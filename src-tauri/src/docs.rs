@@ -224,6 +224,63 @@ fn renumber(conn: &Connection, parent: Option<i64>) -> Result<(), String> {
     Ok(())
 }
 
+const MAX_IMAGE_BYTES: usize = 12_000_000;
+const IMAGE_MIMES: [&str; 5] = ["image/png", "image/jpeg", "image/webp", "image/gif", "image/avif"];
+
+/// Speichert ein Bild und liefert seine ID. Die Seiten verweisen im Text per `data-image-id` darauf.
+pub fn add_image(conn: &Connection, mime: &str, data: &[u8]) -> Result<i64, String> {
+    if !IMAGE_MIMES.contains(&mime) {
+        return Err("Dieses Bildformat wird nicht unterstützt (erlaubt: PNG, JPEG, WebP, GIF, AVIF).".into());
+    }
+    if data.is_empty() {
+        return Err("Das Bild ist leer.".into());
+    }
+    if data.len() > MAX_IMAGE_BYTES {
+        return Err("Das Bild ist zu groß (höchstens 12 MB).".into());
+    }
+    conn.execute("INSERT INTO doc_images (mime, data) VALUES (?1, ?2)", params![mime, data]).map_err(db_err)?;
+    let id = conn.last_insert_rowid();
+    // Gelegentlich aufräumen, damit verworfene Bilder nicht liegen bleiben
+    let _ = gc_images(conn);
+    Ok(id)
+}
+
+pub fn get_image(conn: &Connection, id: i64) -> Result<(String, Vec<u8>), String> {
+    conn.query_row("SELECT mime, data FROM doc_images WHERE id = ?1", params![id], |r| Ok((r.get(0)?, r.get(1)?)))
+        .map_err(|_| "Bild nicht gefunden.".to_string())
+}
+
+/// IDs aller Bilder, auf die der Text einer Seite verweist (`data-image-id="12"`).
+fn referenced_image_ids(content: &str) -> Vec<i64> {
+    const MARK: &str = "data-image-id=\"";
+    let mut ids = Vec::new();
+    let mut rest = content;
+    while let Some(at) = rest.find(MARK) {
+        rest = &rest[at + MARK.len()..];
+        let digits: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
+        if let Ok(id) = digits.parse() {
+            ids.push(id);
+        }
+    }
+    ids
+}
+
+/// Entfernt Bilder, die keine Seite mehr verwendet. Ein Tag Schonfrist, damit „Rückgängig“ ein Bild zurückholen kann.
+/// Liefert die Zahl der gelöschten Bilder.
+pub fn gc_images(conn: &Connection) -> Result<usize, String> {
+    let mut stmt = conn.prepare("SELECT content FROM doc_pages WHERE content LIKE '%data-image-id%'").map_err(db_err)?;
+    let contents: Vec<String> = stmt.query_map([], |r| r.get(0)).map_err(db_err)?.collect::<Result<_, _>>().map_err(db_err)?;
+    let used: std::collections::HashSet<i64> = contents.iter().flat_map(|c| referenced_image_ids(c)).collect();
+
+    let mut stmt = conn.prepare("SELECT id FROM doc_images WHERE created_at < datetime('now', '-1 day')").map_err(db_err)?;
+    let old: Vec<i64> = stmt.query_map([], |r| r.get(0)).map_err(db_err)?.collect::<Result<_, _>>().map_err(db_err)?;
+    let mut removed = 0;
+    for id in old.into_iter().filter(|id| !used.contains(id)) {
+        removed += conn.execute("DELETE FROM doc_images WHERE id = ?1", params![id]).map_err(db_err)?;
+    }
+    Ok(removed)
+}
+
 /// Löscht die Seite samt allen Unterseiten und liefert zurück, wie viele Seiten entfernt wurden.
 pub fn delete_page(conn: &Connection, id: i64) -> Result<usize, String> {
     let parent = parent_of(conn, id)?;
@@ -231,6 +288,7 @@ pub fn delete_page(conn: &Connection, id: i64) -> Result<usize, String> {
     conn.execute("DELETE FROM doc_pages WHERE id = ?1", params![id]).map_err(db_err)?;
     let after: i64 = conn.query_row("SELECT COUNT(*) FROM doc_pages", [], |r| r.get(0)).map_err(db_err)?;
     renumber(conn, parent)?;
+    let _ = gc_images(conn);
     Ok((before - after) as usize)
 }
 
@@ -373,5 +431,43 @@ mod tests {
         assert_eq!(positions, [0, 1]);
         assert!(delete_page(&c, b.id).is_err());
         assert_eq!(delete_page(&c, a.id).unwrap(), 1);
+    }
+
+    #[test]
+    fn images_are_stored_validated_and_collected() {
+        let c = conn();
+        let png = [0x89, b'P', b'N', b'G', 1, 2, 3];
+        let id = add_image(&c, "image/png", &png).unwrap();
+        let (mime, data) = get_image(&c, id).unwrap();
+        assert_eq!((mime.as_str(), data.as_slice()), ("image/png", &png[..]));
+
+        assert!(add_image(&c, "image/svg+xml", b"<svg/>").is_err(), "SVG kann Skripte enthalten und wird nicht angenommen");
+        assert!(add_image(&c, "text/html", b"x").is_err());
+        assert!(add_image(&c, "image/png", &[]).is_err());
+        assert!(add_image(&c, "image/png", &vec![0u8; MAX_IMAGE_BYTES + 1]).is_err());
+        assert!(get_image(&c, 999).is_err());
+
+        // Verwendet und unverwendet, beide alt: nur das unverwendete wird entfernt
+        let used = add_image(&c, "image/png", &png).unwrap();
+        let unused = add_image(&c, "image/png", &png).unwrap();
+        let page = create_page(&c, None, "Seite", "page").unwrap();
+        update_page(&c, page.id, &DocInput { title: "Seite".into(), content: format!("<p>x</p><img data-image-id=\"{used}\" data-width=\"300\">"), plain: "x".into() }).unwrap();
+        c.execute("UPDATE doc_images SET created_at = datetime('now', '-2 days')", []).unwrap();
+        c.execute("UPDATE doc_images SET created_at = datetime('now') WHERE id = ?1", params![id]).unwrap();
+        assert_eq!(gc_images(&c).unwrap(), 1, "nur das alte, unverwendete Bild");
+        assert!(get_image(&c, used).is_ok());
+        assert!(get_image(&c, unused).is_err());
+        assert!(get_image(&c, id).is_ok(), "frische Bilder haben Schonfrist");
+
+        // Seite löschen: das Bild wird frei, bleibt aber wegen der Schonfrist zunächst erhalten, wenn es jung ist
+        delete_page(&c, page.id).unwrap();
+        assert!(get_image(&c, used).is_err(), "altes Bild ohne Verweis wird beim Löschen der Seite aufgeräumt");
+    }
+
+    #[test]
+    fn image_references_are_found_in_html() {
+        let html = r#"<p>a</p><img data-image-id="3" src=""><table><td><img data-width="1" data-image-id="12"></td></table><img data-image-id="x">"#;
+        assert_eq!(referenced_image_ids(html), [3, 12]);
+        assert!(referenced_image_ids("<p>nichts</p>").is_empty());
     }
 }

@@ -2,9 +2,11 @@ mod db;
 mod docs;
 mod events;
 mod finnhub;
+mod journal;
 mod notes;
 mod profile;
 mod strategies;
+mod sync;
 mod tasks;
 mod trading;
 
@@ -17,10 +19,11 @@ use strategies::{EdgeInput, NodeInput, Strategy, StrategyEdge, StrategyNode};
 use trading::{MetalInput, NewExecution, NewTrade, Trade, TradeMeta, TradingState};
 use rusqlite::Connection;
 use serde::Serialize;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use sync::{Acted, Plan, SyncConfig};
 use std::sync::{Mutex, MutexGuard};
 use tasks::{Bucket, BucketInput, Task, TaskInput};
-use tauri::{Manager, State};
+use tauri::{AppHandle, Manager, State};
 
 fn lock<'a>(db: &'a State<Db>) -> Result<MutexGuard<'a, Connection>, String> {
     db.0.lock().map_err(|_| "Datenbank ist gesperrt.".to_string())
@@ -32,10 +35,14 @@ fn lock<'a>(db: &'a State<Db>) -> Result<MutexGuard<'a, Connection>, String> {
 struct AppInfo {
     config_file: PathBuf,
     default_dir: PathBuf,
-    /// Ordner der geöffneten Datenbank, solange das Onboarding noch aussteht: None
-    dir: Mutex<Option<PathBuf>>,
+    /// Datei der geöffneten Datenbank, solange das Onboarding noch aussteht: None
+    db_file: Mutex<Option<PathBuf>>,
     /// Hinweis, falls die zuletzt verwendete Datenbank nicht geöffnet werden konnte
     problem: Mutex<Option<String>>,
+    /// Sicherungen vor dem Überschreiben durch den Abgleich
+    backup_dir: PathBuf,
+    /// Hinweis auf einen beim Start geladenen Stand, wird einmal angezeigt
+    sync_notice: Mutex<Option<SyncNotice>>,
 }
 
 #[derive(Serialize)]
@@ -51,9 +58,9 @@ struct AppState {
 }
 
 fn app_state_of(db: &State<Db>, info: &State<AppInfo>) -> Result<AppState, String> {
-    let dir = info.dir.lock().map_err(|_| "Zustand ist gesperrt.".to_string())?.clone();
+    let file = info.db_file.lock().map_err(|_| "Zustand ist gesperrt.".to_string())?.clone();
     let problem = info.problem.lock().map_err(|_| "Zustand ist gesperrt.".to_string())?.clone();
-    let profile = match &dir {
+    let profile = match &file {
         Some(_) => {
             let conn = lock(db)?;
             profile::read_profile(&conn)?
@@ -61,8 +68,8 @@ fn app_state_of(db: &State<Db>, info: &State<AppInfo>) -> Result<AppState, Strin
         None => None,
     };
     Ok(AppState {
-        onboarded: dir.is_some() && profile.is_some(),
-        db_path: dir.map(|d| profile::db_file(&d).to_string_lossy().into_owned()),
+        onboarded: file.is_some() && profile.is_some(),
+        db_path: file.map(|f| f.to_string_lossy().into_owned()),
         profile,
         default_dir: info.default_dir.to_string_lossy().into_owned(),
         problem,
@@ -80,15 +87,235 @@ fn inspect_location(dir: String) -> LocationInfo {
 }
 
 #[tauri::command]
-fn complete_onboarding(db: State<Db>, info: State<AppInfo>, first_name: String, last_name: String, dir: String) -> Result<AppState, String> {
-    let (conn, dir, _) = profile::onboard(&info.config_file, &dir, &first_name, &last_name)?;
+fn inspect_database_file(path: String) -> LocationInfo {
+    profile::inspect_file(&path)
+}
+
+/// Öffnet eine vorhandene Datenbankdatei und merkt sich ihren Ort.
+#[tauri::command]
+fn open_existing_database(db: State<Db>, info: State<AppInfo>, path: String, first_name: String, last_name: String) -> Result<AppState, String> {
+    let (conn, file, _) = profile::open_existing(&info.config_file, &path, &first_name, &last_name)?;
     {
         let mut guard = lock(&db)?;
         *guard = conn;
     }
-    *info.dir.lock().map_err(|_| "Zustand ist gesperrt.".to_string())? = Some(dir);
+    *info.db_file.lock().map_err(|_| "Zustand ist gesperrt.".to_string())? = Some(file);
     *info.problem.lock().map_err(|_| "Zustand ist gesperrt.".to_string())? = None;
     app_state_of(&db, &info)
+}
+
+/// Ändert Vor- und Nachname.
+#[tauri::command]
+fn update_profile(db: State<Db>, first_name: String, last_name: String) -> Result<profile::Profile, String> {
+    let conn = lock(&db)?;
+    profile::update_profile(&conn, &first_name, &last_name)
+}
+
+#[tauri::command]
+fn complete_onboarding(db: State<Db>, info: State<AppInfo>, first_name: String, last_name: String, dir: String) -> Result<AppState, String> {
+    let (conn, file, _) = profile::onboard(&info.config_file, &dir, &first_name, &last_name)?;
+    {
+        let mut guard = lock(&db)?;
+        *guard = conn;
+    }
+    *info.db_file.lock().map_err(|_| "Zustand ist gesperrt.".to_string())? = Some(file);
+    *info.problem.lock().map_err(|_| "Zustand ist gesperrt.".to_string())? = None;
+    app_state_of(&db, &info)
+}
+
+// --- Abgleich zwischen Rechnern ---------------------------------------------
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct SyncNotice {
+    kind: String,
+    device_name: String,
+    saved_at: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RemoteInfo {
+    device_name: String,
+    saved_at: String,
+    /// Der Stand im Ordner stammt von diesem Rechner
+    this_device: bool,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SyncStatus {
+    enabled: bool,
+    /// off, uptodate, push, pull, conflict, waiting oder error
+    state: String,
+    sync_dir: Option<String>,
+    device_name: Option<String>,
+    remote: Option<RemoteInfo>,
+    /// Dieser Rechner hat Änderungen, die noch nicht im Ordner liegen
+    local_changes: bool,
+    /// Dieser Rechner war noch nie mit dem Ordner abgeglichen
+    first_time: bool,
+    last_synced_at: Option<String>,
+    message: Option<String>,
+    /// Was gerade passiert ist: pushed, pulled oder adopted
+    acted: Option<String>,
+    notice: Option<SyncNotice>,
+    suggested_dir: Option<String>,
+    default_device_name: String,
+}
+
+fn load_sync(config_file: &Path) -> Option<SyncConfig> {
+    profile::load_config(config_file).sync
+}
+
+fn store_sync(config_file: &Path, sync: Option<SyncConfig>) -> Result<(), String> {
+    let mut config = profile::load_config(config_file);
+    config.sync = sync;
+    profile::save_config(config_file, &config)
+}
+
+fn acted_name(acted: Option<Acted>) -> Option<String> {
+    acted.map(|a| match a {
+        Acted::Pushed => "pushed",
+        Acted::Pulled => "pulled",
+        Acted::Adopted => "adopted",
+    }.to_string())
+}
+
+/// Stellt den Abgleich-Zustand für die Anzeige zusammen, ohne etwas zu verändern.
+fn make_status(info: &AppInfo, conn: &Connection, acted: Option<Acted>, error: Option<String>) -> SyncStatus {
+    let notice = info.sync_notice.lock().ok().and_then(|mut n| n.take());
+    let mut status = SyncStatus {
+        enabled: false,
+        state: "off".into(),
+        sync_dir: None,
+        device_name: None,
+        remote: None,
+        local_changes: false,
+        first_time: false,
+        last_synced_at: None,
+        message: None,
+        acted: acted_name(acted),
+        notice,
+        suggested_dir: sync::suggested_dir().map(|p| p.to_string_lossy().into_owned()),
+        default_device_name: sync::default_device_name(),
+    };
+    let Some(cfg) = load_sync(&info.config_file) else { return status };
+    status.enabled = true;
+    status.sync_dir = Some(cfg.sync_dir.clone());
+    status.device_name = Some(cfg.device_name.clone());
+    status.last_synced_at = cfg.last_synced_at.clone();
+    if let Some(message) = error {
+        status.state = "error".into();
+        status.message = Some(message);
+        return status;
+    }
+    match sync::evaluate(conn, &cfg) {
+        Ok(eval) => {
+            status.state = match eval.plan {
+                Plan::UpToDate | Plan::Adopt => "uptodate",
+                Plan::Push => "push",
+                Plan::Pull => "pull",
+                Plan::Conflict => "conflict",
+                Plan::Waiting => "waiting",
+            }
+            .into();
+            status.local_changes = eval.local_changed;
+            status.first_time = eval.first_time;
+            status.remote = eval.remote.map(|m| RemoteInfo { this_device: m.device_id == cfg.device_id, device_name: m.device_name, saved_at: m.saved_at });
+        }
+        Err(e) => {
+            status.state = "error".into();
+            status.message = Some(e);
+        }
+    }
+    status
+}
+
+/// Führt die passende Aktion aus (laden nur, wenn `allow_pull`) und speichert den neuen Abgleich-Stand.
+fn run_tick(db: &State<Db>, info: &State<AppInfo>, allow_pull: bool) -> Result<SyncStatus, String> {
+    let mut guard = lock(db)?;
+    let Some(mut cfg) = load_sync(&info.config_file) else { return Ok(make_status(info, &guard, None, None)) };
+    let result = sync::tick(&mut guard, &mut cfg, &info.backup_dir, allow_pull);
+    match result {
+        Ok((_, acted)) => {
+            store_sync(&info.config_file, Some(cfg))?;
+            Ok(make_status(info, &guard, acted, None))
+        }
+        Err(e) => Ok(make_status(info, &guard, None, Some(e))),
+    }
+}
+
+#[tauri::command]
+fn sync_status(db: State<Db>, info: State<AppInfo>) -> Result<SyncStatus, String> {
+    let guard = lock(&db)?;
+    Ok(make_status(&info, &guard, None, None))
+}
+
+/// Schaltet den Abgleich mit dem Ordner ein und gleicht, wenn das ohne Rückfrage geht, gleich ab.
+#[tauri::command]
+fn sync_enable(db: State<Db>, info: State<AppInfo>, dir: String, device_name: String) -> Result<SyncStatus, String> {
+    let dir = profile::prepare_location(&dir)?;
+    let name = device_name.split_whitespace().collect::<Vec<_>>().join(" ");
+    let name = if name.is_empty() { sync::default_device_name() } else { name };
+    if name.chars().count() > 60 {
+        return Err("Der Gerätename darf höchstens 60 Zeichen lang sein.".into());
+    }
+    let cfg = SyncConfig {
+        sync_dir: dir.to_string_lossy().into_owned(),
+        device_id: sync::new_id(),
+        device_name: name,
+        base_revision: None,
+        synced_fingerprint: None,
+        last_synced_at: None,
+    };
+    store_sync(&info.config_file, Some(cfg))?;
+    run_tick(&db, &info, false)
+}
+
+/// "Jetzt abgleichen": hochladen oder, wenn lokal nichts geändert wurde, den neuen Stand laden.
+#[tauri::command]
+fn sync_now(db: State<Db>, info: State<AppInfo>) -> Result<SyncStatus, String> {
+    run_tick(&db, &info, true)
+}
+
+/// Regelmäßig im Hintergrund: lädt nur hoch, lädt nie von selbst, damit nichts unter der Arbeit wegbricht.
+#[tauri::command]
+fn sync_tick(db: State<Db>, info: State<AppInfo>) -> Result<SyncStatus, String> {
+    run_tick(&db, &info, false)
+}
+
+/// Konflikt auflösen: "local" überschreibt den Ordner, "remote" überschreibt diesen Rechner.
+#[tauri::command]
+fn sync_resolve(db: State<Db>, info: State<AppInfo>, choice: String) -> Result<SyncStatus, String> {
+    let keep_local = match choice.as_str() {
+        "local" => true,
+        "remote" => false,
+        _ => return Err("Unbekannte Auswahl.".into()),
+    };
+    let mut guard = lock(&db)?;
+    let mut cfg = load_sync(&info.config_file).ok_or("Der Abgleich ist nicht eingeschaltet.")?;
+    let acted = sync::resolve(&mut guard, &mut cfg, &info.backup_dir, keep_local)?;
+    store_sync(&info.config_file, Some(cfg))?;
+    Ok(make_status(&info, &guard, Some(acted), None))
+}
+
+/// Beendet den Abgleich auf diesem Rechner. Dateien im Ordner und lokale Daten bleiben unberührt.
+#[tauri::command]
+fn sync_disable(db: State<Db>, info: State<AppInfo>) -> Result<SyncStatus, String> {
+    store_sync(&info.config_file, None)?;
+    let guard = lock(&db)?;
+    Ok(make_status(&info, &guard, None, None))
+}
+
+/// Beim Schließen: ausstehende Änderungen noch in den Ordner schreiben.
+fn push_on_exit(app: &AppHandle) {
+    let (Some(db), Some(info)) = (app.try_state::<Db>(), app.try_state::<AppInfo>()) else { return };
+    let Some(mut cfg) = load_sync(&info.config_file) else { return };
+    let Ok(mut conn) = db.0.lock() else { return };
+    if sync::tick(&mut conn, &mut cfg, &info.backup_dir, false).is_ok() {
+        let _ = store_sync(&info.config_file, Some(cfg));
+    }
 }
 
 // --- Kalender ---------------------------------------------------------------
@@ -155,6 +382,31 @@ fn list_tasks(db: State<Db>) -> Result<Vec<Task>, String> {
     tasks::list_tasks(&conn)
 }
 
+/// Logbuch zu Positionen.
+#[tauri::command]
+fn list_journal(db: State<Db>) -> Result<Vec<journal::JournalEntry>, String> {
+    let conn = lock(&db)?;
+    journal::list(&conn)
+}
+
+#[tauri::command]
+fn add_journal(db: State<Db>, input: journal::JournalInput) -> Result<journal::JournalEntry, String> {
+    let conn = lock(&db)?;
+    journal::add(&conn, &input)
+}
+
+#[tauri::command]
+fn update_journal(db: State<Db>, id: i64, input: journal::JournalEdit) -> Result<journal::JournalEntry, String> {
+    let conn = lock(&db)?;
+    journal::update(&conn, id, &input)
+}
+
+#[tauri::command]
+fn delete_journal(db: State<Db>, id: i64) -> Result<(), String> {
+    let conn = lock(&db)?;
+    journal::delete(&conn, id)
+}
+
 #[tauri::command]
 fn create_task(db: State<Db>, input: TaskInput) -> Result<Task, String> {
     let conn = lock(&db)?;
@@ -177,6 +429,12 @@ fn delete_task(db: State<Db>, id: i64) -> Result<(), String> {
 fn move_task(db: State<Db>, id: i64, bucket_id: Option<i64>, before_task_id: Option<i64>) -> Result<Task, String> {
     let conn = lock(&db)?;
     tasks::move_task(&conn, id, bucket_id, before_task_id)
+}
+
+#[tauri::command]
+fn set_task_dates(db: State<Db>, id: i64, start_date: Option<String>, due_date: Option<String>) -> Result<Task, String> {
+    let conn = lock(&db)?;
+    tasks::set_task_dates(&conn, id, start_date.as_deref(), due_date.as_deref())
 }
 
 #[tauri::command]
@@ -235,6 +493,24 @@ fn purge_empty_notes(db: State<Db>, except_id: Option<i64>) -> Result<usize, Str
 fn list_doc_pages(db: State<Db>) -> Result<Vec<DocPage>, String> {
     let conn = lock(&db)?;
     docs::list_pages(&conn)
+}
+
+/// Nimmt die Bytes eines Bildes als rohen Anfragekörper entgegen (kein JSON, damit große Bilder schnell sind); den Typ nennt der Header `x-mime`.
+#[tauri::command]
+fn add_doc_image(db: State<Db>, request: tauri::ipc::Request<'_>) -> Result<i64, String> {
+    let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else {
+        return Err("Das Bild kam nicht an.".into());
+    };
+    let mime = request.headers().get("x-mime").and_then(|v| v.to_str().ok()).unwrap_or("").to_string();
+    let conn = lock(&db)?;
+    docs::add_image(&conn, &mime, bytes)
+}
+
+#[tauri::command]
+fn get_doc_image(db: State<Db>, id: i64) -> Result<tauri::ipc::Response, String> {
+    let conn = lock(&db)?;
+    let (_, data) = docs::get_image(&conn, id)?;
+    Ok(tauri::ipc::Response::new(data))
 }
 
 #[tauri::command]
@@ -422,6 +698,12 @@ fn save_snapshot(db: State<Db>, day: String, value_chf: f64) -> Result<(), Strin
 }
 
 #[tauri::command]
+fn save_sample(db: State<Db>, value_chf: f64) -> Result<(), String> {
+    let conn = lock(&db)?;
+    trading::save_sample(&conn, value_chf)
+}
+
+#[tauri::command]
 fn get_api_key(db: State<Db>) -> Result<String, String> {
     let conn = lock(&db)?;
     Ok(trading::get_setting(&conn, "finnhub_api_key")?.unwrap_or_default())
@@ -450,13 +732,33 @@ async fn refresh_quotes(db: State<'_, Db>) -> Result<finnhub::RefreshResult, Str
         .filter(|k| !k.trim().is_empty())
         .ok_or("Kein Finnhub-API-Key hinterlegt. Trage ihn unter Einstellungen ein.")?;
 
+    // Alle Symbole gleichzeitig abfragen, damit viele Positionen den Takt der Live-Kurse nicht bremsen
     let client = finnhub::client()?;
+    let results = futures_util::future::join_all(symbols.into_iter().map(|symbol| {
+        let client = client.clone();
+        let key = key.clone();
+        async move {
+            let result = finnhub::quote(&client, &symbol, &key).await;
+            (symbol, result)
+        }
+    }))
+    .await;
     let mut fetched = Vec::new();
     let mut failed = Vec::new();
-    for symbol in symbols {
-        match finnhub::quote(&client, &symbol, &key).await {
+    let mut first_error: Option<String> = None;
+    for (symbol, result) in results {
+        match result {
             Ok(price) => fetched.push((symbol, price)),
-            Err(_) => failed.push(symbol),
+            Err(e) => {
+                first_error.get_or_insert(e);
+                failed.push(symbol);
+            }
+        }
+    }
+    // Schlägt alles mit demselben Grund fehl (ungültiger Key, Limit erreicht, kein Netz), nennt die Meldung ihn
+    if fetched.is_empty() && !failed.is_empty() {
+        if let Some(e) = first_error.filter(|e| !e.starts_with("Kein Kurs für")) {
+            return Err(e);
         }
     }
 
@@ -479,10 +781,45 @@ async fn search_symbols(db: State<'_, Db>, query: String) -> Result<Vec<finnhub:
     }
 }
 
+/// Kursverlauf eines Symbols für die Detailansicht (ohne API-Key).
+#[tauri::command]
+async fn asset_chart(symbol: String, range: String) -> Result<finnhub::AssetChart, String> {
+    finnhub::chart(&symbol, &range).await
+}
+
+/// Firmendaten eines Symbols; ohne Key oder ohne Treffer leer.
+#[tauri::command]
+async fn asset_profile(db: State<'_, Db>, symbol: String) -> Result<finnhub::AssetProfile, String> {
+    let key = {
+        let conn = lock(&db)?;
+        trading::get_setting(&conn, "finnhub_api_key")?
+    };
+    match key.filter(|k| !k.trim().is_empty()) {
+        Some(key) => finnhub::profile(&symbol, &key).await,
+        None => Ok(finnhub::AssetProfile::default()),
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .on_window_event(|window, event| {
+            // Mit eingeschaltetem Abgleich erst die letzten Änderungen in den Ordner schreiben, dann schließen
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                let app = window.app_handle().clone();
+                let Some(info) = app.try_state::<AppInfo>() else { return };
+                if load_sync(&info.config_file).is_none() {
+                    return;
+                }
+                api.prevent_close();
+                let window = window.clone();
+                std::thread::spawn(move || {
+                    push_on_exit(&app);
+                    let _ = window.destroy();
+                });
+            }
+        })
         .setup(|app| {
             // Windows: %APPDATA%\com.armin.wissenszentrum\config.json merkt sich den Speicherort der Datenbank
             let data_dir = app.path().app_data_dir()?;
@@ -490,22 +827,41 @@ pub fn run() {
             let config_file = data_dir.join("config.json");
             let configured = profile::read_config(&config_file);
             let default_dir = configured
-                .clone()
+                .as_ref()
+                .and_then(|file| file.parent().map(PathBuf::from))
                 .or_else(|| app.path().document_dir().ok().map(|d| d.join("Wissenszentrum")))
                 .unwrap_or_else(|| data_dir.clone());
 
             // Nur mit Konfiguration und gespeichertem Profil gilt das Onboarding als abgeschlossen
             let mut opened: Option<(Connection, PathBuf)> = None;
             let mut problem = None;
-            if let Some(dir) = configured {
-                match profile::open_database(&dir) {
-                    Ok(conn) if matches!(profile::read_profile(&conn), Ok(Some(_))) => opened = Some((conn, dir)),
-                    Ok(_) => {}
-                    Err(e) => problem = Some(format!("Die Datenbank unter „{}“ konnte nicht geöffnet werden. {e}", dir.display())),
+            if let Some(file) = configured {
+                if !file.is_file() {
+                    // Nicht neu anlegen: Laufwerk oder Ordner fehlt vielleicht nur vorübergehend
+                    problem = Some(format!("Die Datenbank unter „{}“ wurde nicht gefunden.", file.display()));
+                } else {
+                    match profile::open_file(&file) {
+                        Ok(conn) if matches!(profile::read_profile(&conn), Ok(Some(_))) => opened = Some((conn, file)),
+                        Ok(_) => {}
+                        Err(e) => problem = Some(format!("Die Datenbank unter „{}“ konnte nicht geöffnet werden. {e}", file.display())),
+                    }
                 }
             }
-            let (conn, dir) = match opened {
-                Some((conn, dir)) => (conn, Some(dir)),
+            // Beim Start: unterwegs hochgeladene Änderungen anderer Rechner laden, solange hier nichts geändert wurde
+            let backup_dir = data_dir.join("sicherungen");
+            let mut notice = None;
+            if let Some((conn, _)) = opened.as_mut() {
+                if let Some(mut cfg) = load_sync(&config_file) {
+                    if let Ok((eval, acted)) = sync::tick(conn, &mut cfg, &backup_dir, true) {
+                        let _ = store_sync(&config_file, Some(cfg));
+                        if let (Some(Acted::Pulled), Some(remote)) = (acted, eval.remote) {
+                            notice = Some(SyncNotice { kind: "pulled".into(), device_name: remote.device_name, saved_at: remote.saved_at });
+                        }
+                    }
+                }
+            }
+            let (conn, db_file) = match opened {
+                Some((conn, file)) => (conn, Some(file)),
                 None => {
                     // Platzhalter bis zum Onboarding, damit alle Befehle eine Verbindung vorfinden
                     let conn = Connection::open_in_memory()?;
@@ -514,13 +870,29 @@ pub fn run() {
                 }
             };
             app.manage(Db(Mutex::new(conn)));
-            app.manage(AppInfo { config_file, default_dir, dir: Mutex::new(dir), problem: Mutex::new(problem) });
+            app.manage(AppInfo {
+                config_file,
+                default_dir,
+                db_file: Mutex::new(db_file),
+                problem: Mutex::new(problem),
+                backup_dir,
+                sync_notice: Mutex::new(notice),
+            });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             app_state,
+            sync_status,
+            sync_enable,
+            sync_now,
+            sync_tick,
+            sync_resolve,
+            sync_disable,
             inspect_location,
+            inspect_database_file,
+            open_existing_database,
             complete_onboarding,
+            update_profile,
             list_events,
             create_event,
             update_event,
@@ -536,6 +908,7 @@ pub fn run() {
             delete_task,
             move_task,
             set_subtask_done,
+            set_task_dates,
             set_task_done,
             list_notes,
             create_note,
@@ -544,6 +917,8 @@ pub fn run() {
             delete_note,
             purge_empty_notes,
             list_doc_pages,
+            add_doc_image,
+            get_doc_image,
             create_doc_page,
             update_doc_page,
             set_doc_favorite,
@@ -574,9 +949,16 @@ pub fn run() {
             delete_metal,
             set_quote,
             save_snapshot,
+            save_sample,
             get_api_key,
             save_api_key,
             refresh_quotes,
+            asset_chart,
+            list_journal,
+            add_journal,
+            update_journal,
+            delete_journal,
+            asset_profile,
             search_symbols
         ])
         .run(tauri::generate_context!())

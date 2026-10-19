@@ -1,19 +1,34 @@
+import { useEffect, useRef, useState } from "react";
 import { CalendarDays } from "lucide-react";
-import { setSubtaskDone, setTaskDone } from "../../lib/api/tasks";
+import { setSubtaskDone } from "../../lib/api/tasks";
+import { MOVE_DELAY_MS, toggleTask, useDoneState } from "../../lib/taskAnimation";
 import { formatDue, isOverdue, subtaskProgress, type Task } from "../../lib/tasks";
 
-/** Abhak-Kästchen. Klick öffnet nicht die Aufgabe, sondern schaltet nur „erledigt“ um. */
-export function TaskCheck({ task }: { task: Task }) {
+/**
+ * Abhak-Kästchen. Klick öffnet nicht die Aufgabe, sondern schaltet nur „erledigt“ um. Der Haken erscheint mit einer
+ * kleinen Bewegung. Wandert die Aufgabe danach weiter (`moves`), wartet das Speichern, bis der Abschluss zu sehen war.
+ */
+export function TaskCheck({ task, moves = false }: { task: Task; moves?: boolean }) {
+  const done = useDoneState(task);
+  const [pop, setPop] = useState(false);
+  const timer = useRef<number | undefined>(undefined);
+  useEffect(() => () => window.clearTimeout(timer.current), []);
+
   return (
     <button
       type="button"
-      className={`check check-btn${task.done ? " checked" : ""}`}
+      className={`check check-btn${done ? " checked" : ""}${pop ? " pop" : ""}`}
       role="checkbox"
-      aria-checked={task.done}
-      aria-label={task.done ? "Als offen markieren" : "Als erledigt markieren"}
+      aria-checked={done}
+      aria-label={done ? "Als offen markieren" : "Als erledigt markieren"}
       onClick={(e) => {
         e.stopPropagation();
-        void setTaskDone(task.id, !task.done);
+        if (!done) {
+          setPop(true);
+          window.clearTimeout(timer.current);
+          timer.current = window.setTimeout(() => setPop(false), 520);
+        }
+        toggleTask(task, moves ? MOVE_DELAY_MS : 0);
       }}
     />
   );
@@ -72,7 +87,7 @@ export function CardSubtasks({ task }: { task: Task }) {
               void setSubtaskDone(step.id, !step.done);
             }}
           />
-          <span>{step.title}</span>
+          <span className="strike">{step.title}</span>
         </li>
       ))}
     </ul>

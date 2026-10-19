@@ -199,3 +199,48 @@
 .tm-step-add input::placeholder {
   color: var(--text-faint);
 }
+
+/* ---------- Farbwahl der Buckets ---------- */
+.color-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+
+.color-swatch {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  color: var(--btn-primary-text);
+  cursor: pointer;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+
+.color-swatch:hover {
+  transform: scale(1.1);
+}
+
+.color-swatch.active {
+  box-shadow: 0 0 0 2px var(--bg-card), 0 0 0 4px #ffffff;
+}
+
+/* „Keine Farbe“: hohler Kreis */
+.color-swatch.none {
+  border: 1px dashed var(--border-strong-hover);
+  background: transparent;
+  color: var(--text-muted);
+}
+
+.color-swatch.none.active {
+  color: var(--text);
+}
+
+.tm-hint {
+  font-size: 0.78rem;
+  color: var(--text-faint);
+}

@@ -2,14 +2,34 @@ import { formatDayMonth, parseDateTime, startOfDay, toDateStr, addDays } from ".
 
 export type Priority = "high" | "medium" | "low";
 
+/** Farben für Buckets: feste Palette, die Darstellung steht in tokens.css (--bucket-…). */
+export const BUCKET_COLORS = [
+  { id: "blue", label: "Blau" },
+  { id: "green", label: "Grün" },
+  { id: "amber", label: "Gelb" },
+  { id: "red", label: "Rot" },
+  { id: "purple", label: "Violett" },
+  { id: "pink", label: "Rosa" },
+  { id: "teal", label: "Türkis" },
+  { id: "gray", label: "Grau" },
+] as const;
+
+export type BucketColor = (typeof BUCKET_COLORS)[number]["id"];
+
 export interface Bucket {
   id: number;
   name: string;
+  /** Farbe aus der Palette, leer = keine */
+  color: BucketColor | "";
   /** Bucket, in den abgehakte Aufgaben automatisch verschoben werden (null = nichts tun) */
   onCompleteBucketId: number | null;
 }
 
 export type BucketInput = Omit<Bucket, "id">;
+
+/** CSS-Farbe eines Buckets oder undefined, wenn er keine hat. */
+export const bucketAccent = (bucket: Pick<Bucket, "color"> | null | undefined): string | undefined =>
+  bucket && bucket.color ? `var(--bucket-${bucket.color})` : undefined;
 
 export interface Subtask {
   id: number;
@@ -32,6 +52,8 @@ export interface Task {
   priority: Priority;
   /** Fälligkeitsdatum als YYYY-MM-DD */
   dueDate: string | null;
+  /** Beginn als YYYY-MM-DD; mit der Fälligkeit ergibt das den Balken im Zeitplan (nur zusammen mit dueDate) */
+  startDate: string | null;
   done: boolean;
   /** Zwischenschritte auch auf der Karte im Board anzeigen */
   showSubtasks: boolean;

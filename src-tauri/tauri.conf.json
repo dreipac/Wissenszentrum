@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Wissenszentrum",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "identifier": "com.armin.wissenszentrum",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -18,7 +18,8 @@
         "minWidth": 1000,
         "minHeight": 640,
         "center": true,
-        "decorations": false
+        "decorations": false,
+        "dragDropEnabled": false
       }
     ],
     "security": {
@@ -26,7 +27,7 @@
         "default-src": "'self'",
         "script-src": "'self'",
         "style-src": "'self' 'unsafe-inline'",
-        "img-src": "'self' data:",
+        "img-src": "'self' data: blob:",
         "font-src": "'self'",
         "connect-src": "ipc: http://ipc.localhost",
         "object-src": "'none'",
@@ -38,7 +39,7 @@
         "default-src": "'self'",
         "script-src": "'self' 'unsafe-inline'",
         "style-src": "'self' 'unsafe-inline'",
-        "img-src": "'self' data:",
+        "img-src": "'self' data: blob:",
         "font-src": "'self'",
         "connect-src": "ipc: http://ipc.localhost ws://localhost:1420 http://localhost:1420",
         "object-src": "'none'",
@@ -50,13 +51,37 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": [
+      "nsis",
+      "msi"
+    ],
+    "publisher": "Armin Durmisi",
+    "shortDescription": "Dokumentation, Aufgaben, Kalender, Notizen und Trading an einem Ort",
+    "copyright": "Armin Durmisi",
+    "category": "Productivity",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "windows": {
+      "nsis": {
+        "installerIcon": "icons/icon.ico",
+        "headerImage": "installer/header.bmp",
+        "sidebarImage": "installer/sidebar.bmp",
+        "installMode": "currentUser",
+        "languages": [
+          "German"
+        ],
+        "displayLanguageSelector": false
+      },
+      "wix": {
+        "language": "de-DE",
+        "bannerPath": "installer/wix-banner.bmp",
+        "dialogImagePath": "installer/wix-dialog.bmp"
+      }
+    }
   }
 }

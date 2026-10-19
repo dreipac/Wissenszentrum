@@ -129,7 +129,11 @@
 
 .task-card.done .task-title {
   color: var(--text-muted);
-  text-decoration: line-through;
+}
+
+.task-title,
+.task-row-title {
+  transition: color 0.35s ease;
 }
 
 .task-card-main {
@@ -228,7 +232,6 @@
 
 .task-row.done .task-row-title {
   color: var(--text-muted);
-  text-decoration: line-through;
 }
 
 .task-row-title {
@@ -357,9 +360,12 @@
   color: var(--text);
 }
 
+.card-steps li span {
+  transition: color 0.3s ease;
+}
+
 .card-steps li.done span {
   color: var(--text-muted);
-  text-decoration: line-through;
 }
 
 .card-steps .check-btn {
@@ -373,4 +379,17 @@
 
 .task-card-main .segment-bar {
   max-width: none;
+}
+
+/* Farbige Buckets: Punkt vor dem Namen und eine feine Linie oben an der Spalte */
+.bucket.colored {
+  border-top: 2px solid color-mix(in srgb, var(--bucket-accent) 75%, transparent);
+}
+
+.bucket-dot {
+  width: 8px;
+  height: 8px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background-color: var(--bucket-accent);
 }

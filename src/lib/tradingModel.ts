@@ -24,6 +24,12 @@ export interface HoldingRow {
   metal?: Metal;
   /** Wert ohne aktuellen Kurs bzw. Spotpreis geschätzt */
   estimated: boolean;
+  /** Nur Aktien und Krypto: Symbol, Währung, durchschnittlicher Einstieg, aktueller Kurs (falls vorhanden), offene Positionen */
+  symbol?: string;
+  currency?: string;
+  avgPrice?: number | null;
+  price?: number | null;
+  tradeIds?: number[];
 }
 
 export interface ActivityRow {
@@ -46,6 +52,8 @@ export interface TradingModel {
   total: number;
   unrealized: number;
   realizedYtd: number;
+  /** Ergebnis aller Verkäufe seit Beginn */
+  realizedTotal: number;
   activity: ActivityRow[];
   /** Anteile für die Verteilung (CHF) */
   allocation: { cash: number; aktie: number; krypto: number; edelmetall: number };
@@ -95,6 +103,11 @@ export function buildModel(state: TradingState, now = new Date()): TradingModel 
       valueChf,
       pnlPct: cost > 0 ? ((valueChf - cost) / cost) * 100 : null,
       estimated: rows.some((r) => !r.hasQuote),
+      symbol: first.symbol,
+      currency: first.currency,
+      avgPrice: quantity > 0 ? sum(rows.map((r) => r.trade.avgPrice * r.trade.quantity)) / quantity : null,
+      price: rows[0].hasQuote ? rows[0].price : null,
+      tradeIds: rows.map((r) => r.trade.id),
     };
   });
   const metalHoldings: HoldingRow[] = state.metals.map((m) => {
@@ -120,6 +133,8 @@ export function buildModel(state: TradingState, now = new Date()): TradingModel 
   const realizedYtd = sum(
     state.trades.flatMap((t) => t.executions).filter((e) => e.kind === "sell" && e.executedAt.startsWith(year)).map((e) => e.realizedChf),
   );
+
+  const realizedTotal = sum(state.trades.flatMap((t) => t.executions).filter((e) => e.kind === "sell").map((e) => e.realizedChf));
 
   const byClass = (c: "aktie" | "krypto") => sum(open.filter((r) => r.trade.assetClass === c).map((r) => r.valueChf));
 
@@ -155,6 +170,7 @@ export function buildModel(state: TradingState, now = new Date()): TradingModel 
     total: state.cashChf + positionsValue + metalsValue,
     unrealized: sum(open.map((r) => r.pnlChf)),
     realizedYtd,
+    realizedTotal,
     activity,
     allocation: { cash: Math.max(state.cashChf, 0), aktie: byClass("aktie"), krypto: byClass("krypto"), edelmetall: metalsValue },
   };

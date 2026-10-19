@@ -1,11 +1,13 @@
 import { useMemo, useState } from "react";
-import { CalendarCheck, CalendarDays, CalendarRange, CheckSquare, KanbanSquare, List, Plus, Search } from "lucide-react";
+import { CalendarCheck, CalendarRange, CheckSquare, KanbanSquare, List, Plus, Search } from "lucide-react";
 import { Button } from "../components/ui/Button";
 import { SecondaryButton } from "../components/ui/SecondaryButton";
 import { Board, type Column } from "../components/tasks/Board";
 import { TaskCheck } from "../components/tasks/parts";
+import { Timeline } from "../components/tasks/Timeline";
 import { TodayView } from "../components/tasks/TodayView";
 import { useDialogs } from "../lib/dialogs";
+import { useDoneState } from "../lib/taskAnimation";
 import { formatDue, isOverdue, priorityLabel, type Bucket, type Task } from "../lib/tasks";
 import { useTasks } from "../lib/useTasks";
 import "./TasksView.css";
@@ -18,6 +20,24 @@ const STATUS_FILTERS: { id: StatusFilter; label: string }[] = [
   { id: "open", label: "Offen" },
   { id: "done", label: "Erledigt" },
 ];
+
+function ListRow({ task, bucket, moves, onOpen }: { task: Task; bucket: string; moves: boolean; onOpen: () => void }) {
+  const done = useDoneState(task);
+  return (
+    <div className={`task-row${done ? " done" : ""}`} onClick={onOpen}>
+      <TaskCheck task={task} moves={moves} />
+      <span className="task-row-title">
+        <span className="strike">{task.title}</span>
+      </span>
+      <span className="muted">{bucket}</span>
+      <span className="task-row-priority">
+        <span className={`priority ${task.priority}`} />
+        {priorityLabel[task.priority]}
+      </span>
+      <span className={isOverdue(task) ? "task-due urgent" : "muted"}>{task.dueDate ? formatDue(task.dueDate) : "—"}</span>
+    </div>
+  );
+}
 
 function ListView({ tasks, buckets }: { tasks: Task[]; buckets: Bucket[] }) {
   const { openEditTask } = useDialogs();
@@ -35,33 +55,8 @@ function ListView({ tasks, buckets }: { tasks: Task[]; buckets: Bucket[] }) {
         <span>Fällig</span>
       </div>
       {tasks.map((task) => (
-        <div
-          key={task.id}
-          className={`task-row${task.done ? " done" : ""}`}
-          onClick={() => openEditTask(task)}
-        >
-          <TaskCheck task={task} />
-          <span className="task-row-title">{task.title}</span>
-          <span className="muted">{bucketName(task.bucketId)}</span>
-          <span className="task-row-priority">
-            <span className={`priority ${task.priority}`} />
-            {priorityLabel[task.priority]}
-          </span>
-          <span className={isOverdue(task) ? "task-due urgent" : "muted"}>
-            {task.dueDate ? formatDue(task.dueDate) : "—"}
-          </span>
-        </div>
+        <ListRow key={task.id} task={task} bucket={bucketName(task.bucketId)} moves={buckets.find((b) => b.id === task.bucketId)?.onCompleteBucketId != null} onOpen={() => openEditTask(task)} />
       ))}
-    </div>
-  );
-}
-
-function TimelineView() {
-  return (
-    <div className="timeline-empty card">
-      <CalendarDays size={28} />
-      <h3>Zeitplan-Ansicht</h3>
-      <p>Hier erscheint später eine Zeitleiste (Gantt) deiner Aufgaben und Buckets.</p>
     </div>
   );
 }
@@ -89,7 +84,7 @@ function EmptyState() {
 
 export function TasksView() {
   const { tasks, buckets, loaded, error } = useTasks();
-  const { openNewTask, openNewBucket } = useDialogs();
+  const { openNewTask, openNewBucket, openBucketMenu, openBoardMenu } = useDialogs();
   const [tab, setTab] = useState<TaskTab>("today");
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<StatusFilter>("all");
@@ -130,6 +125,18 @@ export function TasksView() {
       : `${tasks.length} ${tasks.length === 1 ? "Aufgabe" : "Aufgaben"}${
           buckets.length ? ` in ${buckets.length} ${buckets.length === 1 ? "Bucket" : "Buckets"}` : ""
         } · ${doneCount} erledigt`;
+
+  // Rechtsklick im Board: auf einem Bucket sein Menü, auf Aufgaben nichts Eigenes, auf freier Fläche „Neuer Bucket“
+  const onBoardMenu = (e: React.MouseEvent) => {
+    if (tab !== "board") return;
+    e.preventDefault();
+    const target = e.target as Element;
+    if (target.closest(".task-card")) return;
+    const column = target.closest<HTMLElement>("[data-bucket-id]");
+    const bucket = column ? buckets.find((b) => String(b.id) === column.dataset.bucketId) : undefined;
+    if (bucket) openBucketMenu(bucket, e.clientX, e.clientY);
+    else openBoardMenu(e.clientX, e.clientY);
+  };
 
   const empty = loaded && tasks.length === 0 && buckets.length === 0;
   const showToolbar = (tab === "board" || tab === "list") && !empty;
@@ -188,13 +195,13 @@ export function TasksView() {
         </div>
       )}
 
-      <div className={`page-body tasks-body${tab === "today" ? " depth" : ""}`}>
+      <div className={`page-body tasks-body${tab === "today" ? " depth" : ""}`} onContextMenu={onBoardMenu}>
         {error && <p className="field-error">Aufgaben konnten nicht geladen werden: {error}</p>}
         {tab === "today" && <TodayView />}
         {loaded && empty && (tab === "board" || tab === "list") && <EmptyState />}
         {loaded && !empty && tab === "board" && <Board columns={columns} buckets={buckets} />}
         {loaded && !empty && tab === "list" && <ListView tasks={filtered} buckets={buckets} />}
-        {tab === "timeline" && <TimelineView />}
+        {loaded && tab === "timeline" && <Timeline />}
       </div>
     </div>
   );

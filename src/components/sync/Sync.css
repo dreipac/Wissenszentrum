@@ -1,0 +1,295 @@
+/* ---------- Einstellungen ---------- */
+.sync-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  padding: 1rem 0 0.25rem;
+  border-top: 1px solid var(--border-soft);
+}
+
+.sync-section.bare {
+  padding: 0;
+  border-top: none;
+}
+
+.sync-title {
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.sync-lead {
+  font-size: 0.85rem;
+  line-height: 1.55;
+  color: var(--text-muted);
+}
+
+.sync-note {
+  line-height: 1.5;
+}
+
+.sync-path-row {
+  display: flex;
+  gap: 0.6rem;
+}
+
+.sync-path {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 0.55rem;
+  min-width: 0;
+  padding: 0 0.75rem;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  background-color: var(--bg-sidebar);
+  font-size: 0.85rem;
+}
+
+.sync-path svg {
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.sync-path span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sync-path span.empty {
+  color: var(--text-faint);
+}
+
+.sync-state {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.88rem;
+}
+
+.sync-state span:not(.sync-dot) {
+  color: var(--text-muted);
+}
+
+.sync-dot {
+  width: 8px;
+  height: 8px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background-color: var(--text-faint);
+}
+
+.sync-state.ok .sync-dot {
+  background-color: var(--positive);
+}
+
+.sync-state.pending .sync-dot {
+  background-color: var(--warning);
+}
+
+.sync-state.problem .sync-dot {
+  background-color: var(--negative);
+}
+
+.sync-message {
+  margin: 0;
+}
+
+.sync-facts {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  background-color: var(--bg-sidebar);
+}
+
+.sync-facts div {
+  display: flex;
+  gap: 1rem;
+  padding: 0.55rem 0.85rem;
+  font-size: 0.82rem;
+}
+
+.sync-facts div + div {
+  border-top: 1px solid var(--border-soft);
+}
+
+.sync-facts dt {
+  width: 110px;
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.sync-facts dd {
+  margin: 0;
+  min-width: 0;
+  word-break: break-all;
+}
+
+.sync-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.sync-actions .btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.spin {
+  animation: sync-spin 0.9s linear infinite;
+}
+
+@keyframes sync-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ---------- Konflikt ---------- */
+.sync-compare {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+
+.sync-side {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  background-color: var(--bg-sidebar);
+  font-size: 0.85rem;
+}
+
+.sync-side-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  margin-bottom: 0.4rem;
+  border-radius: var(--radius-md);
+  background-color: var(--bg-card);
+  color: var(--text-muted);
+}
+
+.sync-side .muted {
+  font-size: 0.78rem;
+}
+
+/* ---------- Meldungen über dem Inhalt ---------- */
+.sync-banners {
+  position: fixed;
+  top: calc(var(--titlebar-height) + 0.6rem);
+  left: 50%;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.sync-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  max-width: min(620px, 90vw);
+  padding: 0.45rem 0.8rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background-color: rgba(31, 31, 31, 0.97);
+  box-shadow: var(--shadow-pop);
+  font-size: 0.82rem;
+  pointer-events: auto;
+  animation: sync-banner-in 0.2s ease;
+}
+
+@keyframes sync-banner-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.sync-banner svg {
+  flex-shrink: 0;
+}
+
+.sync-banner.ok svg {
+  color: var(--positive);
+}
+
+.sync-banner.info svg {
+  color: var(--accent);
+}
+
+.sync-banner.warn {
+  border-color: color-mix(in srgb, var(--warning) 45%, transparent);
+}
+
+.sync-banner.warn svg {
+  color: var(--warning);
+}
+
+.sync-banner .icon-btn {
+  width: 22px;
+  height: 22px;
+}
+
+.sync-banner-btn {
+  padding: 0.15rem 0.7rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text);
+  font-size: 0.78rem;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+
+.sync-banner-btn:hover:not(:disabled) {
+  border-color: var(--border-strong-hover);
+}
+
+/* ---------- Symbol in der Seitenleiste ---------- */
+.sync-btn {
+  position: relative;
+}
+
+.sync-btn .sync-dot {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 7px;
+  height: 7px;
+  border: 1px solid var(--bg-sidebar);
+}
+
+.sync-btn.none .sync-dot {
+  display: none;
+}
+
+.sync-btn.ok .sync-dot {
+  background-color: var(--positive);
+}
+
+.sync-btn.pending .sync-dot {
+  background-color: var(--warning);
+}
+
+.sync-btn.problem .sync-dot {
+  background-color: var(--negative);
+}

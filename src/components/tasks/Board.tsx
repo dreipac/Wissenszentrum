@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
   DndContext,
   DragOverlay,
@@ -27,7 +27,9 @@ import { CSS } from "@dnd-kit/utilities";
 import { ArrowRight, Plus, Settings2 } from "lucide-react";
 import { moveTask, reorderBuckets } from "../../lib/api/tasks";
 import { useDialogs } from "../../lib/dialogs";
-import { priorityLabel, type Bucket, type Task } from "../../lib/tasks";
+import { bucketAccent, priorityLabel, type Bucket, type Task } from "../../lib/tasks";
+import { useDoneState } from "../../lib/taskAnimation";
+import { useFlip } from "../../lib/useFlip";
 import { CardSubtasks, DueDate, SubtaskProgress, TaskCheck } from "./parts";
 
 export interface Column {
@@ -55,12 +57,14 @@ const buildOrder = (columns: Column[]): string[] =>
 // Karte
 // ---------------------------------------------------------------------------
 
-function TaskCardView({ task }: { task: Task }) {
+function TaskCardView({ task, moves = false }: { task: Task; moves?: boolean }) {
   return (
     <>
-      <TaskCheck task={task} />
+      <TaskCheck task={task} moves={moves} />
       <div className="task-card-main">
-        <h3 className="task-title">{task.title}</h3>
+        <h3 className="task-title">
+          <span className="strike">{task.title}</span>
+        </h3>
         {task.description && <p className="task-desc">{task.description}</p>}
         <CardSubtasks task={task} />
         <div className="task-meta">
@@ -76,8 +80,9 @@ function TaskCardView({ task }: { task: Task }) {
   );
 }
 
-function SortableTask({ task, suppressClick }: { task: Task; suppressClick: React.RefObject<boolean> }) {
+function SortableTask({ task, group, moves, suppressClick }: { task: Task; group: string; moves: boolean; suppressClick: React.RefObject<boolean> }) {
   const { openEditTask } = useDialogs();
+  const done = useDoneState(task);
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: taskKey(task.id),
     data: { type: "task" },
@@ -89,11 +94,13 @@ function SortableTask({ task, suppressClick }: { task: Task; suppressClick: Reac
       {...attributes}
       {...listeners}
       role="group"
-      className={`task-card draggable${task.done ? " done" : ""}${isDragging ? " ghost" : ""}`}
+      data-flip={task.id}
+      data-flip-group={group}
+      className={`task-card draggable${done ? " done" : ""}${isDragging ? " ghost" : ""}`}
       style={{ transform: CSS.Transform.toString(transform), transition }}
       onClick={() => !suppressClick.current && openEditTask(task)}
     >
-      <TaskCardView task={task} />
+      <TaskCardView task={task} moves={moves} />
     </article>
   );
 }
@@ -122,18 +129,21 @@ function ColumnView({ column, ids, taskById, bucketName, suppressClick }: Column
   });
   const drop = useDroppable({ id: containerKey(bucket), data: { type: "container" } });
 
+  const accent = bucketAccent(bucket);
   const visibleTasks = ids.map((id) => taskById.get(id)).filter((t): t is Task => t !== undefined);
 
   return (
     <section
       ref={sortable.setNodeRef}
-      className={`bucket${sortable.isDragging ? " dragging" : ""}`}
-      style={{ transform: CSS.Translate.toString(sortable.transform), transition: sortable.transition }}
+      data-bucket-id={bucket ? bucket.id : "none"}
+      className={`bucket${sortable.isDragging ? " dragging" : ""}${accent ? " colored" : ""}`}
+      style={{ transform: CSS.Translate.toString(sortable.transform), transition: sortable.transition, ...(accent ? { "--bucket-accent": accent } : {}) } as CSSProperties}
     >
       <header
         className={`bucket-head${bucket ? " grabbable" : ""}`}
         {...(bucket ? { ...sortable.attributes, ...sortable.listeners } : {})}
       >
+        {accent && <span className="bucket-dot" aria-hidden />}
         <h2 className="bucket-name">{name}</h2>
         <span className="bucket-count">{visibleTasks.length}</span>
         <div className="bucket-head-actions">
@@ -171,7 +181,7 @@ function ColumnView({ column, ids, taskById, bucketName, suppressClick }: Column
         <SortableContext items={ids} strategy={verticalListSortingStrategy}>
           {visibleTasks.length === 0 && <p className="bucket-empty">Keine Aufgaben</p>}
           {visibleTasks.map((task) => (
-            <SortableTask key={task.id} task={task} suppressClick={suppressClick} />
+            <SortableTask key={task.id} task={task} group={containerKey(bucket)} moves={bucket?.onCompleteBucketId != null} suppressClick={suppressClick} />
           ))}
         </SortableContext>
         <button type="button" className="bucket-add" onClick={() => openNewTask(bucket?.id ?? null)}>
@@ -199,12 +209,18 @@ export function Board({ columns, buckets }: { columns: Column[]; buckets: Bucket
   const [error, setError] = useState<string | null>(null);
   const dragging = useRef(false);
   const suppressClick = useRef(false);
+  const boardRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (dragging.current) return;
     setItems(buildItems(columns));
     setOrder(buildOrder(columns));
   }, [columns]);
+
+  // Nach dem Speichern gleiten Karten sanft an ihren neuen Platz, auch in eine andere Spalte
+  // Ausgelöst wird beim Wechsel von `items`, denn das bestimmt, in welcher Spalte eine Karte steht. Direkt nach dem
+  // Loslassen einer gezogenen Karte nicht, dort übernimmt dnd-kit die Bewegung.
+  useFlip(boardRef, items, active === null && !suppressClick.current);
 
   const taskById = useMemo(
     () => new Map(columns.flatMap((c) => c.tasks).map((t) => [taskKey(t.id), t] as const)),
@@ -348,7 +364,7 @@ export function Board({ columns, buckets }: { columns: Column[]; buckets: Bucket
         onDragEnd={onDragEnd}
         onDragCancel={onDragCancel}
       >
-        <div className={`board${active ? " is-dragging" : ""}`}>
+        <div ref={boardRef} className={`board${active ? " is-dragging" : ""}`}>
           {unassigned && (
             <ColumnView
               column={unassigned}

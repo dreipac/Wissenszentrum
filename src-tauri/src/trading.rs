@@ -111,6 +111,14 @@ pub struct Snapshot {
     pub value_chf: f64,
 }
 
+/// Zwischenstand des Gesamtvermögens (Zeit in UTC, `YYYY-MM-DD HH:MM:SS`).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Sample {
+    pub ts: String,
+    pub value_chf: f64,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TradingState {
@@ -120,6 +128,8 @@ pub struct TradingState {
     pub metals: Vec<Metal>,
     pub quotes: Vec<Quote>,
     pub snapshots: Vec<Snapshot>,
+    /// Zwischenstände der letzten Tage für den Tagesverlauf
+    pub samples: Vec<Sample>,
     pub has_api_key: bool,
 }
 
@@ -399,6 +409,13 @@ pub fn state(conn: &Connection) -> Result<TradingState, String> {
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| e.to_string())?;
 
+    let mut stmt = conn.prepare("SELECT ts, value_chf FROM portfolio_samples ORDER BY ts").map_err(|e| e.to_string())?;
+    let samples = stmt
+        .query_map([], |r| Ok(Sample { ts: r.get(0)?, value_chf: r.get(1)? }))
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+
     Ok(TradingState {
         trades: load_trades(conn, None)?,
         movements,
@@ -406,6 +423,7 @@ pub fn state(conn: &Connection) -> Result<TradingState, String> {
         metals: list_metals(conn)?,
         quotes,
         snapshots,
+        samples,
         has_api_key: get_setting(conn, "finnhub_api_key")?.map(|k| !k.trim().is_empty()).unwrap_or(false),
     })
 }
@@ -755,6 +773,55 @@ pub fn save_snapshot(conn: &Connection, day: &str, value_chf: f64) -> Result<(),
         "INSERT INTO portfolio_snapshots (day, value_chf) VALUES (?1, ?2)
          ON CONFLICT(day) DO UPDATE SET value_chf = excluded.value_chf",
         params![day, value_chf],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Mindestabstand zwischen zwei Zwischenständen, solange sich der Wert nicht ändert
+const SAMPLE_IDLE_SECS: i64 = 600;
+/// Mindestabstand zwischen zwei Zwischenständen bei geänderten Werten
+const SAMPLE_MIN_SECS: i64 = 30;
+/// So lange bleiben Zwischenstände erhalten; ältere Tage deckt der Tagesstand ab
+const SAMPLE_KEEP_DAYS: i64 = 8;
+
+/// Hält den Gesamtwert für den Tagesverlauf fest. Unveränderte Werte werden nur selten wiederholt, damit die
+/// Tabelle klein bleibt; Zwischenstände älter als ein Tag werden auf einen je zehn Minuten ausgedünnt.
+pub fn save_sample(conn: &Connection, value_chf: f64) -> Result<(), String> {
+    if !value_chf.is_finite() {
+        return Err("Ungültiger Wert.".into());
+    }
+    let value_chf = (value_chf * 100.0).round() / 100.0;
+    let last: Option<(f64, i64)> = conn
+        .query_row(
+            "SELECT value_chf, CAST(strftime('%s', 'now') AS INTEGER) - CAST(strftime('%s', ts) AS INTEGER)
+             FROM portfolio_samples ORDER BY ts DESC LIMIT 1",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?;
+    if let Some((value, age)) = last {
+        let unchanged = (value - value_chf).abs() < 0.005;
+        if (unchanged && age < SAMPLE_IDLE_SECS) || age < SAMPLE_MIN_SECS {
+            return Ok(());
+        }
+    }
+    conn.execute(
+        "INSERT INTO portfolio_samples (ts, value_chf) VALUES (datetime('now'), ?1)
+         ON CONFLICT(ts) DO UPDATE SET value_chf = excluded.value_chf",
+        params![value_chf],
+    )
+    .map_err(|e| e.to_string())?;
+    conn.execute("DELETE FROM portfolio_samples WHERE ts < datetime('now', ?1)", params![format!("-{SAMPLE_KEEP_DAYS} days")])
+        .map_err(|e| e.to_string())?;
+    conn.execute(
+        "DELETE FROM portfolio_samples
+         WHERE ts < datetime('now', '-1 day')
+           AND rowid NOT IN (
+               SELECT MIN(rowid) FROM portfolio_samples WHERE ts < datetime('now', '-1 day') GROUP BY substr(ts, 1, 15)
+           )",
+        [],
     )
     .map_err(|e| e.to_string())?;
     Ok(())
@@ -1129,5 +1196,55 @@ mod tests {
         assert!(state(&c).unwrap().has_api_key);
         assert_eq!(get_setting(&c, "finnhub_api_key").unwrap().as_deref(), Some("abc"));
         assert_eq!(get_setting(&c, "nope").unwrap(), None);
+    }
+
+    #[test]
+    fn samples_are_deduplicated_thinned_and_pruned() {
+        let c = conn();
+        save_sample(&c, 1000.0).unwrap();
+        // Gleicher Wert und Änderung innerhalb von 30 Sekunden: nichts Neues
+        save_sample(&c, 1000.0).unwrap();
+        save_sample(&c, 1010.0).unwrap();
+        let count = |c: &Connection| c.query_row("SELECT COUNT(*) FROM portfolio_samples", [], |r| r.get::<_, i64>(0)).unwrap();
+        assert_eq!(count(&c), 1, "zu kurz nach dem letzten Stand");
+        assert!(save_sample(&c, f64::NAN).is_err());
+
+        // Älter gemacht: eine Änderung wird gespeichert, ein unveränderter Wert noch nicht
+        c.execute("UPDATE portfolio_samples SET ts = datetime('now', '-1 minute')", []).unwrap();
+        save_sample(&c, 1000.004).unwrap();
+        assert_eq!(count(&c), 1, "unverändert (auf Rappen gerundet) und jünger als 10 Minuten");
+        save_sample(&c, 1012.4).unwrap();
+        assert_eq!(count(&c), 2);
+        let last: f64 = c.query_row("SELECT value_chf FROM portfolio_samples ORDER BY ts DESC LIMIT 1", [], |r| r.get(0)).unwrap();
+        approx(last, 1012.4);
+
+        // Unverändert, aber lange her: wieder ein Eintrag
+        c.execute("DELETE FROM portfolio_samples", []).unwrap();
+        c.execute("INSERT INTO portfolio_samples (ts, value_chf) VALUES (datetime('now', '-11 minutes'), 5.0)", []).unwrap();
+        save_sample(&c, 5.0).unwrap();
+        assert_eq!(count(&c), 2);
+
+        // Aufräumen: zu alte Einträge fallen weg, ältere als ein Tag werden auf einen je zehn Minuten ausgedünnt
+        c.execute("DELETE FROM portfolio_samples", []).unwrap();
+        c.execute("INSERT INTO portfolio_samples (ts, value_chf) VALUES (datetime('now', '-9 days'), 1.0)", []).unwrap();
+        for minutes in [3 * 1440, 3 * 1440 + 1, 3 * 1440 + 2, 3 * 1440 + 30] {
+            c.execute("INSERT INTO portfolio_samples (ts, value_chf) VALUES (datetime('now', ?1), 2.0)", [format!("-{minutes} minutes")]).unwrap();
+        }
+        c.execute("INSERT INTO portfolio_samples (ts, value_chf) VALUES (datetime('now', '-2 hours'), 3.0)", []).unwrap();
+        save_sample(&c, 4.0).unwrap();
+        let rows: Vec<f64> = c.prepare("SELECT value_chf FROM portfolio_samples ORDER BY ts").unwrap().query_map([], |r| r.get(0)).unwrap().collect::<Result<_, _>>().unwrap();
+        assert!(!rows.contains(&1.0), "älter als acht Tage ist weg");
+        assert!(rows.contains(&3.0) && rows.contains(&4.0), "heutige Einträge bleiben vollständig");
+        let thinned = rows.iter().filter(|v| **v == 2.0).count();
+        assert!(thinned <= 3 && thinned >= 2, "drei Tage alte Einträge werden je zehn Minuten zusammengefasst, war {thinned}");
+    }
+
+    #[test]
+    fn state_includes_samples() {
+        let c = conn();
+        c.execute("INSERT INTO portfolio_samples (ts, value_chf) VALUES ('2026-10-14 08:00:00', 100.0), ('2026-10-14 09:00:00', 110.0)", []).unwrap();
+        let s = state(&c).unwrap();
+        assert_eq!(s.samples.len(), 2);
+        approx(s.samples[1].value_chf, 110.0);
     }
 }

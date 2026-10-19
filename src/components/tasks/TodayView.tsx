@@ -1,25 +1,32 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { CalendarCheck, Plus } from "lucide-react";
 import { createTask } from "../../lib/api/tasks";
 import { formatLongDay } from "../../lib/dates";
 import { useDialogs } from "../../lib/dialogs";
 import { daysUntil, dateInDays, priorityLabel, type Task } from "../../lib/tasks";
 import { useTasks } from "../../lib/useTasks";
+import { useDoneState } from "../../lib/taskAnimation";
+import { useFlip } from "../../lib/useFlip";
 import { SubtaskProgress, TaskCheck } from "./parts";
 import "./TodayView.css";
 
 function TodayRow({ task, bucketName }: { task: Task; bucketName: string | null }) {
   const { openEditTask } = useDialogs();
+  const done = useDoneState(task);
   return (
     <li
-      className={`today-row${task.done ? " done" : ""}`}
+      data-flip={task.id}
+      data-flip-group="today"
+      className={`today-row${done ? " done" : ""}`}
       tabIndex={0}
       onClick={() => openEditTask(task)}
       onKeyDown={(e) => e.key === "Enter" && e.target === e.currentTarget && openEditTask(task)}
     >
-      <TaskCheck task={task} />
+      <TaskCheck task={task} moves />
       <div className="today-row-main">
-        <span className="today-row-title">{task.title}</span>
+        <span className="today-row-title">
+          <span className="strike">{task.title}</span>
+        </span>
         {task.description && <span className="today-row-desc">{task.description}</span>}
       </div>
       <div className="today-row-side">
@@ -54,6 +61,9 @@ function Section({ title, tasks, muted, bucketName }: { title: string; tasks: Ta
 /** Zeigt ausschließlich Aufgaben, die heute fällig sind. */
 export function TodayView() {
   const { tasks, buckets, loaded } = useTasks();
+  const viewRef = useRef<HTMLDivElement>(null);
+  // Erledigte Aufgaben gleiten sanft in den Abschnitt „Erledigt“, die übrigen rücken nach
+  useFlip(viewRef, tasks);
   const [title, setTitle] = useState("");
   const [error, setError] = useState<string | null>(null);
 
@@ -75,6 +85,7 @@ export function TodayView() {
         priority: "medium",
         dueDate: dateInDays(0),
         description: "",
+        startDate: null,
         showSubtasks: false,
         subtasks: [],
       });
@@ -88,7 +99,7 @@ export function TodayView() {
   if (!loaded) return null;
 
   return (
-    <div className="today-view">
+    <div ref={viewRef} className="today-view">
       <div className="card today-card">
         <div className="today-summary">
           <div>

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useOpenTarget } from "../lib/openTarget";
 import {
   ArrowDownRight,
   ArrowUpRight,
@@ -8,6 +9,7 @@ import {
   Coins,
   Gem,
   LineChart,
+  NotebookPen,
   Plus,
   RefreshCw,
   Search,
@@ -16,13 +18,15 @@ import {
 } from "lucide-react";
 import { Button } from "../components/ui/Button";
 import { SecondaryButton } from "../components/ui/SecondaryButton";
+import { AssetModal } from "../components/trading/AssetModal";
+import { JournalPage } from "../components/trading/JournalPage";
 import { CashModal } from "../components/trading/CashModal";
 import { Donut } from "../components/trading/Donut";
 import { MetalModal } from "../components/trading/MetalModal";
 import { PositionModal } from "../components/trading/PositionModal";
 import { TradeModal } from "../components/trading/TradeModal";
 import { ValueChart } from "../components/trading/ValueChart";
-import { formatLocalWhen, toDateStr } from "../lib/dates";
+import { formatLocalWhen } from "../lib/dates";
 import { useDialogs } from "../lib/dialogs";
 import { formatMoney, formatPercent, formatSigned } from "../lib/format";
 import { formatNoteTime } from "../lib/notes";
@@ -31,55 +35,47 @@ import {
   formatPrice,
   quantityWithUnit,
   type AssetClass,
+  type CashMovement,
   type Metal,
+  type Sample,
   type Snapshot,
   type Trade,
 } from "../lib/trading";
+import { RANGES, buildSeries, netDeposits, type Range } from "../lib/tradingSeries";
 import type { HoldingRow, PositionRow } from "../lib/tradingModel";
-import { useTrading, type QuoteStatus } from "../lib/useTrading";
+import { useTrading, type LiveInfo, type QuoteStatus } from "../lib/useTrading";
 import "./TradingView.css";
 
-type Tab = "overview" | "positions" | "assets";
+type Tab = "overview" | "positions" | "assets" | "journal";
 
 const TABS: { id: Tab; label: string; icon: LucideIcon }[] = [
   { id: "overview", label: "Übersicht", icon: LineChart },
   { id: "positions", label: "Positionen", icon: Briefcase },
   { id: "assets", label: "Assets", icon: Coins },
+  { id: "journal", label: "Logbuch", icon: NotebookPen },
 ];
-
-const RANGES = ["5T", "1M", "6M", "YTD", "1J", "Alles"] as const;
-type Range = (typeof RANGES)[number];
 
 const classIcon: Record<AssetClass, LucideIcon> = { aktie: Building2, krypto: Bitcoin, edelmetall: Gem };
 const classColor: Record<AssetClass, string> = { aktie: "#646cff", krypto: "#ffffff", edelmetall: "#9a9a9a" };
 
 const pnlClass = (v: number) => (v >= 0 ? "tr-pos" : "tr-neg");
 
-/** Kurse werden pro Sitzung einmal beim ersten Öffnen aktualisiert, danach nur auf Knopfdruck. */
-let refreshedThisSession = false;
-
-function rangeStart(range: Range, now = new Date()): string | null {
-  const d = new Date(now);
-  switch (range) {
-    case "5T":
-      d.setDate(d.getDate() - 5);
-      break;
-    case "1M":
-      d.setMonth(d.getMonth() - 1);
-      break;
-    case "6M":
-      d.setMonth(d.getMonth() - 6);
-      break;
-    case "YTD":
-      return `${now.getFullYear()}-01-01`;
-    case "1J":
-      d.setFullYear(d.getFullYear() - 1);
-      break;
-    default:
-      return null;
-  }
-  return toDateStr(d);
+/** Zeigt kurz grün oder rot, wenn sich ein Wert ändert. */
+function useFlash(value: number): "" | "up" | "down" {
+  const previous = useRef(value);
+  const [flash, setFlash] = useState<"" | "up" | "down">("");
+  useEffect(() => {
+    if (Math.abs(value - previous.current) < 0.005) return;
+    setFlash(value > previous.current ? "up" : "down");
+    previous.current = value;
+    const timer = window.setTimeout(() => setFlash(""), 1400);
+    return () => window.clearTimeout(timer);
+  }, [value]);
+  return flash;
 }
+
+/** Uhrzeit mit Sekunden in lokaler Zeit. */
+const clock = (ms: number) => new Date(ms).toLocaleTimeString("de-CH", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 
 type Model = ReturnType<typeof useTrading>["model"];
 
@@ -92,23 +88,29 @@ interface ViewProps {
 // Übersicht
 // ---------------------------------------------------------------------------
 
-function Overview({ model, snapshots, hasData, openTrade, onCash, onMetal }: ViewProps & {
+function Overview({ model, snapshots, samples, movements, live, hasData, openTrade, onCash, onMetal }: ViewProps & {
   snapshots: Snapshot[];
+  movements: CashMovement[];
+  samples: Sample[];
+  live: LiveInfo;
   hasData: boolean;
   onCash: () => void;
   onMetal: () => void;
 }) {
-  const [range, setRange] = useState<Range>("1M");
+  const [range, setRange] = useState<Range>("1T");
 
-  const series = useMemo(() => {
-    const start = rangeStart(range);
-    return snapshots.filter((s) => start === null || s.day >= start);
-  }, [snapshots, range]);
-  const values = series.map((s) => s.valueChf);
-  const hasSeries = values.length >= 2;
-  const change = hasSeries ? values[values.length - 1] - values[0] : 0;
-  const changePct = hasSeries && values[0] !== 0 ? (change / values[0]) * 100 : 0;
+  // Der letzte Punkt ist immer der aktuelle Gesamtwert, die Linie bewegt sich also mit jedem Kurs
+  const series = useMemo(() => buildSeries(range, snapshots, samples, model.total, movements), [range, snapshots, samples, model.total, movements]);
+  const first = series.points[0].v;
+  const hasSeries = !series.sparse;
+  // Auf Rappen gerundet, damit ein Rest von -0.001 nicht als Verlust gilt
+  const change = Math.round((model.total - first) * 100) / 100;
+  const changePct = hasSeries && first !== 0 ? (change / first) * 100 : 0;
   const color = change >= 0 ? "#4ade80" : "#ff6b6b";
+  const flash = useFlash(model.total);
+  // Insgesamt: Vermögen minus netto eingezahltes Kapital. Ohne Einzahlungen zählen Verkäufe plus aktuelle Kursgewinne.
+  const deposited = netDeposits(movements);
+  const profit = deposited > 0 ? model.total - deposited : model.unrealized + model.realizedTotal;
 
   if (!hasData) {
     return (
@@ -137,7 +139,8 @@ function Overview({ model, snapshots, hasData, openTrade, onCash, onMetal }: Vie
     {
       label: "Gesamtvermögen",
       value: formatMoney(model.total),
-      hint: hasSeries ? `${formatSigned(change)} CHF im Zeitraum` : "Verlauf entsteht mit der Zeit",
+      hint: hasSeries ? `${formatSigned(change)} CHF (${formatPercent(changePct)})` : "Verlauf entsteht mit der Zeit",
+      flash,
       tone: hasSeries ? pnlClass(change) : "",
     },
     {
@@ -146,7 +149,12 @@ function Overview({ model, snapshots, hasData, openTrade, onCash, onMetal }: Vie
       hint: model.open.length ? `${formatSigned(model.unrealized)} CHF unrealisiert` : "Keine offenen Positionen",
       tone: model.open.length ? pnlClass(model.unrealized) : "",
     },
-    { label: "Realisiert (dieses Jahr)", value: `${formatSigned(model.realizedYtd)} CHF`, hint: `${model.closed.length} geschlossene Trades`, tone: model.realizedYtd !== 0 ? pnlClass(model.realizedYtd) : "" },
+    {
+      label: "Gewinn / Verlust",
+      value: `${formatSigned(profit)} CHF`,
+      hint: deposited > 0 ? `${formatPercent((profit / deposited) * 100)} auf eingezahltes Kapital` : "Realisiert und unrealisiert",
+      tone: Math.abs(profit) >= 0.005 ? pnlClass(profit) : "",
+    },
     {
       label: "Guthaben",
       value: formatMoney(model.cash),
@@ -169,7 +177,7 @@ function Overview({ model, snapshots, hasData, openTrade, onCash, onMetal }: Vie
         {stats.map((s) => (
           <div key={s.label} className="card tr-stat">
             <span className="card-title">{s.label}</span>
-            <div className="tr-stat-value">{s.value}</div>
+            <div className={`tr-stat-value${s.flash ? ` flash-${s.flash}` : ""}`}>{s.value}</div>
             <div className={`tr-stat-hint ${s.tone}`}>{s.hint}</div>
           </div>
         ))}
@@ -194,11 +202,7 @@ function Overview({ model, snapshots, hasData, openTrade, onCash, onMetal }: Vie
               ))}
             </div>
           </div>
-          {hasSeries ? (
-            <ValueChart values={values} color={color} />
-          ) : (
-            <div className="value-chart-empty">Der Verlauf entsteht, sobald an mehreren Tagen Werte vorliegen.</div>
-          )}
+          <ValueChart points={series.points} color={color} live={live.active} reference={series.invested} />
         </section>
 
         <section className="card">
@@ -433,7 +437,7 @@ const ASSET_FILTERS: { id: "all" | AssetClass; label: string }[] = [
   { id: "edelmetall", label: "Edelmetalle" },
 ];
 
-function Assets({ holdings, onMetal }: { holdings: HoldingRow[]; onMetal: (m?: Metal) => void }) {
+function Assets({ holdings, onMetal, onAsset }: { holdings: HoldingRow[]; onMetal: (m?: Metal) => void; onAsset: (h: HoldingRow) => void }) {
   const [filter, setFilter] = useState<"all" | AssetClass>("all");
   const visible = holdings.filter((h) => filter === "all" || h.assetClass === filter);
   const total = visible.reduce((s, h) => s + h.valueChf, 0);
@@ -473,10 +477,10 @@ function Assets({ holdings, onMetal }: { holdings: HoldingRow[]; onMetal: (m?: M
             return (
               <article
                 key={h.id}
-                className={`card tr-asset${h.metal ? " clickable" : ""}`}
-                tabIndex={h.metal ? 0 : undefined}
-                onClick={() => h.metal && onMetal(h.metal)}
-                onKeyDown={(e) => e.key === "Enter" && h.metal && onMetal(h.metal)}
+                className="card tr-asset clickable"
+                tabIndex={0}
+                onClick={() => (h.metal ? onMetal(h.metal) : onAsset(h))}
+                onKeyDown={(e) => e.key === "Enter" && (h.metal ? onMetal(h.metal) : onAsset(h))}
               >
                 <header className="tr-asset-head">
                   <span className="tr-asset-icon">
@@ -528,31 +532,26 @@ function quoteMessage(status: QuoteStatus): { text: string; error: boolean } | n
   return null;
 }
 
-type Modal = null | { kind: "cash" } | { kind: "position" } | { kind: "trade"; id: number } | { kind: "metal"; metal?: Metal };
+type Modal = null | { kind: "asset"; id: string } | { kind: "cash" } | { kind: "position" } | { kind: "trade"; id: number } | { kind: "metal"; metal?: Metal };
 
 export function TradingView() {
-  const { state, model, snapshots, loaded, error, quoteStatus, updateQuotes } = useTrading();
+  const { state, model, snapshots, samples, loaded, error, quoteStatus, updateQuotes, live } = useTrading({ live: true });
   const { openSettings } = useDialogs();
   const [tab, setTab] = useState<Tab>("overview");
   const [modal, setModal] = useState<Modal>(null);
+  // Aus der Suche: Position öffnen
+  useOpenTarget("trade", (t) => {
+    setTab("positions");
+    setModal({ kind: "trade", id: t.id });
+  });
 
   const quotes = useMemo(() => new Map(state.quotes.map((q) => [q.symbol, q.price])), [state.quotes]);
   const hasData = state.movements.length > 0 || state.trades.length > 0 || state.metals.length > 0;
   const lastQuote = state.quotes.reduce<string | null>((latest, q) => (latest === null || q.updatedAt > latest ? q.updatedAt : latest), null);
 
-  // Einmal pro Sitzung Kurse holen, wenn ein Key vorhanden ist und etwas bewertet werden muss
-  const tracked = state.trades.some((t) => t.status !== "closed");
-  const triggered = useRef(false);
-  useEffect(() => {
-    if (!loaded || triggered.current || refreshedThisSession) return;
-    triggered.current = true;
-    if (state.hasApiKey && tracked) {
-      refreshedThisSession = true;
-      void updateQuotes();
-    }
-  }, [loaded, state.hasApiKey, tracked, updateQuotes]);
-
-  const message = quoteMessage(quoteStatus);
+  // Im Live-Betrieb melden sich nur Fehler; die Erfolgsmeldung der Handaktualisierung bleibt für den Knopf
+  const message = quoteMessage(quoteStatus) ?? (live.error ? { text: live.error, error: true } : null);
+  const assetHolding = modal?.kind === "asset" ? model.holdings.find((h) => h.id === modal.id) : undefined;
   const trade = modal?.kind === "trade" ? state.trades.find((t) => t.id === modal.id) : undefined;
 
   // Wurde die Position gelöscht, schließt sich der Dialog
@@ -560,7 +559,7 @@ export function TradingView() {
     if (loaded && modal?.kind === "trade" && !trade) setModal(null);
   }, [loaded, modal, trade]);
 
-  const refresh = () => (state.hasApiKey ? void updateQuotes() : openSettings());
+  const refresh = () => (state.hasApiKey ? void updateQuotes() : openSettings("trading"));
 
   return (
     <div className="page">
@@ -571,7 +570,9 @@ export function TradingView() {
             <p className={`page-subtitle${message?.error ? " tr-neg" : ""}`}>
               {message
                 ? message.text
-                : lastQuote
+                : live.active && live.lastAt
+                  ? `Basiswährung CHF · Live-Kurse, zuletzt ${clock(live.lastAt)}`
+                  : lastQuote
                   ? `Basiswährung CHF · Kurse ${formatNoteTime(lastQuote)}`
                   : state.hasApiKey
                     ? "Basiswährung CHF"
@@ -579,7 +580,7 @@ export function TradingView() {
             </p>
           </div>
           <div className="page-actions">
-            <SecondaryButton onClick={refresh} disabled={quoteStatus.kind === "loading"} title={state.hasApiKey ? "Kurse aktualisieren" : "API-Key nötig"}>
+            <SecondaryButton onClick={refresh} disabled={quoteStatus.kind === "loading"} title={state.hasApiKey ? "Kurse jetzt aktualisieren" : "API-Key nötig"}>
               <RefreshCw size={16} className={quoteStatus.kind === "loading" ? "spin" : ""} />
               Kurse
             </SecondaryButton>
@@ -610,6 +611,9 @@ export function TradingView() {
           <Overview
             model={model}
             snapshots={snapshots}
+            samples={samples}
+            movements={state.movements}
+            live={live}
             hasData={hasData}
             openTrade={(id) => setModal({ kind: "trade", id })}
             onCash={() => setModal({ kind: "cash" })}
@@ -617,9 +621,18 @@ export function TradingView() {
           />
         )}
         {loaded && tab === "positions" && <Positions model={model} quotes={quotes} openTrade={(id) => setModal({ kind: "trade", id })} />}
-        {loaded && tab === "assets" && <Assets holdings={model.holdings} onMetal={(metal) => setModal({ kind: "metal", metal })} />}
+        {loaded && tab === "journal" && <JournalPage onOpenTrade={(id) => setModal({ kind: "trade", id })} />}
+        {loaded && tab === "assets" && <Assets holdings={model.holdings} onMetal={(metal) => setModal({ kind: "metal", metal })} onAsset={(h) => setModal({ kind: "asset", id: h.id })} />}
       </div>
 
+      {assetHolding && (
+        <AssetModal
+          holding={assetHolding}
+          trades={state.trades.filter((t) => assetHolding.tradeIds?.includes(t.id))}
+          onOpenTrade={(id) => setModal({ kind: "trade", id })}
+          onClose={() => setModal(null)}
+        />
+      )}
       {modal?.kind === "cash" && <CashModal cash={model.cash} movements={state.movements} onClose={() => setModal(null)} />}
       {modal?.kind === "position" && <PositionModal cash={model.cash} hasApiKey={state.hasApiKey} onClose={() => setModal(null)} />}
       {modal?.kind === "metal" && <MetalModal key={modal.metal?.id ?? "new"} metal={modal.metal} onClose={() => setModal(null)} />}

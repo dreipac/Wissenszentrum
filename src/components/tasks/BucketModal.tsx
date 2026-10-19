@@ -1,10 +1,11 @@
 import { useState } from "react";
+import { Check, X } from "lucide-react";
 import { Modal } from "../ui/Modal";
 import { Button } from "../ui/Button";
 import { SecondaryButton } from "../ui/SecondaryButton";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { createBucket, deleteBucket, updateBucket } from "../../lib/api/tasks";
-import type { Bucket } from "../../lib/tasks";
+import { BUCKET_COLORS, type Bucket, type BucketColor } from "../../lib/tasks";
 import { useTasks } from "../../lib/useTasks";
 import "./TaskModal.css";
 
@@ -19,6 +20,7 @@ export function BucketModal({ bucket, onClose }: BucketModalProps) {
   const { buckets, tasks } = useTasks();
 
   const [name, setName] = useState(bucket?.name ?? "");
+  const [color, setColor] = useState<BucketColor | "">(bucket?.color ?? "");
   const [target, setTarget] = useState<number | null>(bucket?.onCompleteBucketId ?? null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -42,7 +44,7 @@ export function BucketModal({ bucket, onClose }: BucketModalProps) {
 
   const save = () => {
     if (!name.trim()) return setError("Bitte gib einen Namen ein.");
-    const input = { name, onCompleteBucketId: target };
+    const input = { name, onCompleteBucketId: target, color };
     void run(() => (editing ? updateBucket(bucket.id, input) : createBucket(input)));
   };
 
@@ -78,6 +80,40 @@ export function BucketModal({ bucket, onClose }: BucketModalProps) {
           onChange={(e) => setName(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && save()}
         />
+      </div>
+
+      <div className="field">
+        <span className="field-label" id="bucket-color-label">
+          Farbe
+        </span>
+        <div className="color-picker" role="radiogroup" aria-labelledby="bucket-color-label">
+          <button
+            type="button"
+            role="radio"
+            aria-checked={color === ""}
+            className={`color-swatch none${color === "" ? " active" : ""}`}
+            title="Keine Farbe"
+            aria-label="Keine Farbe"
+            onClick={() => setColor("")}
+          >
+            <X size={12} />
+          </button>
+          {BUCKET_COLORS.map((c) => (
+            <button
+              key={c.id}
+              type="button"
+              role="radio"
+              aria-checked={color === c.id}
+              className={`color-swatch${color === c.id ? " active" : ""}`}
+              style={{ backgroundColor: `var(--bucket-${c.id})` }}
+              title={c.label}
+              aria-label={c.label}
+              onClick={() => setColor(c.id)}
+            >
+              {color === c.id && <Check size={13} strokeWidth={3} />}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="field">

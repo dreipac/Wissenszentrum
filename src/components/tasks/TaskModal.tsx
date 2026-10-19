@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { SegmentBar } from "./parts";
-import { AlignLeft, CalendarDays, Flag, FolderKanban, ListChecks, Plus, X } from "lucide-react";
+import { AlignLeft, CalendarDays, CalendarRange, Flag, FolderKanban, ListChecks, Plus, X } from "lucide-react";
 import { Modal } from "../ui/Modal";
 import { Button } from "../ui/Button";
 import { SecondaryButton } from "../ui/SecondaryButton";
@@ -40,6 +40,7 @@ export function TaskModal({ task, bucketId = null, onClose }: TaskModalProps) {
   const [bucket, setBucket] = useState<number | null>(task?.bucketId ?? bucketId);
   const [priority, setPriority] = useState<Priority>(task?.priority ?? "medium");
   const [dueDate, setDueDate] = useState(task?.dueDate ?? "");
+  const [startDate, setStartDate] = useState(task?.startDate ?? "");
   const [description, setDescription] = useState(task?.description ?? "");
   const nextKey = useRef(0);
   const [steps, setSteps] = useState<StepDraft[]>(() =>
@@ -81,7 +82,8 @@ export function TaskModal({ task, bucketId = null, onClose }: TaskModalProps) {
       ...steps.filter((s) => s.title.trim()).map((s) => ({ id: s.id, title: s.title.trim(), done: s.done })),
       ...pending,
     ];
-    const input = { title: title.trim(), bucketId: bucket, priority, dueDate: dueDate || null, description, showSubtasks, subtasks };
+    const due = dueDate || startDate || null;
+    const input = { title: title.trim(), bucketId: bucket, priority, startDate: startDate || null, dueDate: due, description, showSubtasks, subtasks };
     void run(() => (editing ? updateTask(task.id, input) : createTask(input)));
   };
 
@@ -164,7 +166,12 @@ export function TaskModal({ task, bucketId = null, onClose }: TaskModalProps) {
               className="field-control"
               aria-label="Fällig am"
               value={dueDate}
-              onChange={(e) => setDueDate(e.target.value)}
+              onChange={(e) => {
+                setDueDate(e.target.value);
+                // Das Ende darf nicht vor dem Beginn liegen
+                if (startDate && e.target.value && e.target.value < startDate) setStartDate(e.target.value);
+                if (!e.target.value) setStartDate("");
+              }}
             />
             {QUICK_DATES.map(({ label, days }) => (
               <button key={label} type="button" className="tm-quick" onClick={() => setDueDate(dateInDays(days))}>
@@ -172,7 +179,40 @@ export function TaskModal({ task, bucketId = null, onClose }: TaskModalProps) {
               </button>
             ))}
             {dueDate && (
-              <button type="button" className="tm-quick" onClick={() => setDueDate("")}>
+              <button
+                type="button"
+                className="tm-quick"
+                onClick={() => {
+                  setDueDate("");
+                  setStartDate("");
+                }}
+              >
+                Entfernen
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="tm-row">
+        <CalendarRange size={18} className="tm-icon" />
+        <div className="tm-row-body">
+          <div className="tm-due">
+            <input
+              type="date"
+              className="field-control"
+              aria-label="Beginn (für den Zeitplan)"
+              value={startDate}
+              max={dueDate || undefined}
+              onChange={(e) => {
+                setStartDate(e.target.value);
+                // Ohne Fälligkeit gilt der Beginn auch als Ende, mit späterer Fälligkeit bleibt sie stehen
+                if (e.target.value && (!dueDate || dueDate < e.target.value)) setDueDate(e.target.value);
+              }}
+            />
+            <span className="tm-hint">Beginn für den Zeitplan (optional)</span>
+            {startDate && (
+              <button type="button" className="tm-quick" onClick={() => setStartDate("")}>
                 Entfernen
               </button>
             )}

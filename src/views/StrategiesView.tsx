@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useOpenTarget } from "../lib/openTarget";
+import { StrategyRules } from "../components/trading/Rules";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import {
   ArrowLeft,
@@ -596,6 +598,8 @@ function Workspace({ strategy, trades, onEditStrategy }: { strategy: Strategy; t
           })}
         </div>
 
+        <StrategyRules strategyId={strategy.id} />
+
         <div className="graph-zoom">
           <button type="button" className="icon-btn" aria-label="Verkleinern" onClick={() => step(-0.1)}>
             <ZoomOut size={15} />
@@ -652,6 +656,12 @@ export function StrategiesView() {
   const [activeId, setActiveId] = useState<number | null>(null);
   const [query, setQuery] = useState("");
   const [dialog, setDialog] = useState<{ kind: "new" } | { kind: "edit"; strategy: Strategy } | null>(null);
+
+  // Aus der Suche: Strategie öffnen
+  useOpenTarget("strategy", (t) => {
+    setActiveId(t.id);
+    setQuery("");
+  });
 
   const active = strategies.find((s) => s.id === activeId) ?? strategies[0] ?? null;
   const needle = query.trim().toLowerCase();

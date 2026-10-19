@@ -1,4 +1,4 @@
-import { CalendarClock, ClipboardList, FileText, Flame, Plus } from "lucide-react";
+import { BookOpen, CalendarClock, ClipboardList, FileText, Flame, Plus } from "lucide-react";
 import { Button } from "../components/ui/Button";
 import { SecondaryButton } from "../components/ui/SecondaryButton";
 import { formatTimeRange } from "../lib/calendar";
@@ -9,6 +9,9 @@ import { useProfile } from "../lib/profile";
 import { formatNoteTime, isEmptyNote, noteTitle, notePreview } from "../lib/notes";
 import { createAndOpenNote } from "../lib/notesActions";
 import { requestOpenNote } from "../lib/notesNav";
+import { requestOpenDoc } from "../lib/docsNav";
+import { isEmptyPage, isFolder, pageTitle, type DocPage } from "../lib/docs";
+import { useDocs } from "../lib/useDocs";
 import { daysUntil, formatDue, isOverdue } from "../lib/tasks";
 import { useEvents } from "../lib/useEvents";
 import { useNotes } from "../lib/useNotes";
@@ -21,14 +24,63 @@ const greeting = (now: Date) => {
   return h < 11 ? "Guten Morgen" : h < 18 ? "Guten Tag" : "Guten Abend";
 };
 
+/** Titel der übergeordneten Seite oder des Ordners, leer auf der Hauptebene. */
+function parentTitle(pages: DocPage[], page: DocPage): string {
+  const parent = pages.find((x) => x.id === page.parentId);
+  return parent ? pageTitle(parent) : "";
+}
+
+interface RecentItem {
+  key: string;
+  kind: "note" | "doc";
+  title: string;
+  preview: string;
+  tag: string;
+  updatedAt: string;
+  open: () => void;
+}
+
 export function DashboardView() {
   const profile = useProfile();
   const { tasks } = useTasks();
   const { notes } = useNotes();
+  const { pages } = useDocs();
   const { openNewTask } = useDialogs();
   const navigate = useNavigate();
-  // Zuletzt bearbeitete Notizen (unabhängig vom Anpinnen)
-  const recentNotes = notes.filter((n) => !isEmptyNote(n)).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || b.id - a.id).slice(0, 4);
+  // Zuletzt bearbeitet: Notizen und Dokumentationsseiten gemischt, nach Zeitpunkt (unabhängig vom Anpinnen)
+  const recent: RecentItem[] = [
+    ...notes
+      .filter((n) => !isEmptyNote(n))
+      .map<RecentItem>((n) => ({
+        key: `note-${n.id}`,
+        kind: "note",
+        title: noteTitle(n),
+        preview: notePreview(n, 100) || "Kein weiterer Text",
+        tag: n.folder,
+        updatedAt: n.updatedAt,
+        open: () => {
+          requestOpenNote(n.id);
+          navigate("notes");
+        },
+      })),
+    ...pages
+      .filter((p) => !isFolder(p) && (p.title.trim() || !isEmptyPage(p)))
+      .map<RecentItem>((p) => ({
+        key: `doc-${p.id}`,
+        kind: "doc",
+        title: pageTitle(p),
+        preview: p.plain.split(/\s+/).join(" ").trim().slice(0, 100) || "Kein weiterer Text",
+        // Wo die Seite liegt: die übergeordnete Seite bzw. der Ordner
+        tag: parentTitle(pages, p),
+        updatedAt: p.updatedAt,
+        open: () => {
+          requestOpenDoc(p.id);
+          navigate("docs");
+        },
+      })),
+  ]
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || b.key.localeCompare(a.key))
+    .slice(0, 5);
   // Anstehende Termine der nächsten 7 Tage aus der Datenbank
   const today = startOfDay(new Date());
   const { events } = useEvents(toDateTimeStr(today), toDateTimeStr(addDays(today, 7)));
@@ -154,33 +206,30 @@ export function DashboardView() {
           <section className="card dash-card full">
             <div className="dash-card-head">
               <h2>Zuletzt bearbeitet</h2>
-              <SecondaryButton className="sm" onClick={() => navigate("notes")}>
-                Alle Notizen
-              </SecondaryButton>
+              <div className="dash-card-links">
+                <SecondaryButton className="sm" onClick={() => navigate("notes")}>
+                  Notizen
+                </SecondaryButton>
+                <SecondaryButton className="sm" onClick={() => navigate("docs")}>
+                  Dokumentation
+                </SecondaryButton>
+              </div>
             </div>
-            {recentNotes.length === 0 ? (
-              <p className="muted">Noch keine Notizen. Mit „Schnellnotiz“ legst du die erste an.</p>
+            {recent.length === 0 ? (
+              <p className="muted">Noch nichts bearbeitet. Mit „Schnellnotiz“ legst du die erste Notiz an.</p>
             ) : (
               <ul className="recent-list">
-                {recentNotes.map((n) => (
-                  <li key={n.id}>
-                    <button
-                      type="button"
-                      className="recent-item"
-                      onClick={() => {
-                        requestOpenNote(n.id);
-                        navigate("notes");
-                      }}
-                    >
-                      <span className="recent-icon">
-                        <FileText size={16} />
-                      </span>
+                {recent.map((r) => (
+                  <li key={r.key}>
+                    <button type="button" className="recent-item" onClick={r.open}>
+                      <span className="recent-icon">{r.kind === "doc" ? <BookOpen size={16} /> : <FileText size={16} />}</span>
                       <div className="recent-main">
-                        <span className="recent-title">{noteTitle(n)}</span>
-                        <span className="recent-preview">{notePreview(n, 100) || "Kein weiterer Text"}</span>
+                        <span className="recent-title">{r.title}</span>
+                        <span className="recent-preview">{r.preview}</span>
                       </div>
-                      {n.folder && <span className="tag">{n.folder}</span>}
-                      <span className="recent-time">{formatNoteTime(n.updatedAt)}</span>
+                      <span className="recent-kind">{r.kind === "doc" ? "Dokumentation" : "Notiz"}</span>
+                      {r.tag && <span className="tag">{r.tag}</span>}
+                      <span className="recent-time">{formatNoteTime(r.updatedAt)}</span>
                     </button>
                   </li>
                 ))}
