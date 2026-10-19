@@ -25,6 +25,10 @@ export const setDocFavorite = (id: number, favorite: boolean): Promise<void> =>
 export const moveDocPage = (id: number, parentId: number | null): Promise<void> =>
   changed(inTauri ? invoke("move_doc_page", { id, parentId }) : docsStore.move(id, parentId));
 
+/** Setzt eine Seite unter einen Elternteil (null = Hauptebene) an die Stelle `index` unter dessen Seiten. */
+export const placeDocPage = (id: number, parentId: number | null, index: number): Promise<void> =>
+  changed(inTauri ? invoke("place_doc_page", { id, parentId, index }) : docsStore.place(id, parentId, index));
+
 export const shiftDocPage = (id: number, delta: -1 | 1): Promise<void> =>
   changed(inTauri ? invoke("shift_doc_page", { id, delta }) : docsStore.shift(id, delta));
 

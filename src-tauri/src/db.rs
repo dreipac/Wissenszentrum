@@ -209,6 +209,15 @@ pub(crate) const MIGRATIONS: &[&str] = &[
     );
     CREATE INDEX idx_trade_journal_trade_id ON trade_journal(trade_id);
     CREATE INDEX idx_trade_journal_strategy_id ON trade_journal(strategy_id);",
+    // 17: Dateianhänge in Notizen und Dokumentation (Text verweist per data-file-id darauf)
+    "CREATE TABLE attachments (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        name       TEXT NOT NULL,
+        mime       TEXT NOT NULL DEFAULT 'application/octet-stream',
+        size       INTEGER NOT NULL,
+        data       BLOB NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );",
 ];
 
 /// Öffnet die Verbindung vor, setzt Pragmas und führt offene Migrationen aus.

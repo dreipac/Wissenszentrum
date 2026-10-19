@@ -1,6 +1,6 @@
 [package]
 name = "wissenszentrum"
-version = "1.0.0"
+version = "1.1.0"
 description = "Wissenszentrum – All-in-One Dokumentations- und Verwaltungstool"
 authors = ["Armin"]
 edition = "2021"

@@ -1,4 +1,4 @@
-import { useEffect, useState, type RefObject } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { useEditorState, type Editor } from "@tiptap/react";
 import { CellSelection, TableMap, selectionCell } from "@tiptap/pm/tables";
 import {
@@ -67,14 +67,9 @@ function selectCells(editor: Editor, mode: SelectMode) {
   view.focus();
 }
 
-interface Place {
-  top: number;
-  left: number;
-}
-
 interface TableBarProps {
   editor: Editor | null;
-  /** Element, an dem die Position gemessen wird (muss `position: relative` haben) */
+  /** Element des Editors; daran wird der scrollende Bereich gefunden, in dem die Leiste schwebt */
   anchor: RefObject<HTMLElement | null>;
   /** Ausgeblendet, solange die Tabelle verschoben wird */
   hidden?: boolean;
@@ -83,9 +78,15 @@ interface TableBarProps {
 const BAR_HEIGHT = 38;
 const GAP = 8;
 
-/** Schwebende Leiste mit den Tabellenoptionen, direkt über der Tabelle, in der der Cursor steht. */
+/**
+ * Schwebende Leiste mit den Tabellenoptionen. Sie sitzt über der Tabelle, in der der Cursor steht. Scrollt man den
+ * Tabellenkopf aus dem Bild, bleibt sie direkt unter der Werkzeugleiste des Editors stehen, solange man in der Tabelle
+ * ist. Die Position wird beim Scrollen direkt am Element gesetzt (ohne Umweg über React), damit nichts nachzieht.
+ */
 export function TableBar({ editor, anchor, hidden }: TableBarProps) {
-  const [place, setPlace] = useState<Place | null>(null);
+  const [active, setActive] = useState(false);
+  const bar = useRef<HTMLDivElement>(null);
+  const table = useRef<HTMLElement | null>(null);
 
   const s = useEditorState({
     editor,
@@ -93,35 +94,64 @@ export function TableBar({ editor, anchor, hidden }: TableBarProps) {
       e ? { header: e.isActive("tableHeader"), canMerge: e.can().mergeCells(), canSplit: e.can().splitCell() } : null,
   });
 
+  /** Setzt die Leiste in Fensterkoordinaten: über die Tabelle, am oberen Rand des scrollenden Bereichs festgehalten. */
+  const position = useCallback(() => {
+    const el = bar.current;
+    const tbl = table.current;
+    if (!el || !tbl || !tbl.isConnected) return;
+    const scroller = anchor.current?.closest<HTMLElement>(".docs-scroll");
+    const view = scroller ? scroller.getBoundingClientRect() : { top: 0, bottom: window.innerHeight, left: 0, right: window.innerWidth };
+    const t = tbl.getBoundingClientRect();
+    const h = el.offsetHeight || BAR_HEIGHT;
+    const w = el.offsetWidth;
+
+    const minTop = view.top + GAP;
+    const maxTop = t.bottom - h - GAP;
+    const top = Math.min(Math.max(t.top - h - GAP, minTop), maxTop);
+    // Ganz aus dem Bild gescrollt: Tabelle ist nicht mehr sichtbar, die Leiste darf nicht über die Werkzeugleiste ragen
+    const gone = t.bottom < view.top || t.top > view.bottom || maxTop < minTop;
+    const left = Math.min(Math.max(t.left, view.left + GAP), Math.max(view.right - w - GAP, view.left + GAP));
+
+    el.style.top = `${Math.round(top)}px`;
+    el.style.left = `${Math.round(left)}px`;
+    el.style.visibility = gone ? "hidden" : "visible";
+  }, [anchor]);
+
   useEffect(() => {
     if (!editor) return;
     const update = () => {
-      const root = anchor.current;
-      if (!root || !editor.isEditable || !editor.isActive("table")) return setPlace((p) => (p === null ? p : null));
+      if (!editor.isEditable || !editor.isActive("table")) {
+        table.current = null;
+        return setActive(false);
+      }
       const { node } = editor.view.domAtPos(editor.state.selection.from);
-      const table = (node instanceof Element ? node : node.parentElement)?.closest("table");
-      if (!table) return setPlace((p) => (p === null ? p : null));
-      const a = root.getBoundingClientRect();
-      const t = table.getBoundingClientRect();
-      // Über der Tabelle; reicht der Platz nach oben nicht, darunter
-      const above = t.top - a.top - BAR_HEIGHT - GAP;
-      const next = { top: above >= 0 ? above : t.bottom - a.top + GAP, left: t.left - a.left };
-      setPlace((p) => (p && p.top === next.top && p.left === next.left ? p : next));
+      const found = (node instanceof Element ? node : node.parentElement)?.closest("table") ?? null;
+      table.current = found;
+      setActive(found !== null);
+      position();
     };
     update();
     editor.on("transaction", update);
-    window.addEventListener("resize", update);
+    window.addEventListener("resize", position);
+    const scroller = anchor.current?.closest<HTMLElement>(".docs-scroll");
+    scroller?.addEventListener("scroll", position, { passive: true });
     return () => {
       editor.off("transaction", update);
-      window.removeEventListener("resize", update);
+      window.removeEventListener("resize", position);
+      scroller?.removeEventListener("scroll", position);
     };
-  }, [editor, anchor]);
+  }, [editor, anchor, position]);
 
-  if (!editor || !place || hidden) return null;
+  // Beim ersten Zeichnen (und nach dem Einblenden) sofort an die richtige Stelle, noch vor dem Malen
+  useLayoutEffect(() => {
+    if (active && !hidden) position();
+  }, [active, hidden, position]);
+
+  if (!editor || !active || hidden) return null;
   const c = () => editor.chain().focus();
 
   return (
-    <div className="table-bar" style={{ top: place.top, left: place.left }} role="toolbar" aria-label="Tabelle bearbeiten">
+    <div ref={bar} className="table-bar floating" role="toolbar" aria-label="Tabelle bearbeiten">
       <BarButton icon={Rows3} label="Zeile markieren" onClick={() => selectCells(editor, "row")} />
       <BarButton icon={Columns3} label="Spalte markieren" onClick={() => selectCells(editor, "column")} />
       <BarButton icon={Table2} label="Alle Zellen markieren" onClick={() => selectCells(editor, "table")} />

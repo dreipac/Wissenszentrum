@@ -1,6 +1,7 @@
 mod db;
 mod docs;
 mod events;
+mod files;
 mod finnhub;
 mod journal;
 mod notes;
@@ -513,6 +514,50 @@ fn get_doc_image(db: State<Db>, id: i64) -> Result<tauri::ipc::Response, String>
     Ok(tauri::ipc::Response::new(data))
 }
 
+/// Speichert einen Dateianhang. Rohe Bytes als Körper, Dateiname (prozentkodiert) und Typ stehen in den Kopfzeilen `x-name` und `x-mime`.
+#[tauri::command]
+fn add_attachment(db: State<Db>, request: tauri::ipc::Request<'_>) -> Result<files::FileInfo, String> {
+    let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else {
+        return Err("Die Datei kam nicht an.".into());
+    };
+    let header = |name: &str| request.headers().get(name).and_then(|v| v.to_str().ok()).unwrap_or("").to_string();
+    let name = files::percent_decode(&header("x-name"));
+    let conn = lock(&db)?;
+    files::add(&conn, &name, &header("x-mime"), bytes)
+}
+
+/// Schreibt einen Anhang an einen vom Nutzer gewählten Ort („Speichern unter“).
+#[tauri::command]
+fn save_attachment(db: State<Db>, id: i64, path: String) -> Result<(), String> {
+    let (_, data) = {
+        let conn = lock(&db)?;
+        files::get(&conn, id)?
+    };
+    std::fs::write(&path, data).map_err(|e| format!("Die Datei konnte nicht gespeichert werden: {e}"))
+}
+
+/// Öffnet einen Anhang mit dem Standardprogramm: wird dafür in einen temporären Ordner geschrieben. Programme und Skripte
+/// werden nie direkt geöffnet.
+#[tauri::command]
+fn open_attachment(db: State<Db>, id: i64) -> Result<(), String> {
+    let (name, data) = {
+        let conn = lock(&db)?;
+        files::get(&conn, id)?
+    };
+    if !files::can_open(&name) {
+        return Err("Dieser Dateityp wird aus Sicherheitsgründen nicht direkt geöffnet. Nutze „Speichern unter“.".into());
+    }
+    let dir = std::env::temp_dir().join("wissenszentrum-dateien");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let path = dir.join(format!("{id}-{name}"));
+    std::fs::write(&path, data).map_err(|e| format!("Die Datei konnte nicht vorbereitet werden: {e}"))?;
+    #[cfg(windows)]
+    let result = std::process::Command::new("explorer.exe").arg(&path).spawn();
+    #[cfg(not(windows))]
+    let result = std::process::Command::new("xdg-open").arg(&path).spawn();
+    result.map(|_| ()).map_err(|e| format!("Die Datei konnte nicht geöffnet werden: {e}"))
+}
+
 #[tauri::command]
 fn create_doc_page(db: State<Db>, parent_id: Option<i64>, title: String, kind: String) -> Result<DocPage, String> {
     let conn = lock(&db)?;
@@ -535,6 +580,13 @@ fn set_doc_favorite(db: State<Db>, id: i64, favorite: bool) -> Result<(), String
 fn move_doc_page(db: State<Db>, id: i64, parent_id: Option<i64>) -> Result<(), String> {
     let conn = lock(&db)?;
     docs::move_page(&conn, id, parent_id)
+}
+
+/// Setzt eine Seite unter einen Elternteil an eine bestimmte Stelle (Ziehen im Baum).
+#[tauri::command]
+fn place_doc_page(db: State<Db>, id: i64, parent_id: Option<i64>, index: i64) -> Result<(), String> {
+    let conn = lock(&db)?;
+    docs::place_page(&conn, id, parent_id, index.max(0) as usize)
 }
 
 #[tauri::command]
@@ -919,11 +971,15 @@ pub fn run() {
             list_doc_pages,
             add_doc_image,
             get_doc_image,
+            add_attachment,
+            save_attachment,
+            open_attachment,
             create_doc_page,
             update_doc_page,
             set_doc_favorite,
             move_doc_page,
             shift_doc_page,
+            place_doc_page,
             delete_doc_page,
             list_strategies,
             create_strategy,

@@ -15,11 +15,14 @@ import {
   List,
   ListOrdered,
   MoreHorizontal,
+  Paperclip,
   Pin,
   Quote,
   Trash2,
   type LucideIcon,
 } from "lucide-react";
+import { attachFiles } from "../../lib/attachFiles";
+import { FileAttachment } from "../files/FileAttachment";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { ContextMenu } from "../ui/ContextMenu";
 import { deleteNote, setNotePinned, updateNote } from "../../lib/api/notes";
@@ -101,6 +104,10 @@ export function NoteEditor({ note, folders }: NoteEditorProps) {
     timer.current = window.setTimeout(() => void save(), AUTOSAVE_MS);
   }, [save]);
 
+  const fileInput = useRef<HTMLInputElement>(null);
+  const insertFiles = useRef<(files: File[], pos?: number) => void>(() => undefined);
+  const [fileError, setFileError] = useState<string | null>(null);
+
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
@@ -109,16 +116,45 @@ export function NoteEditor({ note, folders }: NoteEditorProps) {
       }),
       TaskList,
       TaskItem.configure({ nested: true }),
+      FileAttachment,
       Placeholder.configure({ placeholder: "Notiz schreiben …" }),
     ],
     content: note.content,
-    editorProps: { attributes: { class: "note-prose", spellcheck: "true" } },
+    editorProps: {
+      attributes: { class: "note-prose", spellcheck: "true" },
+      // Beim Schreiben hält der Editor die Schreibzeile deutlich über dem unteren Rand, statt sie dort kleben zu lassen
+      scrollThreshold: { top: 80, right: 0, bottom: 240, left: 0 },
+      scrollMargin: { top: 80, right: 0, bottom: 240, left: 0 },
+      // Dateien aus der Zwischenablage oder per Drag & Drop als Anhang einfügen
+      handlePaste: (_view, event) => {
+        const files = [...(event.clipboardData?.files ?? [])];
+        if (files.length === 0) return false;
+        event.preventDefault();
+        insertFiles.current(files);
+        return true;
+      },
+      handleDrop: (view, event, _slice, moved) => {
+        if (moved) return false;
+        const files = [...(event.dataTransfer?.files ?? [])];
+        if (files.length === 0) return false;
+        event.preventDefault();
+        insertFiles.current(files, view.posAtCoords({ left: event.clientX, top: event.clientY })?.pos);
+        return true;
+      },
+    },
     onUpdate: ({ editor }) => {
       draft.current.content = editor.getHTML();
       draft.current.plain = editor.getText({ blockSeparator: "\n" });
       schedule();
     },
   });
+
+  // Dateien speichern und als Karten einfügen
+  insertFiles.current = (files, pos) => {
+    if (!editor) return;
+    setFileError(null);
+    void attachFiles(editor, files, pos).then((message) => message && setFileError(message));
+  };
 
   // Beim Verlassen der Notiz und wenn das Fenster den Fokus verliert: ausstehende Änderungen sofort speichern
   useEffect(() => {
@@ -194,7 +230,7 @@ export function NoteEditor({ note, folders }: NoteEditorProps) {
   };
 
   const { theme: editorTheme } = useEditorTheme();
-  const status = error ? "Speichern fehlgeschlagen" : saving ? "Speichert …" : `Zuletzt bearbeitet: ${formatNoteTime(note.updatedAt)}`;
+  const status = fileError ?? (error ? "Speichern fehlgeschlagen" : saving ? "Speichert …" : `Zuletzt bearbeitet: ${formatNoteTime(note.updatedAt)}`);
 
   return (
     <section className="note-editor-pane">
@@ -257,6 +293,17 @@ export function NoteEditor({ note, folders }: NoteEditorProps) {
         <ToolButton icon={Quote} label="Zitat" active={active?.quote} onClick={() => editor?.chain().focus().toggleBlockquote().run()} />
         <ToolButton icon={Code} label="Code" active={active?.code} onClick={() => editor?.chain().focus().toggleCode().run()} />
         <ToolButton icon={Link2} label="Link" active={active?.link || linkOpen} onClick={openLink} />
+        <ToolButton icon={Paperclip} label="Datei anhängen" onClick={() => fileInput.current?.click()} />
+        <input
+          ref={fileInput}
+          type="file"
+          multiple
+          hidden
+          onChange={(e) => {
+            insertFiles.current([...(e.target.files ?? [])]);
+            e.target.value = "";
+          }}
+        />
       </div>
 
       {linkOpen && (

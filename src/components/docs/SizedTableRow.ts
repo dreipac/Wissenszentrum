@@ -1,16 +1,26 @@
 import { TableRow } from "@tiptap/extension-table";
 import { Plugin } from "@tiptap/pm/state";
+import { startSegmentDrag } from "./TableDivider";
 
 /** So nah (in Pixel) an der unteren Zeilenkante wird der Zeiger zum Doppelpfeil. */
 const EDGE = 5;
 const MIN_HEIGHT = 28;
 const CLASS = "row-resize-cursor";
+/** Zwei Klicks innerhalb dieser Zeit und Strecke gelten als Doppelklick auf eine Linie */
+const DOUBLE_MS = 450;
+const DOUBLE_PX = 6;
 
 /**
  * Tabellenzeile mit einstellbarer Höhe: An der unteren Kante einer Zeile lässt sich die Höhe mit der Maus ziehen
- * (die Spaltenbreite übernimmt die Tabellenerweiterung selbst). Die Höhe steht als `style="height: …px"` an der Zeile.
+ * (die Spaltenbreite übernimmt die Tabellenerweiterung selbst). Die Höhe steht als style="height: …px" an der Zeile.
+ *
+ * Doppelklick auf eine Trennlinie und danach ziehen verschiebt nur das Stück Linie zwischen den beiden Zellen daneben
+ * (siehe TableDivider), statt die ganze Spalte oder Zeile.
  */
 export const SizedTableRow = TableRow.extend({
+  // Vor der Spaltenerweiterung drankommen, damit der Doppelklick auf eine Spaltenlinie hier landet
+  priority: 1000,
+
   addAttributes() {
     return {
       ...this.parent?.(),
@@ -27,6 +37,7 @@ export const SizedTableRow = TableRow.extend({
 
   addProseMirrorPlugins() {
     const parent = this.parent?.() ?? [];
+    let last: { t: number; x: number; y: number } | null = null;
     return [
       ...parent,
       new Plugin({
@@ -47,7 +58,24 @@ export const SizedTableRow = TableRow.extend({
               return false;
             },
             mousedown: (view, event) => {
-              if (event.button !== 0 || !view.editable || !view.dom.classList.contains(CLASS)) return false;
+              if (event.button !== 0 || !view.editable) return false;
+              const onColumnLine = view.dom.classList.contains("resize-cursor");
+              const onRowLine = view.dom.classList.contains(CLASS);
+              if (!onColumnLine && !onRowLine) {
+                last = null;
+                return false;
+              }
+
+              // Zweiter Klick kurz nach dem ersten auf derselben Linie: nur dieses Stück Linie ziehen
+              const now = performance.now();
+              const double = last !== null && now - last.t < DOUBLE_MS && Math.hypot(event.clientX - last.x, event.clientY - last.y) < DOUBLE_PX;
+              last = { t: now, x: event.clientX, y: event.clientY };
+              if (double && startSegmentDrag(view, event, onColumnLine ? "x" : "y")) {
+                last = null;
+                return true;
+              }
+              if (!onRowLine || onColumnLine) return false;
+
               const row = (event.target as Element).closest?.("tr") as HTMLElement | null;
               if (!row) return false;
               event.preventDefault();
@@ -78,8 +106,8 @@ export const SizedTableRow = TableRow.extend({
               const up = () => {
                 window.removeEventListener("mousemove", move, true);
                 window.removeEventListener("mouseup", up, true);
+                // Die Zeilenzeiger-Klasse bleibt stehen: ein schneller zweiter Klick auf die Linie startet das Einzelstück
                 document.body.classList.remove("table-sizing");
-                view.dom.classList.remove(CLASS);
               };
               window.addEventListener("mousemove", move, true);
               window.addEventListener("mouseup", up, true);

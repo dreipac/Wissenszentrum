@@ -81,6 +81,19 @@ export const docsStore = {
     page.position = siblings(parentId).length;
     renumber(old);
   },
+  async place(id: number, parentId: number | null, index: number) {
+    const page = find(id);
+    if (page.parentId !== parentId && parentId !== null) {
+      if (parentId === id || descendantIds(pages, id).includes(parentId)) throw "Eine Seite kann nicht unter sich selbst oder ihren Unterseiten liegen.";
+      if (depthOf(parentId) + subtreeHeight(nodeOf(id)) > MAX_DEPTH) throw `Seiten können höchstens ${MAX_DEPTH} Ebenen tief verschachtelt werden.`;
+    }
+    const old = page.parentId;
+    const list = siblings(parentId).filter((p) => p.id !== id);
+    list.splice(Math.min(Math.max(index, 0), list.length), 0, page);
+    page.parentId = parentId;
+    list.forEach((p, i) => (p.position = i));
+    if (old !== parentId) renumber(old);
+  },
   async shift(id: number, delta: number) {
     const page = find(id);
     const list = siblings(page.parentId);

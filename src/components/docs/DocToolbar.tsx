@@ -12,6 +12,7 @@ import {
   List,
   ListOrdered,
   Minus,
+  Paperclip,
   Quote,
   SquareCode,
   Strikethrough,
@@ -254,10 +255,12 @@ interface DocToolbarProps {
   onLink: () => void;
   /** Öffnet die Dateiauswahl für Bilder */
   onImage: () => void;
+  /** Öffnet die Dateiauswahl für beliebige Dateien (Anhänge) */
+  onFile: () => void;
 }
 
 /** Werkzeugleiste des Editors: eine ruhige Zeile wie bei den Notizen, dazu ein Menü für die Absatzart. */
-export function DocToolbar({ editor, linkOpen, onLink, onImage }: DocToolbarProps) {
+export function DocToolbar({ editor, linkOpen, onLink, onImage, onFile }: DocToolbarProps) {
   const s = useEditorState({
     editor,
     selector: ({ editor: e }) =>
@@ -316,6 +319,7 @@ export function DocToolbar({ editor, linkOpen, onLink, onImage }: DocToolbarProp
       <span className="note-toolbar-sep" />
       <ToolButton icon={Link2} label="Link" active={s?.link || linkOpen} onClick={onLink} />
       <ToolButton icon={ImagePlus} label="Bild einfügen" onClick={onImage} />
+      <ToolButton icon={Paperclip} label="Datei anhängen" onClick={onFile} />
       <TablePicker editor={editor} active={s?.table === true} />
     </div>
   );

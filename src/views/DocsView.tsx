@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowDown,
   ArrowUp,
@@ -25,7 +25,8 @@ import { ContextMenu, type ContextMenuItem } from "../components/ui/ContextMenu"
 import { DocEditor } from "../components/docs/DocEditor";
 import { FolderView } from "../components/docs/FolderView";
 import { MovePageModal, NewPageModal } from "../components/docs/PageModals";
-import { deleteDocPage, setDocFavorite, shiftDocPage } from "../lib/api/docs";
+import { deleteDocPage, placeDocPage, setDocFavorite, shiftDocPage } from "../lib/api/docs";
+import { TreeDragLayer, useTreeDrag } from "../components/docs/useTreeDrag";
 import { ancestors, buildTree, descendantIds, isFolder, pageTitle, searchPages, type DocKind, type DocNode, type DocPage } from "../lib/docs";
 import { useOpenTarget } from "../lib/openTarget";
 import { clearPendingDoc, onOpenDocRequest, peekPendingDoc } from "../lib/docsNav";
@@ -60,9 +61,13 @@ interface TreeRowProps {
   onSelect: (id: number) => void;
   onAdd: (id: number, x: number, y: number) => void;
   onMenu: (page: DocPage, x: number, y: number) => void;
+  /** Mausdruck auf der Zeile (Ziehen im Baum) und ob gerade eine Seite gezogen wird */
+  onRowDown: (page: DocPage, e: React.PointerEvent<HTMLElement>) => void;
+  draggingId: number | null;
+  wasDragged: () => boolean;
 }
 
-function TreeRow({ node, expanded, activeId, onToggle, onSelect, onAdd, onMenu }: TreeRowProps) {
+function TreeRow({ node, expanded, activeId, onToggle, onSelect, onAdd, onMenu, onRowDown, draggingId, wasDragged }: TreeRowProps) {
   const { page, children } = node;
   const open = expanded.has(page.id);
   const hasChildren = children.length > 0;
@@ -72,7 +77,9 @@ function TreeRow({ node, expanded, activeId, onToggle, onSelect, onAdd, onMenu }
   return (
     <li>
       <div
-        className={`tree-row${activeId === page.id ? " active" : ""}`}
+        className={`tree-row${activeId === page.id ? " active" : ""}${draggingId === page.id ? " dragged" : ""}`}
+        data-page-id={page.id}
+        onPointerDown={(e) => onRowDown(page, e)}
         onContextMenu={(e) => {
           e.preventDefault();
           onMenu(page, e.clientX, e.clientY);
@@ -93,6 +100,8 @@ function TreeRow({ node, expanded, activeId, onToggle, onSelect, onAdd, onMenu }
           className="tree-item"
           title={pageTitle(page)}
           onClick={() => {
+            // Auf das Loslassen nach dem Ziehen folgt ein Klick: der soll nichts öffnen
+            if (wasDragged()) return;
             onSelect(page.id);
             // Ordner klappen beim Öffnen auf
             if (folder && !open) onToggle(page.id);
@@ -132,7 +141,7 @@ function TreeRow({ node, expanded, activeId, onToggle, onSelect, onAdd, onMenu }
       {hasChildren && open && (
         <ul className="tree-list nested">
           {children.map((c) => (
-            <TreeRow key={c.page.id} node={c} expanded={expanded} activeId={activeId} onToggle={onToggle} onSelect={onSelect} onAdd={onAdd} onMenu={onMenu} />
+            <TreeRow key={c.page.id} node={c} expanded={expanded} activeId={activeId} onToggle={onToggle} onSelect={onSelect} onAdd={onAdd} onMenu={onMenu} onRowDown={onRowDown} draggingId={draggingId} wasDragged={wasDragged} />
           ))}
         </ul>
       )}
@@ -257,6 +266,17 @@ export function DocsView() {
     }
   };
 
+  // Ziehen im Baum: umsortieren, in andere Ordner oder Seiten setzen
+  const treeScroll = useRef<HTMLDivElement>(null);
+  const { dragging, drop, onRowPointerDown, wasDragged } = useTreeDrag({
+    pages,
+    tree,
+    expanded,
+    setExpanded,
+    scroller: treeScroll,
+    onDrop: (page, parentId, index) => void run(() => placeDocPage(page.id, parentId, index)),
+  });
+
   const created = (page: DocPage) => {
     setActiveId(page.id);
     setEditingId(isFolder(page) ? null : page.id);
@@ -294,7 +314,7 @@ export function DocsView() {
           </label>
         </header>
 
-        <div className="docs-tree-scroll">
+        <div className="docs-tree-scroll" ref={treeScroll}>
           {searching ? (
             <ul className="docs-hits">
               {hits.map(({ page, snippet }) => {
@@ -342,6 +362,9 @@ export function DocsView() {
                     onSelect={select}
                     onAdd={openAddMenu}
                     onMenu={openMenu}
+                    onRowDown={onRowPointerDown}
+                    draggingId={dragging?.page.id ?? null}
+                    wasDragged={wasDragged}
                   />
                 ))}
               </ul>
@@ -355,6 +378,8 @@ export function DocsView() {
           </footer>
         )}
       </aside>
+
+      <TreeDragLayer dragging={dragging} drop={drop} />
 
       <section className="docs-page-pane">
         {active ? (

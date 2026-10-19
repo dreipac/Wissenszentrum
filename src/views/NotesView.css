@@ -260,6 +260,7 @@
 }
 
 .note-article {
+  padding-bottom: max(5rem, 60vh);
   max-width: 720px;
   margin: 0 auto;
   line-height: 1.65;

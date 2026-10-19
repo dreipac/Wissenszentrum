@@ -169,13 +169,9 @@ pub fn set_favorite(conn: &Connection, id: i64, favorite: bool) -> Result<(), St
 }
 
 /// Hängt die Seite ans Ende unter einen anderen Elternteil (None = Hauptebene).
-pub fn move_page(conn: &Connection, id: i64, new_parent: Option<i64>) -> Result<(), String> {
-    let current = parent_of(conn, id)?;
-    if current == new_parent {
-        return Ok(());
-    }
+/// Darf die Seite unter diesen Elternteil? Nicht in sich selbst oder einen eigenen Nachfolger, nicht tiefer als erlaubt.
+fn check_move(conn: &Connection, id: i64, new_parent: Option<i64>) -> Result<(), String> {
     if let Some(target) = new_parent {
-        // Nicht in sich selbst oder einen eigenen Nachfolger verschieben
         let mut cursor = Some(target);
         while let Some(node) = cursor {
             if node == id {
@@ -187,6 +183,37 @@ pub fn move_page(conn: &Connection, id: i64, new_parent: Option<i64>) -> Result<
             return Err(format!("Seiten können höchstens {MAX_DEPTH} Ebenen tief verschachtelt werden."));
         }
     }
+    Ok(())
+}
+
+/// Setzt die Seite unter `new_parent` an die Stelle `index` (0 = erste; zu große Werte = ans Ende). Funktioniert auch
+/// innerhalb desselben Elternteils, dann ändert sich nur die Reihenfolge. Das ist die Grundlage fürs Ziehen im Baum.
+pub fn place_page(conn: &Connection, id: i64, new_parent: Option<i64>, index: usize) -> Result<(), String> {
+    let current = parent_of(conn, id)?;
+    if current != new_parent {
+        check_move(conn, id, new_parent)?;
+    }
+    let mut stmt = conn
+        .prepare("SELECT id FROM doc_pages WHERE parent_id IS ?1 AND id <> ?2 ORDER BY position, id")
+        .map_err(db_err)?;
+    let mut ids: Vec<i64> = stmt.query_map(params![new_parent, id], |r| r.get(0)).map_err(db_err)?.collect::<Result<_, _>>().map_err(db_err)?;
+    ids.insert(index.min(ids.len()), id);
+    conn.execute("UPDATE doc_pages SET parent_id = ?1 WHERE id = ?2", params![new_parent, id]).map_err(db_err)?;
+    for (position, sibling) in ids.iter().enumerate() {
+        conn.execute("UPDATE doc_pages SET position = ?1 WHERE id = ?2", params![position as i64, sibling]).map_err(db_err)?;
+    }
+    if current != new_parent {
+        renumber(conn, current)?;
+    }
+    Ok(())
+}
+
+pub fn move_page(conn: &Connection, id: i64, new_parent: Option<i64>) -> Result<(), String> {
+    let current = parent_of(conn, id)?;
+    if current == new_parent {
+        return Ok(());
+    }
+    check_move(conn, id, new_parent)?;
     let position = next_position(conn, new_parent)?;
     conn.execute("UPDATE doc_pages SET parent_id = ?1, position = ?2 WHERE id = ?3", params![new_parent, position, id])
         .map_err(db_err)?;
@@ -289,6 +316,7 @@ pub fn delete_page(conn: &Connection, id: i64) -> Result<usize, String> {
     let after: i64 = conn.query_row("SELECT COUNT(*) FROM doc_pages", [], |r| r.get(0)).map_err(db_err)?;
     renumber(conn, parent)?;
     let _ = gc_images(conn);
+    let _ = crate::files::gc(conn);
     Ok((before - after) as usize)
 }
 
@@ -469,5 +497,38 @@ mod tests {
         let html = r#"<p>a</p><img data-image-id="3" src=""><table><td><img data-width="1" data-image-id="12"></td></table><img data-image-id="x">"#;
         assert_eq!(referenced_image_ids(html), [3, 12]);
         assert!(referenced_image_ids("<p>nichts</p>").is_empty());
+    }
+
+    #[test]
+    fn place_reorders_and_moves_to_exact_positions() {
+        let c = conn();
+        let a = create_page(&c, None, "A", "folder").unwrap();
+        let b = create_page(&c, None, "B", "page").unwrap();
+        let d = create_page(&c, None, "D", "page").unwrap();
+        let in_a = create_page(&c, Some(a.id), "In A", "page").unwrap();
+        let titles = |parent: Option<i64>| -> Vec<String> {
+            let mut pages: Vec<DocPage> = list_pages(&c).unwrap().into_iter().filter(|p| p.parent_id == parent).collect();
+            pages.sort_by_key(|p| (p.position, p.id));
+            pages.into_iter().map(|p| p.title).collect()
+        };
+        assert_eq!(titles(None), ["A", "B", "D"]);
+
+        // Innerhalb derselben Ebene: D ganz nach vorn
+        place_page(&c, d.id, None, 0).unwrap();
+        assert_eq!(titles(None), ["D", "A", "B"]);
+        // In einen Ordner, an die erste Stelle; die Hauptebene rückt lückenlos nach
+        place_page(&c, b.id, Some(a.id), 0).unwrap();
+        assert_eq!(titles(Some(a.id)), ["B", "In A"]);
+        assert_eq!(titles(None), ["D", "A"]);
+        let positions: Vec<i64> = list_pages(&c).unwrap().into_iter().filter(|p| p.parent_id.is_none()).map(|p| p.position).collect();
+        assert!(positions.contains(&0) && positions.contains(&1) && positions.len() == 2);
+        // Zu großer Index = ans Ende, und wieder hinaus auf die Hauptebene
+        place_page(&c, in_a.id, None, 99).unwrap();
+        assert_eq!(titles(None), ["D", "A", "In A"]);
+
+        // Unter sich selbst oder einen Nachfolger geht nicht
+        assert!(place_page(&c, a.id, Some(b.id), 0).is_err());
+        assert!(place_page(&c, a.id, Some(a.id), 0).is_err());
+        assert!(place_page(&c, 999, None, 0).is_err());
     }
 }

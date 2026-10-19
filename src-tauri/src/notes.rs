@@ -126,6 +126,7 @@ pub fn delete_note(conn: &Connection, id: i64) -> Result<(), String> {
     if changed == 0 {
         return Err("Notiz nicht gefunden.".into());
     }
+    let _ = crate::files::gc(conn);
     Ok(())
 }
 

@@ -11,6 +11,8 @@ import { formatNoteTime } from "../../lib/notes";
 import { addDocImage } from "../../lib/api/docImages";
 import { prepareImage } from "../../lib/imageProcess";
 import { useEditorTheme } from "../../lib/editorTheme";
+import { attachFiles, otherFiles } from "../../lib/attachFiles";
+import { FileAttachment } from "../files/FileAttachment";
 import { DocImage } from "./DocImage";
 import { SizedTableRow } from "./SizedTableRow";
 import { TextSize } from "./TextSize";
@@ -67,6 +69,8 @@ export function DocEditor({ page, editing, subpages, onOpen }: DocEditorProps) {
   const titleRef = useRef<HTMLInputElement>(null);
   const articleRef = useRef<HTMLElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
+  const anyFileInput = useRef<HTMLInputElement>(null);
+  const insertAttachments = useRef<(files: File[], pos?: number) => void>(() => undefined);
   const [tableMoving, setTableMoving] = useState(false);
   const insertImages = useRef<(files: File[], pos?: number) => void>(() => undefined);
   const [imageError, setImageError] = useState<string | null>(null);
@@ -106,6 +110,7 @@ export function DocEditor({ page, editing, subpages, onOpen }: DocEditorProps) {
       SizedTableRow,
       TextSize,
       DocImage,
+      FileAttachment,
       Placeholder.configure({ placeholder: "Schreibe hier die Dokumentation …" }),
     ],
     content: page.content,
@@ -115,21 +120,29 @@ export function DocEditor({ page, editing, subpages, onOpen }: DocEditorProps) {
     // Klasse note-prose liefert die Grundgestaltung (Listen, Zitate, Code), doc-prose ergänzt Tabellen und Größen
     editorProps: {
       attributes: { class: "note-prose doc-prose", spellcheck: "true" },
-      // Bilder aus der Zwischenablage oder per Drag & Drop einfügen
+      // Beim Schreiben hält der Editor die Schreibzeile deutlich über dem unteren Rand, statt sie dort kleben zu lassen
+      scrollThreshold: { top: 80, right: 0, bottom: 240, left: 0 },
+      scrollMargin: { top: 80, right: 0, bottom: 240, left: 0 },
+      // Bilder und andere Dateien aus der Zwischenablage oder per Drag & Drop einfügen
       handlePaste: (_view, event) => {
-        const files = imageFiles(event.clipboardData?.files);
-        if (files.length === 0) return false;
+        const images = imageFiles(event.clipboardData?.files);
+        const others = otherFiles(event.clipboardData?.files);
+        if (images.length === 0 && others.length === 0) return false;
         event.preventDefault();
-        insertImages.current(files);
+        if (images.length) insertImages.current(images);
+        if (others.length) insertAttachments.current(others);
         return true;
       },
       handleDrop: (view, event, _slice, moved) => {
         // Verschobene Bilder und Texte übernimmt der Editor selbst, auch in Tabellenzellen hinein
         if (moved) return false;
-        const files = imageFiles(event.dataTransfer?.files);
-        if (files.length === 0) return false;
+        const images = imageFiles(event.dataTransfer?.files);
+        const others = otherFiles(event.dataTransfer?.files);
+        if (images.length === 0 && others.length === 0) return false;
         event.preventDefault();
-        insertImages.current(files, view.posAtCoords({ left: event.clientX, top: event.clientY })?.pos);
+        const at = view.posAtCoords({ left: event.clientX, top: event.clientY })?.pos;
+        if (images.length) insertImages.current(images, at);
+        if (others.length) insertAttachments.current(others, at);
         return true;
       },
     },
@@ -160,6 +173,13 @@ export function DocEditor({ page, editing, subpages, onOpen }: DocEditorProps) {
         }
       }
     })();
+  };
+
+  // Dateien speichern und als Karten einfügen
+  insertAttachments.current = (files, pos) => {
+    if (!editor) return;
+    setImageError(null);
+    void attachFiles(editor, files, pos).then((message) => message && setImageError(message));
   };
 
   // Lesen/Bearbeiten umschalten; beim Verlassen des Bearbeitens sofort speichern
@@ -217,7 +237,7 @@ export function DocEditor({ page, editing, subpages, onOpen }: DocEditorProps) {
     <div className="doc-body">
       {editing && (
         <>
-          <DocToolbar editor={editor} linkOpen={linkOpen} onLink={openLink} onImage={() => fileInput.current?.click()} />
+          <DocToolbar editor={editor} linkOpen={linkOpen} onLink={openLink} onImage={() => fileInput.current?.click()} onFile={() => anyFileInput.current?.click()} />
 
           {linkOpen && (
             <form className="note-linkbar" onSubmit={applyLink}>
@@ -273,6 +293,18 @@ export function DocEditor({ page, editing, subpages, onOpen }: DocEditorProps) {
               hidden
               onChange={(e) => {
                 insertImages.current(imageFiles(e.target.files));
+                e.target.value = "";
+              }}
+            />
+          )}
+          {editing && (
+            <input
+              ref={anyFileInput}
+              type="file"
+              multiple
+              hidden
+              onChange={(e) => {
+                insertAttachments.current([...(e.target.files ?? [])]);
                 e.target.value = "";
               }}
             />

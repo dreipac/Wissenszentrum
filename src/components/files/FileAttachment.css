@@ -1,0 +1,157 @@
+/* Dateianhang als Karte in Notizen und Dokumentation */
+.file-card {
+  max-width: 520px;
+  margin: 0.6rem 0;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  background-color: var(--bg-card);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.file-card:hover {
+  border-color: var(--border-strong-hover);
+}
+
+.file-card.selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.file-card-row {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding-right: 0.4rem;
+}
+
+/* Eine schmale Zeile: Symbol, Dateiname, direkt daneben dezent die Größe */
+.file-card-main {
+  display: flex;
+  flex: 1;
+  align-items: baseline;
+  gap: 0.5rem;
+  min-width: 0;
+  padding: 0.45rem 0.4rem 0.45rem 0.8rem;
+  border-radius: var(--radius-lg);
+  color: inherit;
+  cursor: pointer;
+}
+
+.file-card-main.busy {
+  cursor: progress;
+}
+
+.file-card-main:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.file-card-icon {
+  align-self: center;
+  flex-shrink: 0;
+  color: var(--tone);
+}
+
+.file-card-icon.red {
+  --tone: var(--bucket-red);
+}
+
+.file-card-icon.blue {
+  --tone: var(--bucket-blue);
+}
+
+.file-card-icon.green {
+  --tone: var(--bucket-green);
+}
+
+.file-card-icon.amber {
+  --tone: var(--bucket-amber);
+}
+
+.file-card-icon.purple {
+  --tone: var(--bucket-purple);
+}
+
+.file-card-icon.gray {
+  --tone: var(--text-muted);
+}
+
+.file-card-name {
+  overflow: hidden;
+  font-size: 0.88rem;
+  font-weight: 500;
+  color: var(--text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-card-main:hover .file-card-name {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.file-card-size {
+  flex-shrink: 0;
+  font-size: 0.74rem;
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+
+/* Die beiden Knöpfe stehen immer rechts in der Karte, leise */
+/* Rechter Rand zum Ziehen der Breite (nur beim Bearbeiten), nur senkrecht */
+.file-card {
+  position: relative;
+}
+
+.file-card-edge {
+  position: absolute;
+  top: 0;
+  right: -4px;
+  bottom: 0;
+  width: 9px;
+  cursor: col-resize;
+}
+
+.file-card-edge::after {
+  content: "";
+  position: absolute;
+  top: 25%;
+  bottom: 25%;
+  left: 3px;
+  width: 3px;
+  border-radius: 2px;
+  background-color: var(--accent);
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+
+.file-card:hover .file-card-edge::after,
+.file-card.selected .file-card-edge::after,
+.file-card-edge:hover::after {
+  opacity: 0.7;
+}
+
+.file-card-actions {
+  display: flex;
+  gap: 0.1rem;
+  flex-shrink: 0;
+}
+
+.file-card-actions .icon-btn {
+  width: 26px;
+  height: 26px;
+}
+
+.file-card-error {
+  margin: 0;
+  padding: 0 0.85rem 0.65rem;
+  font-size: 0.78rem;
+  color: var(--negative);
+}
+
+/* In Tabellenzellen: nie breiter als die Zelle */
+.doc-prose td .file-card,
+.doc-prose th .file-card {
+  max-width: 100%;
+  margin: 0.3rem 0;
+}

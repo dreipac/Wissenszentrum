@@ -497,6 +497,13 @@
   cursor: default;
 }
 
+/* Tabellenleiste: in Fensterkoordinaten, damit sie beim Scrollen unter der Werkzeugleiste stehen bleibt */
+.table-bar.floating {
+  position: fixed;
+  z-index: 20;
+  visibility: hidden;
+}
+
 .table-bar-sep {
   width: 1px;
   height: 16px;
@@ -513,8 +520,15 @@
   overflow-y: auto;
 }
 
+/* Beim Schreiben bleibt unter dem Text viel Platz zum Weiterscrollen, damit die Zeile nicht am unteren Rand klebt.
+   Der Raum liegt am Blatt selbst (nicht am scrollenden Container), damit er sicher zum Scrollbereich zählt. */
+.doc-article:has(.ProseMirror[contenteditable="true"]) {
+  padding-bottom: max(5rem, 60vh);
+}
+
 .doc-article {
   flex: 1;
+  align-self: flex-start;
   min-width: 0;
   max-width: 780px;
   margin: 0 auto;
@@ -1108,4 +1122,85 @@ body.table-moving * {
 
 .doc-prose[contenteditable="false"] .doc-image-frame {
   cursor: default;
+}
+
+/* Einzelnes Linienstück ziehen: Spaltenzeiger und hervorgehobenes Stück */
+body.table-sizing-col,
+body.table-sizing-col * {
+  cursor: col-resize !important;
+  user-select: none;
+}
+
+.table-segment {
+  position: fixed;
+  z-index: 30;
+  border-radius: 2px;
+  background-color: var(--accent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent);
+  pointer-events: none;
+}
+
+/* ---------- Ziehen im Seitenbaum ---------- */
+body.tree-dragging,
+body.tree-dragging * {
+  cursor: grabbing !important;
+  user-select: none;
+}
+
+.tree-row.dragged {
+  opacity: 0.4;
+}
+
+/* Marke, wohin die Seite kommt: Linie zwischen Zeilen oder Umrandung der Zeile, in die hinein abgelegt wird */
+.tree-drop {
+  position: fixed;
+  z-index: 40;
+  pointer-events: none;
+}
+
+.tree-drop.line {
+  border-radius: 2px;
+  background-color: var(--accent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+.tree-drop.line::before {
+  content: "";
+  position: absolute;
+  left: -3px;
+  top: -3px;
+  width: 8px;
+  height: 8px;
+  border: 2px solid var(--accent);
+  border-radius: 50%;
+  background-color: var(--bg-sidebar);
+}
+
+.tree-drop.into {
+  border: 1.5px solid var(--accent);
+  border-radius: var(--radius-md);
+  background-color: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+/* Kopie der gezogenen Zeile an der Maus */
+.tree-ghost {
+  position: fixed;
+  z-index: 41;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  max-width: 260px;
+  padding: 0.35rem 0.7rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background-color: var(--bg-card);
+  box-shadow: var(--shadow-pop);
+  font-size: 0.85rem;
+  pointer-events: none;
+}
+
+.tree-ghost span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
