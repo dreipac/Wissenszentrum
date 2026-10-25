@@ -1,11 +1,16 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AlignLeft, ArrowRight, Clock, MapPin } from "lucide-react";
 import { Modal } from "../ui/Modal";
 import { Button } from "../ui/Button";
 import { SecondaryButton } from "../ui/SecondaryButton";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
+import { DatePicker } from "../ui/DatePicker";
 import type { EventDraft } from "../../lib/calendar";
 import { createEvent, deleteEvent, updateEvent } from "../../lib/api/events";
+import { createTask, setTaskDone, updateTask } from "../../lib/api/tasks";
+import { taskToInput } from "../../lib/tasks";
+import { useTasks } from "../../lib/useTasks";
+import { EventTasks, type EventTaskAdder, type EventTaskDraft } from "./EventTasks";
 import "./EventModal.css";
 
 interface EventModalProps {
@@ -26,6 +31,30 @@ export function EventModal({ draft, onClose, onChanged }: EventModalProps) {
   const [endTime, setEndTime] = useState(draft.endsAt.slice(11) || "10:00");
   const [location, setLocation] = useState(draft.location ?? "");
   const [description, setDescription] = useState(draft.description ?? "");
+
+  // Aufgaben am Termin: bestehende laden, sobald die Aufgaben da sind; neue und Änderungen gelten erst beim Speichern
+  const { tasks, loaded } = useTasks();
+  const nextKey = useRef(0);
+  const [items, setItems] = useState<EventTaskDraft[]>([]);
+  const [adder, setAdder] = useState<EventTaskAdder>({ title: "", offset: -1 });
+  const itemsReady = useRef(!editing);
+  useEffect(() => {
+    if (itemsReady.current || !loaded) return;
+    itemsReady.current = true;
+    setItems(
+      tasks
+        .filter((t) => t.eventId === draft.id && t.eventOffset !== null)
+        .sort((a, b) => a.eventOffset! - b.eventOffset! || a.id - b.id)
+        .map((task) => ({ key: nextKey.current++, task, title: task.title, offset: task.eventOffset!, done: task.done })),
+    );
+  }, [loaded, tasks, draft.id]);
+
+  const addItem = () => {
+    const text = adder.title.trim();
+    if (!text) return;
+    setItems((list) => [...list, { key: nextKey.current++, task: null, title: text, offset: adder.offset, done: false }]);
+    setAdder({ ...adder, title: "" });
+  };
 
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -51,8 +80,44 @@ export function EventModal({ draft, onClose, onChanged }: EventModalProps) {
     if (!title.trim()) return setError("Bitte gib einen Titel ein.");
     if (!startDate || !endDate) return setError("Bitte Datum angeben.");
     if (endsAt <= startsAt) return setError("Das Ende muss nach dem Beginn liegen.");
+    if (editing && !itemsReady.current) return setError("Die Aufgaben werden noch geladen.");
     const input = { title: title.trim(), description, location, startsAt, endsAt, allDay };
-    void run(() => (editing ? updateEvent(draft.id!, input) : createEvent(input)));
+    // Eine noch nicht mit Enter bestätigte Aufgabe geht nicht verloren
+    const pending: EventTaskDraft[] = adder.title.trim()
+      ? [{ key: -1, task: null, title: adder.title.trim(), offset: adder.offset, done: false }]
+      : [];
+    const all = [...items, ...pending].filter((i) => i.title.trim());
+    void run(async () => {
+      // Gelöste Aufgaben zuerst: sie behalten ihr Datum, auch wenn der Termin gleich verschoben wird
+      const kept = new Set(all.map((i) => i.task?.id));
+      for (const t of tasks.filter((x) => x.eventId === draft.id && !kept.has(x.id))) {
+        await updateTask(t.id, taskToInput(t, { eventId: null, eventOffset: null }));
+      }
+      const event = editing ? await updateEvent(draft.id!, input) : await createEvent(input);
+      for (const item of all) {
+        if (!item.task) {
+          const created = await createTask({
+            title: item.title.trim(),
+            bucketId: null,
+            priority: "medium",
+            description: "",
+            dueDate: null,
+            startDate: null,
+            showSubtasks: false,
+            showDescription: false,
+            eventId: event.id,
+            eventOffset: item.offset,
+            subtasks: [],
+          });
+          if (item.done) await setTaskDone(created.id, true);
+          continue;
+        }
+        if (item.task.title !== item.title.trim() || item.task.eventOffset !== item.offset) {
+          await updateTask(item.task.id, taskToInput(item.task, { title: item.title.trim(), eventId: event.id, eventOffset: item.offset }));
+        }
+        if (item.task.done !== item.done) await setTaskDone(item.task.id, item.done);
+      }
+    });
   };
 
   const onStartDate = (value: string) => {
@@ -94,7 +159,7 @@ export function EventModal({ draft, onClose, onChanged }: EventModalProps) {
         <Clock size={18} className="ev-icon" />
         <div className="ev-row-body">
           <div className="ev-datetime">
-            <input type="date" className="field-control" aria-label="Beginn Datum" value={startDate} onChange={(e) => onStartDate(e.target.value)} />
+            <DatePicker className="dp-inline" ariaLabel="Beginn Datum" value={startDate} onChange={onStartDate} />
             {!allDay && (
               <input type="time" className="field-control" aria-label="Beginn Uhrzeit" value={startTime} onChange={(e) => setStartTime(e.target.value)} />
             )}
@@ -102,7 +167,7 @@ export function EventModal({ draft, onClose, onChanged }: EventModalProps) {
             {!allDay && (
               <input type="time" className="field-control" aria-label="Ende Uhrzeit" value={endTime} onChange={(e) => setEndTime(e.target.value)} />
             )}
-            <input type="date" className="field-control" aria-label="Ende Datum" value={endDate} min={startDate} onChange={(e) => setEndDate(e.target.value)} />
+            <DatePicker className="dp-inline" ariaLabel="Ende Datum" value={endDate} min={startDate} onChange={setEndDate} />
           </div>
           <label className="checkbox-row">
             <input type="checkbox" checked={allDay} onChange={(e) => setAllDay(e.target.checked)} />
@@ -125,6 +190,16 @@ export function EventModal({ draft, onClose, onChanged }: EventModalProps) {
           <textarea className="field-control ev-description" aria-label="Beschreibung" value={description} placeholder="Beschreibung hinzufügen" onChange={(e) => setDescription(e.target.value)} />
         </div>
       </div>
+
+      <EventTasks
+        items={items}
+        onItems={setItems}
+        adder={adder}
+        onAdder={setAdder}
+        startDate={startDate}
+        endDate={endDate}
+        onAdd={addItem}
+      />
 
       {error && <p className="field-error">{error}</p>}
 

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type { CalendarEvent } from "./calendar";
 import { listEvents } from "./api/events";
+import { onChange } from "./changes";
 
 /** Lädt Termine für [from, to) und lädt bei Änderung des Zeitraums neu. */
 export function useEvents(from: string, to: string) {
@@ -15,6 +16,9 @@ export function useEvents(from: string, to: string) {
       setError(String(e));
     }
   }, [from, to]);
+
+  // Aufgaben am Termin zählen im Termin mit: Änderungen an Aufgaben laden die Termine neu
+  useEffect(() => onChange("tasks", () => void reload()), [reload]);
 
   useEffect(() => {
     let cancelled = false;

@@ -819,3 +819,94 @@
 .event-details-edit {
   align-self: flex-start;
 }
+
+/* ---------- Aufgaben am Termin ---------- */
+.ev-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  flex-shrink: 0;
+  font-size: 0.65rem;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}
+
+.ev-badge.complete {
+  color: var(--positive);
+}
+
+/* Im Chip steht die Marke rechts, der Titel läuft links aus */
+.chip .ev-badge svg {
+  display: none;
+}
+
+.chip .ev-badge {
+  float: right;
+  margin-left: 0.3rem;
+  line-height: 18px;
+}
+
+.tg-event-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.tg-event-head .tg-event-title {
+  flex: 1;
+  min-width: 0;
+}
+
+.elt {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  min-width: 0;
+  flex: 1;
+}
+
+.elt-summary {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.elt-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.elt-list li {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.elt-list .check-btn {
+  margin: 0;
+}
+
+.elt-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.elt-list li.done .elt-title {
+  color: var(--text-muted);
+}
+
+.elt-offset,
+.elt-more {
+  flex-shrink: 0;
+  font-size: 0.72rem;
+  color: var(--text-faint);
+}

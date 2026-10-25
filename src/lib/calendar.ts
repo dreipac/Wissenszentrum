@@ -8,9 +8,23 @@ export interface CalendarEvent {
   startsAt: string;
   endsAt: string;
   allDay: boolean;
+  /** Aufgaben am Termin: Vorbereitung (bis einschließlich am Tag selbst) und Nachbereitung (danach), gesamt und erledigt */
+  prepTotal: number;
+  prepDone: number;
+  followTotal: number;
+  followDone: number;
 }
 
-export type EventInput = Omit<CalendarEvent, "id">;
+export type EventInput = Omit<CalendarEvent, "id" | "prepTotal" | "prepDone" | "followTotal" | "followDone">;
+
+/** Noch offene Vorbereitung. */
+export const openPrep = (e: CalendarEvent) => e.prepTotal - e.prepDone;
+
+/** Fortschritt der Aufgaben am Termin als kurzer Text („3/5“), leer wenn keine daran hängen. */
+export function taskProgressLabel(e: CalendarEvent): string {
+  const total = e.prepTotal + e.followTotal;
+  return total === 0 ? "" : `${e.prepDone + e.followDone}/${total}`;
+}
 
 /** Vorbelegung für den Dialog – mit `id` wird ein bestehender Termin bearbeitet. */
 export type EventDraft = Partial<CalendarEvent> & Pick<EventInput, "startsAt" | "endsAt">;

@@ -16,6 +16,11 @@ pub struct Event {
     pub starts_at: String,
     pub ends_at: String,
     pub all_day: bool,
+    /// Aufgaben am Termin: Vorbereitung (bis einschließlich am Tag selbst) und Nachbereitung (danach), jeweils gesamt und erledigt
+    pub prep_total: i64,
+    pub prep_done: i64,
+    pub follow_total: i64,
+    pub follow_done: i64,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -32,7 +37,11 @@ pub struct EventInput {
     pub all_day: bool,
 }
 
-const EVENT_COLUMNS: &str = "id, title, description, location, starts_at, ends_at, all_day";
+const EVENT_COLUMNS: &str = "id, title, description, location, starts_at, ends_at, all_day,
+    (SELECT COUNT(*) FROM tasks WHERE event_id = events.id AND event_offset <= 0),
+    (SELECT COUNT(*) FROM tasks WHERE event_id = events.id AND event_offset <= 0 AND done = 1),
+    (SELECT COUNT(*) FROM tasks WHERE event_id = events.id AND event_offset > 0),
+    (SELECT COUNT(*) FROM tasks WHERE event_id = events.id AND event_offset > 0 AND done = 1)";
 
 fn row_to_event(row: &Row) -> rusqlite::Result<Event> {
     Ok(Event {
@@ -43,6 +52,10 @@ fn row_to_event(row: &Row) -> rusqlite::Result<Event> {
         starts_at: row.get(4)?,
         ends_at: row.get(5)?,
         all_day: row.get::<_, i64>(6)? != 0,
+        prep_total: row.get(7)?,
+        prep_done: row.get(8)?,
+        follow_total: row.get(9)?,
+        follow_done: row.get(10)?,
     })
 }
 
@@ -134,10 +147,14 @@ pub fn update_event(conn: &Connection, id: i64, input: &EventInput) -> Result<Ev
     if changed == 0 {
         return Err("Termin nicht gefunden.".into());
     }
+    // Aufgaben am Termin ziehen mit
+    crate::tasks::recompute_event_tasks(conn, id)?;
     get_event(conn, id)
 }
 
+/// Löscht den Termin. Seine Aufgaben bleiben mit ihrem letzten Datum bestehen.
 pub fn delete_event(conn: &Connection, id: i64) -> Result<(), String> {
+    crate::tasks::unlink_event_tasks(conn, id)?;
     let changed = conn
         .execute("DELETE FROM events WHERE id = ?1", params![id])
         .map_err(|e| e.to_string())?;
@@ -208,4 +225,36 @@ mod tests {
         assert!(create_event(&c, &input("x", "14.10.2026", "14.10.2026")).is_err());
     }
 
+    #[test]
+    fn counts_prep_and_follow_up_tasks() {
+        let c = conn();
+        let e = create_event(&c, &input("Prüfung", "2026-10-20 09:00", "2026-10-20 11:00")).unwrap();
+        assert_eq!((e.prep_total, e.follow_total), (0, 0));
+        let mk = |title: &str, offset: i64| {
+            crate::tasks::create_task(
+                &c,
+                &crate::tasks::TaskInput {
+                    bucket_id: None,
+                    title: title.into(),
+                    description: String::new(),
+                    priority: "medium".into(),
+                    due_date: None,
+                    start_date: None,
+                    show_subtasks: false,
+                    show_description: false,
+                    event_id: Some(e.id),
+                    event_offset: Some(offset),
+                    subtasks: Vec::new(),
+                },
+            )
+            .unwrap()
+        };
+        let a = mk("Lernen", -2);
+        mk("Unterlagen", 0);
+        mk("Protokoll", 1);
+        crate::tasks::set_task_done(&c, a.id, true).unwrap();
+        let got = get_event(&c, e.id).unwrap();
+        assert_eq!((got.prep_total, got.prep_done, got.follow_total, got.follow_done), (2, 1, 1, 0));
+        assert_eq!(list_events(&c, "2026-10-20 00:00", "2026-10-21 00:00").unwrap()[0].prep_total, 2);
+    }
 }

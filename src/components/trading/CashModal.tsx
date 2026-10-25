@@ -4,6 +4,7 @@ import { Modal } from "../ui/Modal";
 import { Button } from "../ui/Button";
 import { SecondaryButton } from "../ui/SecondaryButton";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
+import { DateTimeField } from "../ui/DatePicker";
 import { addCashMovement, deleteCashMovement } from "../../lib/api/trading";
 import { formatMoney } from "../../lib/format";
 import type { CashMovement } from "../../lib/trading";
@@ -78,9 +79,11 @@ export function CashModal({ cash, movements, onClose }: CashModalProps) {
 
       <div className="tm2-grid">
         <NumberField label="Betrag" id="cash-amount" value={amount} onChange={setAmount} placeholder="z. B. 5000" autoFocus suffix={<TextSuffix>CHF</TextSuffix>} />
-        <Field label="Zeitpunkt" id="cash-at">
-          <input id="cash-at" className="field-control" type="datetime-local" value={at} onChange={(e) => setAt(e.target.value)} />
-        </Field>
+        <div className="full">
+          <Field label="Zeitpunkt" id="cash-at">
+            <DateTimeField id="cash-at" ariaLabel="Zeitpunkt" value={at} onChange={setAt} />
+          </Field>
+        </div>
         <div className="full">
           <Field label="Notiz (optional)" id="cash-note">
             <input id="cash-note" className="field-control" value={note} placeholder="z. B. Startkapital" onChange={(e) => setNote(e.target.value)} />

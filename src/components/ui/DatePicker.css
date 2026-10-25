@@ -1,0 +1,365 @@
+/* Datumsauswahl: Eingabefeld mit Kalender-Knopf, darunter der Kalender mit Kalenderwochen */
+.dp {
+  position: relative;
+  display: block;
+  min-width: 0;
+}
+
+/* In Zeilen mit mehreren Feldern: feste Breite statt Vollbreite */
+.dp.dp-inline {
+  width: 168px;
+}
+
+.dp .field-control.dp-input {
+  width: 100%;
+  min-width: 0;
+  padding-right: 2.2rem;
+}
+
+.dp-toggle {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  transform: translateY(-50%);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background-color 0.15s, color 0.15s;
+}
+
+.dp-toggle:hover {
+  background-color: var(--bg-hover);
+  color: var(--text);
+}
+
+.dtf {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.dtf .dp {
+  flex: 1 1 130px;
+  min-width: 130px;
+}
+
+/* Die Uhrzeit hat feste Breite; sonst dehnt .field-control sie auf die ganze Zeile */
+.dtf .dtf-time {
+  flex: 0 0 104px;
+  width: 104px;
+  min-width: 0;
+}
+
+/* ---------- Kalender ---------- */
+.dp-pop {
+  position: fixed;
+  z-index: 90;
+  padding: 0.7rem 0.7rem 0.55rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  background-color: var(--menu-bg);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+  box-shadow: var(--menu-shadow);
+  animation: dp-in 0.14s ease;
+  user-select: none;
+}
+
+@keyframes dp-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.dp-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.45rem;
+}
+
+.dp-title {
+  padding: 0.25rem 0.5rem;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  font-size: 0.92rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+
+.dp-title:hover {
+  background-color: var(--menu-hover);
+}
+
+.dp-nav {
+  display: flex;
+  gap: 0.1rem;
+}
+
+.dp-arrow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background-color 0.15s, color 0.15s;
+}
+
+.dp-arrow:hover {
+  background-color: var(--menu-hover);
+  color: var(--text);
+}
+
+/* Spalten: KW, dann Mo–So */
+.dp-grid {
+  display: grid;
+  grid-template-columns: 34px repeat(7, 1fr);
+  row-gap: 2px;
+}
+
+.dp-week {
+  display: contents;
+}
+
+.dp-kw-head,
+.dp-weekday {
+  padding: 0.2rem 0 0.35rem;
+  text-align: center;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--text-faint);
+}
+
+.dp-kw-head {
+  text-transform: uppercase;
+}
+
+/* Kalenderwoche: leise, durch eine feine Linie von den Tagen abgesetzt */
+.dp-kw {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 4px;
+  border-right: 1px solid var(--border-soft);
+  font-size: 0.7rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-faint);
+}
+
+.dp-day {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 32px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  font-size: 0.84rem;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition: background-color 0.12s;
+}
+
+.dp-day:hover:not(:disabled):not(.selected) {
+  background-color: var(--menu-hover);
+}
+
+.dp-day.weekend {
+  color: var(--text-muted);
+}
+
+.dp-day.other {
+  color: var(--text-faint);
+  opacity: 0.6;
+}
+
+.dp-day.today {
+  border-color: color-mix(in srgb, var(--accent) 70%, transparent);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.dp-day.focus {
+  border-color: var(--border-strong-hover);
+  background-color: var(--menu-hover);
+}
+
+.dp-day.selected {
+  border-color: transparent;
+  background-color: var(--btn-primary-bg);
+  color: var(--btn-primary-text);
+  font-weight: 600;
+}
+
+.dp-day:disabled {
+  opacity: 0.25;
+  cursor: not-allowed;
+}
+
+.dp-months {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+  padding: 0.2rem 0 0.4rem;
+}
+
+.dp-month {
+  height: 40px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  font-size: 0.86rem;
+  cursor: pointer;
+  transition: background-color 0.12s;
+}
+
+.dp-month:hover:not(.selected) {
+  background-color: var(--menu-hover);
+}
+
+.dp-month.today {
+  border-color: color-mix(in srgb, var(--accent) 70%, transparent);
+}
+
+.dp-month.selected {
+  background-color: var(--btn-primary-bg);
+  color: var(--btn-primary-text);
+  font-weight: 600;
+}
+
+.dp-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 0.4rem;
+  padding-top: 0.45rem;
+  border-top: 1px solid var(--border-soft);
+}
+
+.dp-link {
+  padding: 0.25rem 0.5rem;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: background-color 0.15s, color 0.15s;
+}
+
+.dp-link:hover:not(:disabled) {
+  background-color: var(--menu-hover);
+  color: var(--text);
+}
+
+.dp-link.strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.dp-link:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+/* ---------- Blättern: der neue Monat gleitet von der Seite herein, in Blätterrichtung ---------- */
+.dp-viewport {
+  overflow: hidden;
+}
+
+.dp-grid.next,
+.dp-months.next {
+  animation: dp-slide-next 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.dp-grid.prev,
+.dp-months.prev {
+  animation: dp-slide-prev 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes dp-slide-next {
+  from {
+    opacity: 0;
+    transform: translateX(28px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes dp-slide-prev {
+  from {
+    opacity: 0;
+    transform: translateX(-28px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.dp-title-text {
+  display: inline-block;
+}
+
+.dp-title-text.next {
+  animation: dp-title-next 0.24s ease;
+}
+
+.dp-title-text.prev {
+  animation: dp-title-prev 0.24s ease;
+}
+
+@keyframes dp-title-next {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes dp-title-prev {
+  from {
+    opacity: 0;
+    transform: translateY(-5px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dp-grid,
+  .dp-months,
+  .dp-title-text {
+    animation: none !important;
+  }
+}

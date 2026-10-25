@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Pencil } from "lucide-react";
 import { Modal } from "../ui/Modal";
+import { DatePicker, DateTimeField } from "../ui/DatePicker";
 import { Button } from "../ui/Button";
 import { SecondaryButton } from "../ui/SecondaryButton";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
@@ -362,7 +363,7 @@ export function TradeModal({ trade, price, quoteAt, cash, onClose }: TradeModalP
               />
               <NumberField label="Gebühr (optional)" id="tp-fee" value={fee} onChange={setFee} placeholder="0" suffix={<CurrencySuffix value={cur} />} />
               <Field label="Zeitpunkt" id="tp-at">
-                <input id="tp-at" className="field-control" type="datetime-local" value={at} onChange={(e) => setAt(e.target.value)} />
+                <DateTimeField id="tp-at" ariaLabel="Zeitpunkt" value={at} onChange={setAt} />
               </Field>
               {panel === "execute" && !isChf && (
                 <NumberField label={`Wechselkurs (CHF je 1 ${cur})`} id="tp-fx" value={fx} onChange={setFx} suffix={<TextSuffix>CHF</TextSuffix>} />
@@ -467,7 +468,7 @@ export function TradeModal({ trade, price, quoteAt, cash, onClose }: TradeModalP
               {trade.status === "order" && (
                 <div className="full">
                   <Field label="Gültig bis" id="te-valid">
-                    <input id="te-valid" className="field-control" type="date" value={valid} onChange={(e) => setValid(e.target.value)} />
+                    <DatePicker id="te-valid" ariaLabel="Gültig bis" value={valid} onChange={setValid} />
                   </Field>
                 </div>
               )}

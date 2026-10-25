@@ -1,0 +1,131 @@
+/* Auswahlfeld: sieht aus wie ein Eingabefeld, das Menü wie die übrigen schwebenden Flächen der App */
+.sel {
+  position: relative;
+  display: inline-block;
+  min-width: 0;
+}
+
+.sel-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  width: 100%;
+  padding: 0.35rem 0.6rem 0.35rem 0.75rem;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  background-color: var(--bg-sidebar);
+  color: var(--text);
+  font-size: 0.95rem;
+  text-align: left;
+  outline: none;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+
+.sel-trigger:hover,
+.sel-trigger:focus-visible,
+.sel-trigger.open {
+  border-color: var(--border-strong-hover);
+}
+
+.sel-value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sel-value.placeholder {
+  color: var(--text-faint);
+}
+
+.sel-arrow {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  transition: transform 0.15s ease;
+}
+
+.sel-trigger.open .sel-arrow {
+  transform: rotate(180deg);
+}
+
+.sel.sm .sel-trigger {
+  padding: 0.35rem 0.5rem 0.35rem 0.65rem;
+  font-size: 0.85rem;
+}
+
+/* ---------- Menü ---------- */
+.sel-menu {
+  position: fixed;
+  z-index: 90;
+  overflow-y: auto;
+  padding: 4px;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background-color: var(--menu-bg);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+  box-shadow: var(--menu-shadow);
+  animation: sel-in 0.14s ease;
+  user-select: none;
+}
+
+@keyframes sel-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.sel-option {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.42rem 0.6rem;
+  border-radius: 6px;
+  color: var(--text-muted);
+  font-size: 0.88rem;
+  cursor: pointer;
+}
+
+.sel-option.active {
+  background-color: var(--menu-hover);
+  color: var(--text);
+}
+
+.sel-option.selected {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.sel-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sel-hint {
+  flex-shrink: 0;
+  font-size: 0.76rem;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-faint);
+}
+
+.sel-check {
+  flex-shrink: 0;
+  color: var(--text);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sel-menu {
+    animation: none;
+  }
+}

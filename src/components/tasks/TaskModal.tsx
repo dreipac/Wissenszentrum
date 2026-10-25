@@ -1,12 +1,18 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { SegmentBar } from "./parts";
-import { AlignLeft, CalendarDays, CalendarRange, Flag, FolderKanban, ListChecks, Plus, X } from "lucide-react";
+import { AlignLeft, CalendarDays, FolderKanban, ListChecks, Plus, X } from "lucide-react";
 import { Modal } from "../ui/Modal";
 import { Button } from "../ui/Button";
 import { SecondaryButton } from "../ui/SecondaryButton";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { createTask, deleteTask, updateTask } from "../../lib/api/tasks";
-import { dateInDays, priorities, priorityLabel, type Priority, type Task } from "../../lib/tasks";
+import { listEvents } from "../../lib/api/events";
+import { DatePicker } from "../ui/DatePicker";
+import { EventOffset } from "./EventOffset";
+import { Select } from "../ui/Select";
+import type { CalendarEvent } from "../../lib/calendar";
+import { addDays, formatDayMonth, formatLongDay, parseDateTime, startOfDay, toDateTimeStr } from "../../lib/dates";
+import { dateInDays, eventTaskDate, priorities, priorityLabel, type Priority, type Task } from "../../lib/tasks";
 import { useTasks } from "../../lib/useTasks";
 import "./TaskModal.css";
 
@@ -48,9 +54,44 @@ export function TaskModal({ task, bucketId = null, onClose }: TaskModalProps) {
   );
   const [newStep, setNewStep] = useState("");
   const [showSubtasks, setShowSubtasks] = useState(task?.showSubtasks ?? false);
+  const [showDescription, setShowDescription] = useState(task?.showDescription ?? false);
+  const [eventId, setEventId] = useState<number | null>(task?.eventId ?? null);
+  const [eventOffset, setEventOffset] = useState(task?.eventOffset ?? -1);
+  const [events, setEvents] = useState<CalendarEvent[]>([]);
+  // Fälligkeit entweder als festes Datum oder relativ zu einem Termin
+  const [byEvent, setByEvent] = useState(task?.eventId != null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+
+  // Termine zur Auswahl: die letzten zwei Wochen und das kommende Jahr
+  useEffect(() => {
+    const today = startOfDay(new Date());
+    listEvents(toDateTimeStr(addDays(today, -14)), toDateTimeStr(addDays(today, 400)))
+      .then(setEvents)
+      .catch(() => setEvents([]));
+  }, []);
+
+  // Der gewählte Termin; liegt er außerhalb der Auswahl (alter Termin), genügen die Angaben, die die Aufgabe selbst trägt
+  type EventRef = Pick<CalendarEvent, "id" | "title" | "startsAt" | "endsAt">;
+  const ownEvent: EventRef | null =
+    task?.eventId != null && task.eventTitle && task.eventStartsAt && task.eventEndsAt
+      ? { id: task.eventId, title: task.eventTitle, startsAt: task.eventStartsAt, endsAt: task.eventEndsAt }
+      : null;
+  const linked: EventRef | null =
+    eventId === null ? null : (events.find((e) => e.id === eventId) ?? (ownEvent?.id === eventId ? ownEvent : null));
+  const derivedDue = linked ? eventTaskDate(linked.startsAt, linked.endsAt, eventOffset) : null;
+  const eventChoices: EventRef[] = ownEvent && !events.some((e) => e.id === ownEvent.id) ? [ownEvent, ...events] : events;
+
+  const chooseMode = (toEvent: boolean) => {
+    if (toEvent === byEvent) return;
+    if (!toEvent) {
+      // Gelöst bleibt das bisherige Datum stehen
+      if (derivedDue) setDueDate(derivedDue);
+      setEventId(null);
+    }
+    setByEvent(toEvent);
+  };
 
   const run = async (action: () => Promise<unknown>) => {
     setBusy(true);
@@ -82,8 +123,24 @@ export function TaskModal({ task, bucketId = null, onClose }: TaskModalProps) {
       ...steps.filter((s) => s.title.trim()).map((s) => ({ id: s.id, title: s.title.trim(), done: s.done })),
       ...pending,
     ];
-    const due = dueDate || startDate || null;
-    const input = { title: title.trim(), bucketId: bucket, priority, startDate: startDate || null, dueDate: due, description, showSubtasks, subtasks };
+    if (byEvent && eventId === null) return setError("Bitte wähle einen Termin oder ein festes Datum.");
+    if (eventId !== null && !linked) return setError("Der gewählte Termin wird noch geladen.");
+    const due = derivedDue ?? (dueDate || startDate || null);
+    // Verschiebt sich die Fälligkeit mit dem Termin vor den Beginn, zieht der Beginn mit
+    const start = startDate && due && startDate > due ? due : startDate || null;
+    const input = {
+      title: title.trim(),
+      bucketId: bucket,
+      priority,
+      startDate: start,
+      dueDate: due,
+      description,
+      showSubtasks,
+      showDescription,
+      eventId,
+      eventOffset: eventId === null ? null : eventOffset,
+      subtasks,
+    };
     void run(() => (editing ? updateTask(task.id, input) : createTask(input)));
   };
 
@@ -119,26 +176,14 @@ export function TaskModal({ task, bucketId = null, onClose }: TaskModalProps) {
 
       <div className="tm-row">
         <FolderKanban size={18} className="tm-icon" />
-        <div className="tm-row-body">
-          <select
-            className="field-control"
-            aria-label="Bucket"
-            value={bucket ?? ""}
-            onChange={(e) => setBucket(e.target.value === "" ? null : Number(e.target.value))}
-          >
-            <option value="">Kein Bucket</option>
-            {buckets.map((b) => (
-              <option key={b.id} value={b.id}>
-                {b.name}
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
-
-      <div className="tm-row">
-        <Flag size={18} className="tm-icon" />
-        <div className="tm-row-body">
+        <div className="tm-row-body tm-pair">
+          <Select<number | null>
+            className="tm-bucket"
+            ariaLabel="Bucket"
+            value={bucket}
+            onChange={setBucket}
+            options={[{ value: null, label: "Kein Bucket" }, ...buckets.map((b) => ({ value: b.id, label: b.name }))]}
+          />
           <div className="segmented tm-priority" role="radiogroup" aria-label="Priorität">
             {priorities.map((p) => (
               <button
@@ -159,85 +204,75 @@ export function TaskModal({ task, bucketId = null, onClose }: TaskModalProps) {
 
       <div className="tm-row">
         <CalendarDays size={18} className="tm-icon" />
-        <div className="tm-row-body">
-          <div className="tm-due">
-            <input
-              type="date"
-              className="field-control"
-              aria-label="Fällig am"
-              value={dueDate}
-              onChange={(e) => {
-                setDueDate(e.target.value);
-                // Das Ende darf nicht vor dem Beginn liegen
-                if (startDate && e.target.value && e.target.value < startDate) setStartDate(e.target.value);
-                if (!e.target.value) setStartDate("");
-              }}
-            />
-            {QUICK_DATES.map(({ label, days }) => (
-              <button key={label} type="button" className="tm-quick" onClick={() => setDueDate(dateInDays(days))}>
-                {label}
-              </button>
-            ))}
-            {dueDate && (
-              <button
-                type="button"
-                className="tm-quick"
-                onClick={() => {
-                  setDueDate("");
-                  setStartDate("");
-                }}
-              >
-                Entfernen
-              </button>
-            )}
+        <div className="tm-row-body tm-stack">
+          <div className="segmented tm-mode" role="radiogroup" aria-label="Fälligkeit festlegen">
+            <button type="button" role="radio" aria-checked={!byEvent} className={!byEvent ? "active" : ""} onClick={() => chooseMode(false)}>
+              Festes Datum
+            </button>
+            <button type="button" role="radio" aria-checked={byEvent} className={byEvent ? "active" : ""} onClick={() => chooseMode(true)}>
+              Am Termin
+            </button>
           </div>
-        </div>
-      </div>
 
-      <div className="tm-row">
-        <CalendarRange size={18} className="tm-icon" />
-        <div className="tm-row-body">
-          <div className="tm-due">
-            <input
-              type="date"
-              className="field-control"
-              aria-label="Beginn (für den Zeitplan)"
-              value={startDate}
-              max={dueDate || undefined}
-              onChange={(e) => {
-                setStartDate(e.target.value);
-                // Ohne Fälligkeit gilt der Beginn auch als Ende, mit späterer Fälligkeit bleibt sie stehen
-                if (e.target.value && (!dueDate || dueDate < e.target.value)) setDueDate(e.target.value);
-              }}
-            />
-            <span className="tm-hint">Beginn für den Zeitplan (optional)</span>
-            {startDate && (
-              <button type="button" className="tm-quick" onClick={() => setStartDate("")}>
-                Entfernen
-              </button>
-            )}
-          </div>
+          {byEvent ? (
+            <>
+              <div className="tm-due">
+                <Select<number | null>
+                  className="tm-event"
+                  ariaLabel="Termin"
+                  placeholder="Termin wählen …"
+                  value={eventId}
+                  onChange={setEventId}
+                  options={eventChoices.map((e) => ({ value: e.id, label: e.title, hint: formatDayMonth(parseDateTime(e.startsAt)) }))}
+                />
+                {eventId !== null && <EventOffset value={eventOffset} onChange={setEventOffset} />}
+              </div>
+              {derivedDue ? (
+                <div className="tm-due">
+                  <span className="tm-derived">{formatLongDay(parseDateTime(`${derivedDue} 00:00`))}</span>
+                </div>
+              ) : (
+                eventChoices.length === 0 && <span className="tm-hint">Im Kalender gibt es noch keinen Termin.</span>
+              )}
+            </>
+          ) : (
+            <div className="tm-due">
+              <DatePicker
+                className="dp-inline"
+                ariaLabel="Fällig am"
+                value={dueDate}
+                onChange={(v) => {
+                  setDueDate(v);
+                  // Das Ende darf nicht vor dem Beginn liegen
+                  if (startDate && v && v < startDate) setStartDate(v);
+                  if (!v) setStartDate("");
+                }}
+              />
+              {QUICK_DATES.map(({ label, days }) => (
+                <button key={label} type="button" className="tm-quick" onClick={() => setDueDate(dateInDays(days))}>
+                  {label}
+                </button>
+              ))}
+              {dueDate && (
+                <button
+                  type="button"
+                  className="tm-quick"
+                  onClick={() => {
+                    setDueDate("");
+                    setStartDate("");
+                  }}
+                >
+                  Entfernen
+                </button>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
       <div className="tm-row top">
         <ListChecks size={18} className="tm-icon" />
         <div className="tm-row-body">
-          <div className="tm-steps-head">
-            {steps.length > 0 && (
-              <>
-                <SegmentBar done={steps.filter((s) => s.done).length} total={steps.length} />
-                <span>
-                  {steps.filter((s) => s.done).length}/{steps.length}
-                </span>
-              </>
-            )}
-            <label className="checkbox-row tm-steps-toggle">
-              <input type="checkbox" checked={showSubtasks} onChange={(e) => setShowSubtasks(e.target.checked)} />
-              <span className={`check sm${showSubtasks ? " checked" : ""}`} />
-              Auf der Karte anzeigen
-            </label>
-          </div>
           <ul className="tm-steps">
             {steps.map((step) => (
               <li key={step.key} className={`tm-step${step.done ? " done" : ""}`}>
@@ -281,12 +316,36 @@ export function TaskModal({ task, bucketId = null, onClose }: TaskModalProps) {
               }}
             />
           </div>
+          <div className="tm-steps-head tm-steps-foot">
+            {steps.length > 0 && (
+              <>
+                <SegmentBar done={steps.filter((s) => s.done).length} total={steps.length} />
+                <span>
+                  {steps.filter((s) => s.done).length}/{steps.length}
+                </span>
+              </>
+            )}
+            {/* Der Schalter erscheint, sobald es etwas anzuzeigen gibt; sein Platz bleibt frei, damit nichts springt */}
+            <label className={`checkbox-row tm-steps-toggle${steps.length === 0 ? " idle" : ""}`}>
+              <input type="checkbox" checked={showSubtasks} onChange={(e) => setShowSubtasks(e.target.checked)} />
+              <span className={`check sm${showSubtasks ? " checked" : ""}`} />
+              Auf der Karte anzeigen
+            </label>
+          </div>
         </div>
       </div>
 
       <div className="tm-row top">
         <AlignLeft size={18} className="tm-icon" />
         <div className="tm-row-body">
+          <div className="tm-steps-head tm-notes-head">
+            <span>Notiz</span>
+            <label className={`checkbox-row tm-steps-toggle${description.trim() ? "" : " idle"}`}>
+              <input type="checkbox" checked={showDescription} onChange={(e) => setShowDescription(e.target.checked)} />
+              <span className={`check sm${showDescription ? " checked" : ""}`} />
+              Auf der Karte anzeigen
+            </label>
+          </div>
           <textarea
             className="field-control tm-description"
             aria-label="Beschreibung"

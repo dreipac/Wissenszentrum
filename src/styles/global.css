@@ -111,32 +111,56 @@ button {
   background-color: var(--text-faint);
 }
 
+/*
+ * Runder Abhak-Kreis. Beim Aktivieren wächst die Füllung vom Mittelpunkt aus (::before), danach wird der Haken von
+ * links nach rechts eingezeichnet (::after). Der Haken ist eine zentrierte Vektorform, damit er in jeder Größe
+ * mittig und symmetrisch im Kreis sitzt.
+ */
 .check {
+  --tick: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M5.6 12.6l4.1 4.1L18.4 7.6' fill='none' stroke='black' stroke-width='3.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  position: relative;
   display: inline-block;
   width: 18px;
   height: 18px;
   border: 1.5px solid var(--border-strong-hover);
   border-radius: 50%;
   flex-shrink: 0;
-  transition: background-color 0.22s ease, border-color 0.22s ease;
+  transition: border-color 0.16s ease;
+}
+
+.check::before {
+  content: "";
+  position: absolute;
+  inset: -1.5px;
+  border-radius: 50%;
+  background-color: var(--btn-primary-bg);
+  transform: scale(0);
+  transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.check::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-color: var(--btn-primary-text);
+  -webkit-mask: var(--tick) center / 70% no-repeat;
+  mask: var(--tick) center / 70% no-repeat;
+  clip-path: inset(0 100% 0 0);
+  transition: clip-path 0.12s ease-out;
 }
 
 .check.checked {
-  position: relative;
-  background-color: #ffffff;
-  border-color: #ffffff;
+  border-color: var(--btn-primary-bg);
+}
+
+.check.checked::before {
+  transform: scale(1);
 }
 
 .check.checked::after {
-  content: "";
-  position: absolute;
-  left: 5.5px;
-  top: 2px;
-  width: 4px;
-  height: 8px;
-  border: solid var(--btn-primary-text);
-  border-width: 0 2px 2px 0;
-  transform: rotate(45deg);
+  clip-path: inset(0 0 0 0);
+  transition-duration: 0.18s;
+  transition-delay: 0.08s;
 }
 
 .avatar {
@@ -420,15 +444,11 @@ textarea.field-control {
 .check.sm {
   width: 14px;
   height: 14px;
-  border-width: 1.5px;
 }
 
-.check.sm.checked::after {
-  left: 3.5px;
-  top: 0.5px;
-  width: 3px;
-  height: 6px;
-  border-width: 0 1.5px 1.5px 0;
+.check.sm::after {
+  -webkit-mask-size: 78%;
+  mask-size: 78%;
 }
 
 /* Symbol-Marke (z. B. BLK, BTC) */
@@ -457,10 +477,6 @@ textarea.field-control {
   animation: check-pop 0.46s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
-.check.pop.checked::after {
-  animation: check-tick 0.3s cubic-bezier(0.22, 1, 0.36, 1) 0.06s both;
-}
-
 @keyframes check-pop {
   0% {
     transform: scale(0.82);
@@ -470,17 +486,6 @@ textarea.field-control {
   }
   100% {
     transform: scale(1);
-  }
-}
-
-@keyframes check-tick {
-  from {
-    opacity: 0;
-    transform: rotate(45deg) scale(0.2);
-  }
-  to {
-    opacity: 1;
-    transform: rotate(45deg) scale(1);
   }
 }
 
@@ -496,14 +501,20 @@ textarea.field-control {
 .task-card.done .strike,
 .today-row.done .strike,
 .task-row.done .strike,
-.card-steps li.done .strike {
+.card-steps li.done .strike,
+.elt-list li.done .strike {
   background-size: 100% 1.5px;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .check.pop,
-  .check.pop.checked::after {
+  .check.pop {
     animation: none;
+  }
+
+  .check,
+  .check::before,
+  .check::after {
+    transition: none !important;
   }
 
   .strike {

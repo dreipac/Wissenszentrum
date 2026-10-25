@@ -153,7 +153,8 @@
 
 .task-desc {
   display: -webkit-box;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 5;
+  white-space: pre-line;
   -webkit-box-orient: vertical;
   overflow: hidden;
   font-size: 0.78rem;
@@ -392,4 +393,35 @@
   flex-shrink: 0;
   border-radius: 50%;
   background-color: var(--bucket-accent);
+}
+
+/* Termin, an dem die Aufgabe hängt: leise Zeile mit Name und Abstand */
+.task-event {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  max-width: 100%;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.task-event svg {
+  flex-shrink: 0;
+}
+
+.task-event-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-event em {
+  flex-shrink: 0;
+  font-style: normal;
+  color: var(--text-faint);
+}
+
+.task-event em::before {
+  content: "· ";
 }

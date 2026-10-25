@@ -1,12 +1,13 @@
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
-import { FolderPlus, Pencil, Plus, Trash2 } from "lucide-react";
+import { CheckCircle2, Circle, Flag, FolderKanban, FolderPlus, Pencil, Plus, Trash2 } from "lucide-react";
 import { SettingsModal, type SettingsSection } from "../components/settings/SettingsModal";
 import { ConfirmDialog } from "../components/ui/ConfirmDialog";
 import { ContextMenu, type ContextMenuItem } from "../components/ui/ContextMenu";
-import { deleteBucket, listTasks } from "./api/tasks";
+import { deleteBucket, deleteTask, listBuckets, listTasks, moveTask, updateTask } from "./api/tasks";
+import { MOVE_DELAY_MS, toggleTask } from "./taskAnimation";
 import { BucketModal } from "../components/tasks/BucketModal";
 import { TaskModal } from "../components/tasks/TaskModal";
-import type { Bucket, Task } from "./tasks";
+import { priorities, priorityLabel, taskToInput, type Bucket, type Task } from "./tasks";
 
 type Dialog =
   | { kind: "task"; task?: Task; bucketId: number | null }
@@ -24,6 +25,8 @@ interface Dialogs {
   openSettings: (section?: SettingsSection) => void;
   /** Kontextmenü eines Buckets an der Mausposition: Aufgabe hinzufügen, bearbeiten, löschen */
   openBucketMenu: (bucket: Bucket, x: number, y: number) => void;
+  /** Kontextmenü einer Aufgabe: bearbeiten, abhaken, Priorität, in anderen Bucket verschieben, löschen */
+  openTaskMenu: (task: Task, x: number, y: number) => void;
   /** Kontextmenü auf freier Fläche der Bucket-Ansicht: neuer Bucket, neue Aufgabe */
   openBoardMenu: (x: number, y: number) => void;
 }
@@ -35,6 +38,7 @@ export function DialogsProvider({ children }: { children: ReactNode }) {
   const [dialog, setDialog] = useState<Dialog>(null);
   const [menu, setMenu] = useState<{ x: number; y: number; items: ContextMenuItem[] } | null>(null);
   const [deleting, setDeleting] = useState<{ bucket: Bucket; count: number; error: string | null } | null>(null);
+  const [deletingTask, setDeletingTask] = useState<{ task: Task; error: string | null } | null>(null);
   const [busy, setBusy] = useState(false);
   const close = useCallback(() => setDialog(null), []);
 
@@ -64,6 +68,38 @@ export function DialogsProvider({ children }: { children: ReactNode }) {
             },
           ],
         }),
+      openTaskMenu: (task, x, y) =>
+        // Die Buckets stehen für „Verschieben nach“ im Menü; schlägt das Laden fehl, fehlt nur dieser Teil
+        void listBuckets()
+          .catch(() => [] as Bucket[])
+          .then((buckets) => {
+            const items: ContextMenuItem[] = [
+              { label: "Bearbeiten", icon: Pencil, onClick: () => setDialog({ kind: "task", task, bucketId: task.bucketId }) },
+              {
+                label: task.done ? "Wieder öffnen" : "Als erledigt markieren",
+                icon: task.done ? Circle : CheckCircle2,
+                onClick: () => toggleTask(task, task.done ? 0 : MOVE_DELAY_MS),
+              },
+              ...priorities
+                .filter((p) => p !== task.priority)
+                .map<ContextMenuItem>((p, i) => ({
+                  label: `Priorität ${priorityLabel[p].toLowerCase()}`,
+                  icon: Flag,
+                  divider: i === 0,
+                  onClick: () => void updateTask(task.id, taskToInput(task, { priority: p })).catch(() => undefined),
+                })),
+              ...[null, ...buckets.map((b) => b.id)]
+                .filter((id) => id !== task.bucketId)
+                .map<ContextMenuItem>((id, i) => ({
+                  label: id === null ? "Aus dem Bucket nehmen" : `Nach „${buckets.find((b) => b.id === id)!.name}“ verschieben`,
+                  icon: FolderKanban,
+                  divider: i === 0,
+                  onClick: () => void moveTask(task.id, id, null).catch(() => undefined),
+                })),
+              { label: "Löschen", icon: Trash2, danger: true, divider: true, onClick: () => setDeletingTask({ task, error: null }) },
+            ];
+            setMenu({ x, y, items });
+          }),
       openBoardMenu: (x, y) =>
         setMenu({
           x,
@@ -90,6 +126,19 @@ export function DialogsProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const confirmDeleteTask = async () => {
+    if (!deletingTask) return;
+    setBusy(true);
+    try {
+      await deleteTask(deletingTask.task.id);
+      setDeletingTask(null);
+    } catch (e) {
+      setDeletingTask({ ...deletingTask, error: String(e) });
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <DialogsContext.Provider value={value}>
       {children}
@@ -99,6 +148,15 @@ export function DialogsProvider({ children }: { children: ReactNode }) {
       {dialog?.kind === "bucket" && <BucketModal key={dialog.bucket?.id ?? "new"} bucket={dialog.bucket} onClose={close} />}
       {dialog?.kind === "settings" && <SettingsModal initial={dialog.section} onClose={close} />}
       {menu && <ContextMenu x={menu.x} y={menu.y} items={menu.items} onClose={() => setMenu(null)} />}
+      {deletingTask && (
+        <ConfirmDialog
+          title="Aufgabe löschen?"
+          message={deletingTask.error ?? `„${deletingTask.task.title}“ wird dauerhaft gelöscht, samt Zwischenschritten.`}
+          busy={busy}
+          onConfirm={() => void confirmDeleteTask()}
+          onCancel={() => setDeletingTask(null)}
+        />
+      )}
       {deleting && (
         <ConfirmDialog
           title="Bucket löschen?"

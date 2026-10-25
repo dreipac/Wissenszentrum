@@ -30,7 +30,7 @@ import { useDialogs } from "../../lib/dialogs";
 import { bucketAccent, priorityLabel, type Bucket, type Task } from "../../lib/tasks";
 import { useDoneState } from "../../lib/taskAnimation";
 import { useFlip } from "../../lib/useFlip";
-import { CardSubtasks, DueDate, SubtaskProgress, TaskCheck } from "./parts";
+import { CardSubtasks, DueDate, EventLink, SubtaskProgress, TaskCheck } from "./parts";
 
 export interface Column {
   /** null = Aufgaben ohne Bucket */
@@ -65,7 +65,7 @@ function TaskCardView({ task, moves = false }: { task: Task; moves?: boolean }) 
         <h3 className="task-title">
           <span className="strike">{task.title}</span>
         </h3>
-        {task.description && <p className="task-desc">{task.description}</p>}
+        {task.showDescription && task.description.trim() && <p className="task-desc">{task.description}</p>}
         <CardSubtasks task={task} />
         <div className="task-meta">
           <span className="task-priority-label">
@@ -74,6 +74,7 @@ function TaskCardView({ task, moves = false }: { task: Task; moves?: boolean }) 
           </span>
           <DueDate task={task} />
         </div>
+        <EventLink task={task} />
         <SubtaskProgress task={task} />
       </div>
     </>
@@ -81,7 +82,7 @@ function TaskCardView({ task, moves = false }: { task: Task; moves?: boolean }) 
 }
 
 function SortableTask({ task, group, moves, suppressClick }: { task: Task; group: string; moves: boolean; suppressClick: React.RefObject<boolean> }) {
-  const { openEditTask } = useDialogs();
+  const { openEditTask, openTaskMenu } = useDialogs();
   const done = useDoneState(task);
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: taskKey(task.id),
@@ -99,6 +100,11 @@ function SortableTask({ task, group, moves, suppressClick }: { task: Task; group
       className={`task-card draggable${done ? " done" : ""}${isDragging ? " ghost" : ""}`}
       style={{ transform: CSS.Transform.toString(transform), transition }}
       onClick={() => !suppressClick.current && openEditTask(task)}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        openTaskMenu(task, e.clientX, e.clientY);
+      }}
     >
       <TaskCardView task={task} moves={moves} />
     </article>

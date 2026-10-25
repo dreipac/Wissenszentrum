@@ -1,0 +1,117 @@
+/* Aufgaben zum Termin im Termin-Dialog */
+.et-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.6rem;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.et-summary {
+  font-variant-numeric: tabular-nums;
+}
+
+.et-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.et-item,
+.et-add {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.15rem 0;
+}
+
+.et-item .check-btn {
+  margin: 0;
+}
+
+.et-title,
+.et-add > input {
+  flex: 1;
+  min-width: 0;
+  padding: 0.3rem 0.4rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  font-size: 0.92rem;
+  outline: none;
+  transition: border-color 0.15s, background-color 0.15s;
+}
+
+.et-title:hover {
+  background-color: var(--bg-hover);
+}
+
+.et-title:focus {
+  border-color: var(--border-strong-hover);
+  background-color: var(--bg-sidebar);
+}
+
+.et-add > input {
+  padding-left: 0;
+  border: none;
+}
+
+.et-add > input::placeholder {
+  color: var(--text-faint);
+}
+
+.et-add {
+  color: var(--text-muted);
+}
+
+.et-add svg:first-child {
+  margin: 0 1.5px;
+}
+
+/* Hält die Spalten der Eingabezeile bündig mit den Aufgaben darüber (dort steht der Entfernen-Knopf) */
+.et-spacer {
+  flex: 0 0 24px;
+}
+
+.et-item.done .et-title {
+  color: var(--text-muted);
+  text-decoration: line-through;
+}
+
+/* Datum, das sich aus dem Abstand ergibt */
+.et-date {
+  flex: 0 0 5.6rem;
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+
+.et-remove {
+  width: 24px;
+  height: 24px;
+  opacity: 0;
+}
+
+.et-item:hover .et-remove,
+.et-remove:focus-visible {
+  opacity: 1;
+}
+
+/* Abstand und Datum der neuen Aufgabe erscheinen erst, wenn man dort tippt: die leere Zeile bleibt ruhig */
+.et-add .eo,
+.et-add .et-date {
+  display: none;
+}
+
+.et-add:focus-within .eo,
+.et-add.active .eo {
+  display: inline-flex;
+}
+
+.et-add:focus-within .et-date,
+.et-add.active .et-date {
+  display: block;
+}

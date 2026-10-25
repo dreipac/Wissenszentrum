@@ -2,6 +2,8 @@ import { AlignLeft, Clock, MapPin, X } from "lucide-react";
 import { SecondaryButton } from "../ui/SecondaryButton";
 import { formatTimeRange, type CalendarEvent } from "../../lib/calendar";
 import { formatLongDay, parseDateTime } from "../../lib/dates";
+import { useTasks } from "../../lib/useTasks";
+import { EventLinkedTasks } from "./EventLinkedTasks";
 
 interface EventDetailsProps {
   event: CalendarEvent;
@@ -11,6 +13,7 @@ interface EventDetailsProps {
 
 /** Details des ausgewählten Termins in der Seitenleiste, unter dem Mini-Kalender. */
 export function EventDetails({ event, onEdit, onClose }: EventDetailsProps) {
+  const { tasks } = useTasks();
   const start = parseDateTime(event.startsAt);
   const sameDay = event.startsAt.slice(0, 10) === event.endsAt.slice(0, 10);
   const dateLine = sameDay ? formatLongDay(start) : `${formatLongDay(start)} – ${formatLongDay(parseDateTime(event.endsAt))}`;
@@ -46,6 +49,7 @@ export function EventDetails({ event, onEdit, onClose }: EventDetailsProps) {
             <span className="event-details-desc">{event.description}</span>
           </div>
         )}
+        <EventLinkedTasks event={event} tasks={tasks} rowClass="event-details-row" />
       </div>
 
       <SecondaryButton className="sm event-details-edit" onClick={() => onEdit(event)}>

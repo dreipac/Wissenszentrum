@@ -45,3 +45,24 @@
 .context-menu-item:hover {
   background-color: var(--bg-selected);
 }
+
+/* Gruppen: feine Linie über dem ersten Eintrag der nächsten Gruppe */
+.context-menu-item.divider {
+  position: relative;
+  margin-top: 5px;
+}
+
+.context-menu-item.divider::before {
+  content: "";
+  position: absolute;
+  top: -3px;
+  left: 0.4rem;
+  right: 0.4rem;
+  height: 1px;
+  background-color: var(--border-soft);
+}
+
+.context-menu-item.danger,
+.context-menu-item.danger svg {
+  color: var(--negative);
+}

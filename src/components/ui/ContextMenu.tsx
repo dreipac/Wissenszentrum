@@ -5,6 +5,10 @@ export interface ContextMenuItem {
   label: string;
   icon?: ComponentType<{ size?: number }>;
   onClick: () => void;
+  /** Trennlinie über dem Eintrag, um Gruppen abzusetzen */
+  divider?: boolean;
+  /** Zerstörerische Aktion (Löschen) in Warnfarbe */
+  danger?: boolean;
 }
 
 interface ContextMenuProps {
@@ -51,12 +55,12 @@ export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
 
   return (
     <div ref={ref} className="context-menu" style={pos} role="menu" onContextMenu={(e) => e.preventDefault()}>
-      {items.map(({ label, icon: Icon, onClick }) => (
+      {items.map(({ label, icon: Icon, onClick, divider, danger }) => (
         <button
           key={label}
           type="button"
           role="menuitem"
-          className="context-menu-item"
+          className={`context-menu-item${divider ? " divider" : ""}${danger ? " danger" : ""}`}
           onClick={() => {
             onClose();
             onClick();

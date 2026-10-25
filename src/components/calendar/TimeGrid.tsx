@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Plus } from "lucide-react";
 import { ContextMenu } from "../ui/ContextMenu";
+import { TaskBadge } from "./EventLinkedTasks";
 import {
   HOUR_HEIGHT,
   SNAP_MINUTES,
@@ -172,6 +173,7 @@ export function TimeGrid({ days, today, events, selection, onSelect, onCommit, o
                           onOpenEvent(e);
                         }}
                       >
+                        <TaskBadge event={e} />
                         {e.title}
                       </button>
                     ))}
@@ -264,7 +266,10 @@ export function TimeGrid({ days, today, events, selection, onSelect, onCommit, o
                     }}
                     onClick={(ev) => onPreview(event, ev.currentTarget)}
                   >
-                    <span className="tg-event-title">{event.title}</span>
+                    <span className="tg-event-head">
+                      <span className="tg-event-title">{event.title}</span>
+                      <TaskBadge event={event} />
+                    </span>
                     {height >= 45 && (
                       <span className="tg-event-time">
                         {event.startsAt.slice(11)} – {event.endsAt.slice(11)}

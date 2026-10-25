@@ -11,6 +11,8 @@ use std::collections::HashMap;
 const PRIORITIES: &[&str] = &["high", "medium", "low"];
 const MAX_BUCKET_NAME: usize = 60;
 const MAX_SUBTASKS: usize = 100;
+/// Größter erlaubter Abstand einer Aufgabe zu ihrem Termin in Tagen (davor wie danach)
+const MAX_EVENT_OFFSET: i64 = 365;
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -70,6 +72,16 @@ pub struct Task {
     pub done: bool,
     /// Zwischenschritte auch auf der Karte im Board anzeigen
     pub show_subtasks: bool,
+    /// Notiz (Beschreibung) auch auf der Karte im Board anzeigen
+    pub show_description: bool,
+    /// Termin, an dem die Aufgabe hängt; das Fälligkeitsdatum richtet sich dann nach ihm
+    pub event_id: Option<i64>,
+    /// Abstand zum Termin in Tagen: negativ = davor, 0 = am Tag, positiv = danach (nach dem Ende des Termins)
+    pub event_offset: Option<i64>,
+    /// Titel und Beginn des Termins (Format YYYY-MM-DD HH:MM) zur Anzeige auf der Karte
+    pub event_title: Option<String>,
+    pub event_starts_at: Option<String>,
+    pub event_ends_at: Option<String>,
     pub subtasks: Vec<Subtask>,
 }
 
@@ -88,6 +100,12 @@ pub struct TaskInput {
     pub start_date: Option<String>,
     #[serde(default)]
     pub show_subtasks: bool,
+    #[serde(default)]
+    pub show_description: bool,
+    #[serde(default)]
+    pub event_id: Option<i64>,
+    #[serde(default)]
+    pub event_offset: Option<i64>,
     /// Vollständige Liste der Zwischenschritte in gewünschter Reihenfolge; fehlende werden gelöscht.
     #[serde(default)]
     pub subtasks: Vec<SubtaskInput>,
@@ -218,7 +236,11 @@ pub fn delete_bucket(conn: &Connection, id: i64) -> Result<(), String> {
 // Aufgaben
 // ---------------------------------------------------------------------------
 
-const TASK_COLUMNS: &str = "id, bucket_id, title, description, priority, due_date, done, show_subtasks, start_date";
+const TASK_COLUMNS: &str = "id, bucket_id, title, description, priority, due_date, done, show_subtasks, start_date, show_description,
+    event_id, event_offset,
+    (SELECT title FROM events WHERE events.id = tasks.event_id),
+    (SELECT starts_at FROM events WHERE events.id = tasks.event_id),
+    (SELECT ends_at FROM events WHERE events.id = tasks.event_id)";
 
 fn row_to_task(row: &Row) -> rusqlite::Result<Task> {
     Ok(Task {
@@ -231,6 +253,12 @@ fn row_to_task(row: &Row) -> rusqlite::Result<Task> {
         done: row.get::<_, i64>(6)? != 0,
         show_subtasks: row.get::<_, i64>(7)? != 0,
         start_date: row.get(8)?,
+        show_description: row.get::<_, i64>(9)? != 0,
+        event_id: row.get(10)?,
+        event_offset: row.get(11)?,
+        event_title: row.get(12)?,
+        event_starts_at: row.get(13)?,
+        event_ends_at: row.get(14)?,
         subtasks: Vec::new(),
     })
 }
@@ -332,6 +360,62 @@ fn validate_dates(start: Option<&str>, due: Option<&str>) -> Result<(), String> 
     }
 }
 
+/// Fälligkeitsdatum einer Aufgabe, die `offset` Tage vom Termin entfernt liegt. Davor und am Tag zählt der Beginn des
+/// Termins, danach sein Ende (bei mehrtägigen Terminen also der letzte Tag).
+fn event_task_date(conn: &Connection, event_id: i64, offset: i64) -> Result<String, String> {
+    conn.query_row(
+        "SELECT date(substr(CASE WHEN ?2 > 0 THEN ends_at ELSE starts_at END, 1, 10), printf('%+d days', ?2))
+         FROM events WHERE id = ?1",
+        params![event_id, offset],
+        |r| r.get(0),
+    )
+    .map_err(|_| "Der gewählte Termin existiert nicht mehr.".to_string())
+}
+
+/// Prüft den Terminbezug der Eingabe und liefert das Fälligkeitsdatum, das tatsächlich gilt: bei einem Termin das
+/// berechnete, sonst das eingegebene.
+fn effective_due(conn: &Connection, input: &TaskInput) -> Result<Option<String>, String> {
+    let Some(event_id) = input.event_id else {
+        return Ok(input.due_date.clone());
+    };
+    let offset = input.event_offset.ok_or("Bitte gib an, wie viele Tage vor oder nach dem Termin die Aufgabe liegt.")?;
+    if offset.abs() > MAX_EVENT_OFFSET {
+        return Err(format!("Der Abstand zum Termin darf höchstens {MAX_EVENT_OFFSET} Tage betragen."));
+    }
+    event_task_date(conn, event_id, offset).map(Some)
+}
+
+/// Zieht die Fälligkeit aller Aufgaben eines Termins nach, nachdem er verschoben wurde. Ein Beginn behält seine Dauer.
+pub fn recompute_event_tasks(conn: &Connection, event_id: i64) -> Result<(), String> {
+    conn.execute(
+        "UPDATE tasks
+         SET start_date = CASE
+               WHEN start_date IS NOT NULL AND due_date IS NOT NULL
+               THEN date(
+                 date(substr((SELECT CASE WHEN event_offset > 0 THEN ends_at ELSE starts_at END FROM events WHERE id = ?1), 1, 10),
+                      printf('%+d days', event_offset)),
+                 printf('%+d days', -CAST(ROUND(julianday(due_date) - julianday(start_date)) AS INTEGER)))
+               ELSE start_date END,
+             due_date = date(substr((SELECT CASE WHEN event_offset > 0 THEN ends_at ELSE starts_at END FROM events WHERE id = ?1), 1, 10),
+                             printf('%+d days', event_offset)),
+             updated_at = datetime('now')
+         WHERE event_id = ?1 AND event_offset IS NOT NULL",
+        params![event_id],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Löst alle Aufgaben von einem Termin; sie behalten ihr bisheriges Datum.
+pub fn unlink_event_tasks(conn: &Connection, event_id: i64) -> Result<(), String> {
+    conn.execute(
+        "UPDATE tasks SET event_id = NULL, event_offset = NULL, updated_at = datetime('now') WHERE event_id = ?1",
+        params![event_id],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 fn validate_task(conn: &Connection, input: &TaskInput) -> Result<(), String> {
     if input.title.trim().is_empty() {
         return Err("Der Titel darf nicht leer sein.".into());
@@ -339,7 +423,8 @@ fn validate_task(conn: &Connection, input: &TaskInput) -> Result<(), String> {
     if !PRIORITIES.contains(&input.priority.as_str()) {
         return Err(format!("Unbekannte Priorität: {}", input.priority));
     }
-    validate_dates(input.start_date.as_deref(), input.due_date.as_deref())?;
+    let due = effective_due(conn, input)?;
+    validate_dates(input.start_date.as_deref(), due.as_deref())?;
     validate_subtasks(&input.subtasks)?;
     if let Some(id) = input.bucket_id {
         let exists: bool = conn
@@ -391,18 +476,24 @@ pub fn create_task(conn: &Connection, input: &TaskInput) -> Result<Task, String>
         return Err("Neue Aufgaben können keine bestehenden Zwischenschritte enthalten.".into());
     }
     let position = next_position(conn, input.bucket_id)?;
+    let due = effective_due(conn, input)?;
+    let event_offset = input.event_id.and(input.event_offset);
     conn.execute(
-        "INSERT INTO tasks (bucket_id, title, description, priority, due_date, position, show_subtasks, start_date)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+        "INSERT INTO tasks (bucket_id, title, description, priority, due_date, position, show_subtasks, start_date, show_description,
+                            event_id, event_offset)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
         params![
             input.bucket_id,
             input.title.trim(),
             input.description,
             input.priority,
-            input.due_date,
+            due,
             position,
             input.show_subtasks as i64,
-            input.start_date
+            input.start_date,
+            input.show_description as i64,
+            input.event_id,
+            event_offset
         ],
     )
     .map_err(|e| e.to_string())?;
@@ -421,21 +512,27 @@ pub fn update_task(conn: &Connection, id: i64, input: &TaskInput) -> Result<Task
     } else {
         None
     };
+    let due = effective_due(conn, input)?;
+    let event_offset = input.event_id.and(input.event_offset);
     conn.execute(
         "UPDATE tasks
          SET bucket_id = ?1, title = ?2, description = ?3, priority = ?4, due_date = ?5,
-             position = COALESCE(?6, position), show_subtasks = ?8, start_date = ?9, updated_at = datetime('now')
+             position = COALESCE(?6, position), show_subtasks = ?8, start_date = ?9, show_description = ?10,
+             event_id = ?11, event_offset = ?12, updated_at = datetime('now')
          WHERE id = ?7",
         params![
             input.bucket_id,
             input.title.trim(),
             input.description,
             input.priority,
-            input.due_date,
+            due,
             position_sql,
             id,
             input.show_subtasks as i64,
-            input.start_date
+            input.start_date,
+            input.show_description as i64,
+            input.event_id,
+            event_offset
         ],
     )
     .map_err(|e| e.to_string())?;
@@ -443,8 +540,34 @@ pub fn update_task(conn: &Connection, id: i64, input: &TaskInput) -> Result<Task
 }
 
 /// Ändert nur Beginn und Fälligkeit (Verschieben und Ziehen im Zeitplan).
+///
+/// Hängt die Aufgabe an einem Termin, ändert sich ihr Abstand zu ihm mit; ohne Fälligkeit wird sie vom Termin gelöst.
 pub fn set_task_dates(conn: &Connection, id: i64, start: Option<&str>, due: Option<&str>) -> Result<Task, String> {
     validate_dates(start, due)?;
+    let current = get_task(conn, id).map_err(|_| "Aufgabe nicht gefunden.".to_string())?;
+    if let Some(event_id) = current.event_id {
+        match due {
+            Some(due) => {
+                let (from_start, from_end): (i64, i64) = conn
+                    .query_row(
+                        "SELECT CAST(ROUND(julianday(?1) - julianday(substr(starts_at, 1, 10))) AS INTEGER),
+                                CAST(ROUND(julianday(?1) - julianday(substr(ends_at, 1, 10))) AS INTEGER)
+                         FROM events WHERE id = ?2",
+                        params![due, event_id],
+                        |r| Ok((r.get(0)?, r.get(1)?)),
+                    )
+                    .map_err(|e| e.to_string())?;
+                // Nach dem Ende zählt ab dem Ende, sonst ab dem Beginn (Tage mitten in einem mehrtägigen Termin: am Tag)
+                let offset = if from_end > 0 { from_end } else { from_start.min(0) };
+                conn.execute("UPDATE tasks SET event_offset = ?1 WHERE id = ?2", params![offset.clamp(-MAX_EVENT_OFFSET, MAX_EVENT_OFFSET), id])
+                    .map_err(|e| e.to_string())?;
+            }
+            None => {
+                conn.execute("UPDATE tasks SET event_id = NULL, event_offset = NULL WHERE id = ?1", params![id])
+                    .map_err(|e| e.to_string())?;
+            }
+        }
+    }
     let changed = conn
         .execute(
             "UPDATE tasks SET start_date = ?1, due_date = ?2, updated_at = datetime('now') WHERE id = ?3",
@@ -590,6 +713,9 @@ mod tests {
             due_date: None,
             start_date: None,
             show_subtasks: false,
+            show_description: false,
+            event_id: None,
+            event_offset: None,
             subtasks: Vec::new(),
         }
     }
@@ -1057,5 +1183,147 @@ mod tests {
         assert!(set_task_dates(&c, t.id, Some("2026-10-30"), Some("2026-10-20")).is_err());
         assert!(set_task_dates(&c, t.id, Some("2026-10-30"), None).is_err());
         assert!(set_task_dates(&c, 999, None, Some("2026-10-20")).is_err());
+    }
+
+    #[test]
+    fn show_description_flag_is_stored_and_updated() {
+        let c = conn();
+        let mut i = input("Plan", None);
+        i.description = "Wichtige Notiz".into();
+        i.show_description = true;
+        let t = create_task(&c, &i).unwrap();
+        assert!(t.show_description);
+        assert!(!create_task(&c, &input("Andere", None)).unwrap().show_description, "Standard: aus");
+        let mut off = input("Plan", None);
+        off.description = "Wichtige Notiz".into();
+        let updated = update_task(&c, t.id, &off).unwrap();
+        assert!(!updated.show_description);
+        assert_eq!(updated.description, "Wichtige Notiz", "die Notiz bleibt, nur die Anzeige ist aus");
+    }
+
+    fn event(c: &Connection, title: &str, start: &str, end: &str) -> i64 {
+        crate::events::create_event(
+            c,
+            &crate::events::EventInput {
+                title: title.into(),
+                description: String::new(),
+                location: String::new(),
+                starts_at: start.into(),
+                ends_at: end.into(),
+                all_day: false,
+            },
+        )
+        .unwrap()
+        .id
+    }
+
+    fn linked(title: &str, event_id: i64, offset: i64) -> TaskInput {
+        let mut i = input(title, None);
+        i.event_id = Some(event_id);
+        i.event_offset = Some(offset);
+        i
+    }
+
+    #[test]
+    fn task_on_event_gets_its_date_from_the_event() {
+        let c = conn();
+        let e = event(&c, "Prüfung", "2026-10-20 09:00", "2026-10-20 11:00");
+        let before = create_task(&c, &linked("Lernen", e, -2)).unwrap();
+        assert_eq!(before.due_date.as_deref(), Some("2026-10-18"));
+        assert_eq!((before.event_id, before.event_offset), (Some(e), Some(-2)));
+        assert_eq!(before.event_title.as_deref(), Some("Prüfung"));
+        assert_eq!(before.event_starts_at.as_deref(), Some("2026-10-20 09:00"));
+        assert_eq!(create_task(&c, &linked("Anreise", e, 0)).unwrap().due_date.as_deref(), Some("2026-10-20"));
+        assert_eq!(create_task(&c, &linked("Protokoll", e, 1)).unwrap().due_date.as_deref(), Some("2026-10-21"));
+        // Ein eingegebenes Datum zählt nicht, solange die Aufgabe am Termin hängt
+        let mut with_due = linked("Mit Datum", e, -1);
+        with_due.due_date = Some("2030-01-01".into());
+        assert_eq!(create_task(&c, &with_due).unwrap().due_date.as_deref(), Some("2026-10-19"));
+    }
+
+    #[test]
+    fn after_a_multi_day_event_counts_from_its_end() {
+        let c = conn();
+        let e = event(&c, "Reise", "2026-10-20 08:00", "2026-10-23 18:00");
+        assert_eq!(create_task(&c, &linked("Packen", e, -1)).unwrap().due_date.as_deref(), Some("2026-10-19"));
+        assert_eq!(create_task(&c, &linked("Bericht", e, 2)).unwrap().due_date.as_deref(), Some("2026-10-25"));
+    }
+
+    #[test]
+    fn moving_the_event_moves_its_tasks_and_keeps_the_duration() {
+        let c = conn();
+        let e = event(&c, "Prüfung", "2026-10-20 09:00", "2026-10-20 11:00");
+        let mut with_start = linked("Lernen", e, -3);
+        with_start.start_date = Some("2026-10-15".into());
+        let t = create_task(&c, &with_start).unwrap();
+        assert_eq!((t.start_date.as_deref(), t.due_date.as_deref()), (Some("2026-10-15"), Some("2026-10-17")));
+        let loose = create_task(&c, &input("Frei", None)).unwrap();
+
+        crate::events::update_event(
+            &c,
+            e,
+            &crate::events::EventInput {
+                title: "Prüfung".into(),
+                description: String::new(),
+                location: String::new(),
+                starts_at: "2026-10-27 09:00".into(),
+                ends_at: "2026-10-27 11:00".into(),
+                all_day: false,
+            },
+        )
+        .unwrap();
+
+        let moved = get_task(&c, t.id).unwrap();
+        assert_eq!((moved.start_date.as_deref(), moved.due_date.as_deref()), (Some("2026-10-22"), Some("2026-10-24")));
+        assert_eq!(moved.event_offset, Some(-3));
+        assert_eq!(get_task(&c, loose.id).unwrap().due_date, None, "Aufgaben ohne Termin bleiben unberührt");
+    }
+
+    #[test]
+    fn deleting_the_event_keeps_its_tasks_with_their_last_date() {
+        let c = conn();
+        let e = event(&c, "Prüfung", "2026-10-20 09:00", "2026-10-20 11:00");
+        let t = create_task(&c, &linked("Lernen", e, -2)).unwrap();
+        crate::events::delete_event(&c, e).unwrap();
+        let kept = get_task(&c, t.id).unwrap();
+        assert_eq!((kept.event_id, kept.event_offset, kept.event_title), (None, None, None));
+        assert_eq!(kept.due_date.as_deref(), Some("2026-10-18"));
+    }
+
+    #[test]
+    fn rejects_invalid_event_links() {
+        let c = conn();
+        let e = event(&c, "Prüfung", "2026-10-20 09:00", "2026-10-20 11:00");
+        assert!(create_task(&c, &linked("x", e + 99, 0)).is_err(), "unbekannter Termin");
+        assert!(create_task(&c, &linked("x", e, 400)).is_err(), "Abstand zu groß");
+        let mut no_offset = input("x", None);
+        no_offset.event_id = Some(e);
+        assert!(create_task(&c, &no_offset).is_err(), "ohne Abstand");
+    }
+
+    #[test]
+    fn unlinking_in_update_keeps_the_date_and_drops_the_offset() {
+        let c = conn();
+        let e = event(&c, "Prüfung", "2026-10-20 09:00", "2026-10-20 11:00");
+        let t = create_task(&c, &linked("Lernen", e, -2)).unwrap();
+        let mut plain = input("Lernen", None);
+        plain.due_date = t.due_date.clone();
+        plain.event_offset = Some(5);
+        let u = update_task(&c, t.id, &plain).unwrap();
+        assert_eq!((u.event_id, u.event_offset), (None, None));
+        assert_eq!(u.due_date.as_deref(), Some("2026-10-18"));
+    }
+
+    #[test]
+    fn dragging_a_linked_task_changes_its_offset() {
+        let c = conn();
+        let e = event(&c, "Prüfung", "2026-10-20 09:00", "2026-10-20 11:00");
+        let t = create_task(&c, &linked("Lernen", e, -2)).unwrap();
+        let moved = set_task_dates(&c, t.id, None, Some("2026-10-14")).unwrap();
+        assert_eq!((moved.event_offset, moved.due_date.as_deref()), (Some(-6), Some("2026-10-14")));
+        let after = set_task_dates(&c, t.id, None, Some("2026-10-22")).unwrap();
+        assert_eq!(after.event_offset, Some(2));
+        let cleared = set_task_dates(&c, t.id, None, None).unwrap();
+        assert_eq!((cleared.event_id, cleared.event_offset), (None, None), "ohne Datum hängt sie nicht mehr am Termin");
     }
 }

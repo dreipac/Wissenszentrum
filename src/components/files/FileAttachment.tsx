@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { Node, mergeAttributes } from "@tiptap/core";
 import { NodeViewWrapper, ReactNodeViewRenderer, useEditorState, type NodeViewProps } from "@tiptap/react";
-import { Download, File, FileArchive, FileAudio, FileImage, FileSpreadsheet, FileText, FileVideo, Presentation, X, type LucideIcon } from "lucide-react";
-import { openAttachment, saveAttachmentAs } from "../../lib/api/attachments";
+import { Check, Download, File, FileArchive, FileAudio, FileImage, FileSpreadsheet, FileText, FileVideo, Presentation, X, type LucideIcon } from "lucide-react";
+import { onAttachmentChanged, openAttachment, saveAttachmentAs } from "../../lib/api/attachments";
 import "./FileAttachment.css";
 
 declare module "@tiptap/core" {
@@ -51,6 +51,22 @@ function FileCard({ node, deleteNode, updateAttributes, editor, selected }: Node
   const edge = useRef<HTMLDivElement>(null);
   // Der Lese-/Bearbeitungsmodus wechselt, ohne dass der Knoten neu entsteht: darum mitlesen
   const editable = useEditorState({ editor, selector: ({ editor: e }) => e.isEditable });
+  // Nach dem Bearbeiten im anderen Programm steckt der neue Stand im Anhang: Größe nachziehen und kurz bestätigen
+  const [updated, setUpdated] = useState(false);
+  const flash = useRef<number | undefined>(undefined);
+  useEffect(() => {
+    const off = onAttachmentChanged((info) => {
+      if (info.id !== fileId) return;
+      updateAttributes({ size: info.size });
+      setUpdated(true);
+      window.clearTimeout(flash.current);
+      flash.current = window.setTimeout(() => setUpdated(false), 4000);
+    });
+    return () => {
+      off();
+      window.clearTimeout(flash.current);
+    };
+  }, [fileId, updateAttributes]);
 
   useEffect(() => {
     const el = edge.current;
@@ -116,7 +132,7 @@ function FileCard({ node, deleteNode, updateAttributes, editor, selected }: Node
           role="button"
           tabIndex={0}
           className={`file-card-main${busy ? " busy" : ""}`}
-          title="Doppelklick zum Öffnen"
+          title="Doppelklick zum Öffnen – Änderungen, die du im Programm speicherst, landen automatisch in diesem Anhang"
           onDoubleClick={() => !busy && void run(() => openAttachment(fileId))}
           onKeyDown={(e) => {
             if (e.key === "Enter" || e.key === " ") {
@@ -127,7 +143,14 @@ function FileCard({ node, deleteNode, updateAttributes, editor, selected }: Node
         >
           <Icon size={17} className={`file-card-icon ${tone}`} />
           <span className="file-card-name">{name}</span>
-          <span className="file-card-size">{formatBytes(size)}</span>
+          {updated ? (
+            <span className="file-card-saved">
+              <Check size={12} />
+              Aktualisiert
+            </span>
+          ) : (
+            <span className="file-card-size">{formatBytes(size)}</span>
+          )}
         </div>
         <span className="file-card-actions">
           <button type="button" className="icon-btn" aria-label="Speichern unter" title="Speichern unter" disabled={busy} onClick={() => void run(() => saveAttachmentAs(fileId, name))}>

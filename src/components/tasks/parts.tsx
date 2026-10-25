@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { CalendarDays } from "lucide-react";
+import { CalendarClock, CalendarDays } from "lucide-react";
 import { setSubtaskDone } from "../../lib/api/tasks";
 import { MOVE_DELAY_MS, toggleTask, useDoneState } from "../../lib/taskAnimation";
-import { formatDue, isOverdue, subtaskProgress, type Task } from "../../lib/tasks";
+import { formatDue, formatEventIn, formatEventOffset, isOverdue, subtaskProgress, type Task } from "../../lib/tasks";
 
 /**
  * Abhak-Kästchen. Klick öffnet nicht die Aufgabe, sondern schaltet nur „erledigt“ um. Der Haken erscheint mit einer
@@ -40,6 +40,19 @@ export function DueDate({ task }: { task: Task }) {
     <span className={`task-due${isOverdue(task) ? " urgent" : ""}`}>
       <CalendarDays size={12} />
       {formatDue(task.dueDate)}
+    </span>
+  );
+}
+
+/** Termin, an dem die Aufgabe hängt, samt Abstand: „Prüfung · 2 Tage vorher“. */
+export function EventLink({ task }: { task: Task }) {
+  if (task.eventId === null || !task.eventTitle || task.eventOffset === null || !task.eventStartsAt) return null;
+  const offset = formatEventOffset(task.eventOffset);
+  return (
+    <span className="task-event" title={`Termin „${task.eventTitle}“ ${formatEventIn(task.eventStartsAt)} · ${offset}`}>
+      <CalendarClock size={12} />
+      <span className="task-event-name">{task.eventTitle}</span>
+      <em>{offset}</em>
     </span>
   );
 }

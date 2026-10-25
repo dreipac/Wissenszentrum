@@ -1,7 +1,9 @@
-import { BookOpen, CalendarClock, ClipboardList, FileText, Flame, Plus } from "lucide-react";
+import { BookOpen, CalendarClock, CircleAlert, ClipboardList, FileText, Flame, Plus } from "lucide-react";
 import { Button } from "../components/ui/Button";
 import { SecondaryButton } from "../components/ui/SecondaryButton";
-import { formatTimeRange } from "../lib/calendar";
+import { formatTimeRange, openPrep } from "../lib/calendar";
+import { TaskBadge } from "../components/calendar/EventLinkedTasks";
+import { EventLink } from "../components/tasks/parts";
 import { addDays, formatDayMonth, formatLongDay, parseDateTime, startOfDay, toDateTimeStr } from "../lib/dates";
 import { useDialogs } from "../lib/dialogs";
 import { useNavigate } from "../lib/navigation";
@@ -87,12 +89,22 @@ export function DashboardView() {
   const nowStr = toDateTimeStr(new Date());
   const upcoming = events.filter((e) => e.endsAt > nowStr);
   const next = upcoming[0];
+  // Ruhiger Hinweis: Termin heute bis übermorgen, für den noch Vorbereitung offen ist
+  const dayWord = ["Heute", "Morgen", "Übermorgen"];
+  const unprepared = upcoming
+    .filter((e) => openPrep(e) > 0 && daysUntil(e.startsAt.slice(0, 10)) <= 2)
+    .map((e) => ({ event: e, open: openPrep(e), when: dayWord[Math.max(daysUntil(e.startsAt.slice(0, 10)), 0)] }));
 
   // Aufgaben: offene, heute fällige und überfällige
   const open = tasks.filter((t) => !t.done);
   const overdue = open.filter((t) => isOverdue(t));
   const dueToday = open.filter((t) => t.dueDate !== null && daysUntil(t.dueDate) === 0);
-  const focus = [...overdue, ...dueToday];
+  // Wichtig und fällig: Überfälliges und heute Fälliges zuerst, danach alles Übrige mit hoher Priorität (nach Datum)
+  const urgentIds = new Set([...overdue, ...dueToday].map((t) => t.id));
+  const important = open
+    .filter((t) => t.priority === "high" && !urgentIds.has(t.id))
+    .sort((a, b) => (a.dueDate ?? "9999").localeCompare(b.dueDate ?? "9999") || a.id - b.id);
+  const focus = [...overdue, ...dueToday, ...important];
   const highToday = dueToday.filter((t) => t.priority === "high").length;
 
   const stats = [
@@ -158,13 +170,13 @@ export function DashboardView() {
         <div className="dash-grid">
           <section className="card dash-card">
             <div className="dash-card-head">
-              <h2>Fokus für heute</h2>
+              <h2>Wichtig &amp; fällig</h2>
               <SecondaryButton className="sm" onClick={() => navigate("tasks")}>
                 Alle Aufgaben
               </SecondaryButton>
             </div>
             {focus.length === 0 ? (
-              <p className="muted">Nichts fällig – für heute ist alles im Plan.</p>
+              <p className="muted">Nichts Dringendes – heute ist nichts fällig und nichts mit hoher Priorität offen.</p>
             ) : (
               <ul className="focus-list">
                 {focus.map((t) => (
@@ -172,8 +184,9 @@ export function DashboardView() {
                     <span className={`priority ${t.priority}`} />
                     <div className="focus-main">
                       <span className="focus-title">{t.title}</span>
+                      <EventLink task={t} />
                     </div>
-                    <span className={`due${isOverdue(t) ? " urgent" : ""}`}>{formatDue(t.dueDate!)}</span>
+                    {t.dueDate && <span className={`due${isOverdue(t) ? " urgent" : ""}`}>{formatDue(t.dueDate)}</span>}
                   </li>
                 ))}
               </ul>
@@ -184,6 +197,18 @@ export function DashboardView() {
             <div className="dash-card-head">
               <h2>Nächste Termine</h2>
             </div>
+            {unprepared.length > 0 && (
+              <ul className="agenda-notices">
+                {unprepared.map(({ event, open, when }) => (
+                  <li key={event.id} className="agenda-notice">
+                    <CircleAlert size={14} />
+                    <span>
+                      {when}: {event.title} – {open} {open === 1 ? "Aufgabe" : "Aufgaben"} zur Vorbereitung offen
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
             {upcoming.length === 0 ? (
               <p className="muted">Keine Termine in den nächsten 7 Tagen.</p>
             ) : (
@@ -196,6 +221,9 @@ export function DashboardView() {
                       <span className="agenda-time">
                         {formatDayMonth(parseDateTime(e.startsAt))} · {formatTimeRange(e)}
                       </span>
+                    </div>
+                    <div className="agenda-side">
+                      <TaskBadge event={e} />
                     </div>
                   </li>
                 ))}

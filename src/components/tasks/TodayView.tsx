@@ -7,7 +7,7 @@ import { daysUntil, dateInDays, priorityLabel, type Task } from "../../lib/tasks
 import { useTasks } from "../../lib/useTasks";
 import { useDoneState } from "../../lib/taskAnimation";
 import { useFlip } from "../../lib/useFlip";
-import { SubtaskProgress, TaskCheck } from "./parts";
+import { EventLink, SubtaskProgress, TaskCheck } from "./parts";
 import "./TodayView.css";
 
 function TodayRow({ task, bucketName }: { task: Task; bucketName: string | null }) {
@@ -28,6 +28,7 @@ function TodayRow({ task, bucketName }: { task: Task; bucketName: string | null 
           <span className="strike">{task.title}</span>
         </span>
         {task.description && <span className="today-row-desc">{task.description}</span>}
+        <EventLink task={task} />
       </div>
       <div className="today-row-side">
         <SubtaskProgress task={task} />
@@ -87,6 +88,9 @@ export function TodayView() {
         description: "",
         startDate: null,
         showSubtasks: false,
+        showDescription: false,
+        eventId: null,
+        eventOffset: null,
         subtasks: [],
       });
       setTitle("");

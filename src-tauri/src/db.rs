@@ -218,6 +218,16 @@ pub(crate) const MIGRATIONS: &[&str] = &[
         data       BLOB NOT NULL,
         created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );",
+    // 18: Pro Aufgabe einstellbar, ob die Notiz (Beschreibung) auf der Karte im Board steht. Bestehende Aufgaben mit
+    // Notiz behalten ihre bisherige Anzeige, neue starten ohne.
+    "ALTER TABLE tasks ADD COLUMN show_description INTEGER NOT NULL DEFAULT 0;
+    UPDATE tasks SET show_description = 1 WHERE TRIM(description) <> '';",
+    // 19: Aufgaben können an einen Termin gehängt werden. `event_offset` ist der Abstand in Tagen (negativ = davor,
+    // 0 = am Tag, positiv = danach); das Fälligkeitsdatum leitet sich daraus ab und zieht mit dem Termin mit.
+    // Wird der Termin gelöscht, bleibt die Aufgabe mit ihrem letzten Datum bestehen.
+    "ALTER TABLE tasks ADD COLUMN event_id INTEGER REFERENCES events(id) ON DELETE SET NULL;
+    ALTER TABLE tasks ADD COLUMN event_offset INTEGER;
+    CREATE INDEX idx_tasks_event_id ON tasks(event_id);",
 ];
 
 /// Öffnet die Verbindung vor, setzt Pragmas und führt offene Migrationen aus.
@@ -264,6 +274,25 @@ mod tests {
         let pages = crate::docs::list_pages(&c).unwrap();
         assert_eq!((pages[0].title.as_str(), pages[0].kind.as_str(), pages[0].content.as_str()), ("Alt", "page", "<p>x</p>"));
         assert!(c.execute("INSERT INTO doc_pages (title, kind) VALUES ('X', 'kaputt')", []).is_err(), "ungültige Art wird abgelehnt");
+    }
+
+    #[test]
+    fn migration_18_keeps_showing_existing_notes_on_cards() {
+        let c = Connection::open_in_memory().unwrap();
+        c.pragma_update(None, "foreign_keys", true).unwrap();
+        for sql in &MIGRATIONS[..17] {
+            c.execute_batch(sql).unwrap();
+        }
+        c.pragma_update(None, "user_version", 17i64).unwrap();
+        c.execute("INSERT INTO tasks (title, description, priority, position) VALUES ('Mit Notiz', 'Wichtig', 'medium', 0)", []).unwrap();
+        c.execute("INSERT INTO tasks (title, description, priority, position) VALUES ('Ohne Notiz', '  ', 'medium', 1)", []).unwrap();
+
+        migrate(&c).unwrap();
+
+        let tasks = crate::tasks::list_tasks(&c).unwrap();
+        let by_title = |t: &str| tasks.iter().find(|x| x.title == t).unwrap().show_description;
+        assert!(by_title("Mit Notiz"), "bisher sichtbare Notizen bleiben sichtbar");
+        assert!(!by_title("Ohne Notiz"));
     }
 
     #[test]

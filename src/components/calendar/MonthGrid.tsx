@@ -1,6 +1,7 @@
 import { Plus } from "lucide-react";
 import { eventsOnDay, type CalendarEvent } from "../../lib/calendar";
 import { isSameDay, isSameMonth, monthGrid } from "../../lib/dates";
+import { TaskBadge } from "./EventLinkedTasks";
 
 const WEEKDAYS = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
 const MAX_CHIPS = 3;
@@ -78,6 +79,7 @@ export function MonthGrid({ date, today, events, onSelectDay, onOpenDay, onCreat
                       onOpenEvent(e);
                     }}
                   >
+                    <TaskBadge event={e} />
                     {!e.allDay && <em>{e.startsAt.slice(11)}</em>}
                     {e.title}
                   </button>

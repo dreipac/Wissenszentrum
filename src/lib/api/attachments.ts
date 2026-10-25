@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { save } from "@tauri-apps/plugin-dialog";
 import { inTauri } from "./runtime";
 
@@ -38,6 +39,16 @@ export async function openAttachment(id: number): Promise<void> {
   const file = preview.get(id);
   if (!file) throw "Datei nicht gefunden.";
   window.open(URL.createObjectURL(file), "_blank");
+}
+
+/**
+ * Meldet, wenn ein Anhang nach dem Bearbeiten im anderen Programm (z. B. Word) neu in die Datenbank übernommen wurde.
+ * Gibt die Funktion zum Abmelden zurück.
+ */
+export function onAttachmentChanged(handler: (info: Attachment) => void): () => void {
+  if (!inTauri) return () => {};
+  const unlisten = listen<Attachment>("attachment-changed", (e) => handler(e.payload));
+  return () => void unlisten.then((off) => off());
 }
 
 /** „Speichern unter“: fragt nach dem Ort und schreibt die Datei dorthin; false, wenn abgebrochen. */

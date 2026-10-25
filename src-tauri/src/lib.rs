@@ -24,7 +24,7 @@ use std::path::{Path, PathBuf};
 use sync::{Acted, Plan, SyncConfig};
 use std::sync::{Mutex, MutexGuard};
 use tasks::{Bucket, BucketInput, Task, TaskInput};
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 fn lock<'a>(db: &'a State<Db>) -> Result<MutexGuard<'a, Connection>, String> {
     db.0.lock().map_err(|_| "Datenbank ist gesperrt.".to_string())
@@ -537,9 +537,10 @@ fn save_attachment(db: State<Db>, id: i64, path: String) -> Result<(), String> {
 }
 
 /// Öffnet einen Anhang mit dem Standardprogramm: wird dafür in einen temporären Ordner geschrieben. Programme und Skripte
-/// werden nie direkt geöffnet.
+/// werden nie direkt geöffnet. Die Datei wird beobachtet: speichert man sie im Programm (z. B. in Word), wandert der neue
+/// Stand zurück in den Anhang (`flush_attachments`).
 #[tauri::command]
-fn open_attachment(db: State<Db>, id: i64) -> Result<(), String> {
+fn open_attachment(db: State<Db>, watches: State<files::Watches>, id: i64) -> Result<(), String> {
     let (name, data) = {
         let conn = lock(&db)?;
         files::get(&conn, id)?
@@ -547,15 +548,39 @@ fn open_attachment(db: State<Db>, id: i64) -> Result<(), String> {
     if !files::can_open(&name) {
         return Err("Dieser Dateityp wird aus Sicherheitsgründen nicht direkt geöffnet. Nutze „Speichern unter“.".into());
     }
-    let dir = std::env::temp_dir().join("wissenszentrum-dateien");
-    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    let path = dir.join(format!("{id}-{name}"));
-    std::fs::write(&path, data).map_err(|e| format!("Die Datei konnte nicht vorbereitet werden: {e}"))?;
+    // Ist die Datei schon offen, wird dieselbe wieder gezeigt: sie ist gesperrt und könnte ungespeicherte Änderungen tragen
+    let path = match watches.open_path(id) {
+        Some(path) => path,
+        None => {
+            let dir = std::env::temp_dir().join("wissenszentrum-dateien");
+            std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+            let path = dir.join(format!("{id}-{name}"));
+            std::fs::write(&path, data).map_err(|e| format!("Die Datei konnte nicht vorbereitet werden: {e}"))?;
+            watches.watch(id, path.clone());
+            path
+        }
+    };
     #[cfg(windows)]
     let result = std::process::Command::new("explorer.exe").arg(&path).spawn();
     #[cfg(not(windows))]
     let result = std::process::Command::new("xdg-open").arg(&path).spawn();
     result.map(|_| ()).map_err(|e| format!("Die Datei konnte nicht geöffnet werden: {e}"))
+}
+
+/// Übernimmt Änderungen an geöffneten Anhängen in die Datenbank und meldet sie der Oberfläche
+/// (Ereignis `attachment-changed`, damit z. B. die Größe auf der Karte stimmt).
+fn flush_attachments(app: &AppHandle, settle: bool) {
+    let (Some(db), Some(watches)) = (app.try_state::<Db>(), app.try_state::<files::Watches>()) else { return };
+    if watches.is_empty() {
+        return;
+    }
+    let updated = match db.0.lock() {
+        Ok(conn) => files::sync_changes(&conn, &watches, settle),
+        Err(_) => return,
+    };
+    for info in updated {
+        let _ = app.emit("attachment-changed", info);
+    }
 }
 
 #[tauri::command]
@@ -860,6 +885,8 @@ pub fn run() {
             // Mit eingeschaltetem Abgleich erst die letzten Änderungen in den Ordner schreiben, dann schließen
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 let app = window.app_handle().clone();
+                // Was in Word gerade gespeichert wurde, soll nicht verloren gehen
+                flush_attachments(&app, false);
                 let Some(info) = app.try_state::<AppInfo>() else { return };
                 if load_sync(&info.config_file).is_none() {
                     return;
@@ -922,6 +949,13 @@ pub fn run() {
                 }
             };
             app.manage(Db(Mutex::new(conn)));
+            app.manage(files::Watches::default());
+            // Speichert man einen geöffneten Anhang im Programm, landet der neue Stand nach kurzer Zeit im Anhang
+            let handle = app.handle().clone();
+            std::thread::spawn(move || loop {
+                std::thread::sleep(std::time::Duration::from_millis(1500));
+                flush_attachments(&handle, true);
+            });
             app.manage(AppInfo {
                 config_file,
                 default_dir,

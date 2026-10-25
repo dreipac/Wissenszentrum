@@ -244,3 +244,60 @@
   font-size: 0.78rem;
   color: var(--text-faint);
 }
+
+/* Fälligkeit, die sich aus dem Termin ergibt: nur Anzeige, kein Eingabefeld */
+.tm-derived {
+  padding: 0.45rem 0;
+  font-size: 0.92rem;
+  color: var(--text);
+}
+
+/* Bucket und Priorität teilen sich eine Zeile */
+.tm-pair {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.tm-pair .tm-bucket {
+  flex: 1 1 180px;
+  max-width: 260px;
+}
+
+.tm-due .tm-event {
+  flex: 0 1 300px;
+  width: 300px;
+}
+
+/* Fälligkeit: Umschalter, darunter die passenden Felder */
+.tm-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.6rem;
+}
+
+.tm-mode button {
+  padding: 0.3rem 0.8rem;
+  font-size: 0.85rem;
+}
+
+.tm-steps-toggle.idle {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.tm-steps-toggle {
+  transition: opacity 0.15s, color 0.15s;
+}
+
+/* Fortschritt und Schalter stehen unter den Zwischenschritten, damit das Symbol links auf der ersten Zeile sitzt */
+.tm-steps-foot {
+  margin: 0.3rem 0 0;
+}
+
+/* Ohne Zwischenschritte gibt es hier nichts zu zeigen: die Zeile klappt zu */
+.tm-steps-foot:has(.tm-steps-toggle.idle) {
+  display: none;
+}

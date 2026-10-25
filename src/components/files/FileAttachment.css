@@ -90,6 +90,17 @@
   text-underline-offset: 2px;
 }
 
+/* Kurze Bestätigung, wenn der Anhang nach dem Bearbeiten neu übernommen wurde */
+.file-card-saved {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  flex-shrink: 0;
+  font-size: 0.74rem;
+  color: var(--positive);
+  white-space: nowrap;
+}
+
 .file-card-size {
   flex-shrink: 0;
   font-size: 0.74rem;

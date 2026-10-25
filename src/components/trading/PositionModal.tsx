@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Modal } from "../ui/Modal";
+import { DatePicker, DateTimeField } from "../ui/DatePicker";
 import { Button } from "../ui/Button";
 import { SecondaryButton } from "../ui/SecondaryButton";
 import { createTrade, searchSymbols } from "../../lib/api/trading";
@@ -230,11 +231,11 @@ export function PositionModal({ cash, hasApiKey, onClose }: PositionModalProps) 
               )}
               {isPosition ? (
                 <Field label="Zeitpunkt des Kaufs" id="pos-at">
-                  <input id="pos-at" className="field-control" type="datetime-local" value={at} onChange={(e) => setAt(e.target.value)} />
+                  <DateTimeField id="pos-at" ariaLabel="Zeitpunkt" value={at} onChange={setAt} />
                 </Field>
               ) : (
                 <Field label="Gültig bis (optional)" id="pos-valid" hint="Leer = bis auf Widerruf">
-                  <input id="pos-valid" className="field-control" type="date" value={validUntil} onChange={(e) => setValidUntil(e.target.value)} />
+                  <DatePicker id="pos-valid" ariaLabel="Gültig bis" value={validUntil} onChange={setValidUntil} />
                 </Field>
               )}
             </div>

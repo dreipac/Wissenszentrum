@@ -4,7 +4,10 @@
 
 use rusqlite::{params, Connection};
 use serde::Serialize;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
+use std::path::PathBuf;
+use std::sync::Mutex;
+use std::time::SystemTime;
 
 pub const MAX_FILE_BYTES: usize = 25_000_000;
 const MAX_NAME: usize = 180;
@@ -88,6 +91,105 @@ pub fn add(conn: &Connection, name: &str, mime: &str, data: &[u8]) -> Result<Fil
 /// Name und Bytes eines Anhangs.
 pub fn get(conn: &Connection, id: i64) -> Result<(String, Vec<u8>), String> {
     conn.query_row("SELECT name, data FROM attachments WHERE id = ?1", params![id], |r| Ok((r.get(0)?, r.get(1)?))).map_err(|_| "Datei nicht gefunden.".to_string())
+}
+
+/// Ersetzt den Inhalt eines Anhangs, z. B. nachdem er in Word bearbeitet wurde. Name und Typ bleiben.
+pub fn update_data(conn: &Connection, id: i64, data: &[u8]) -> Result<FileInfo, String> {
+    if data.is_empty() {
+        return Err("Die Datei ist leer.".into());
+    }
+    if data.len() > MAX_FILE_BYTES {
+        return Err("Die Datei ist zu groß (höchstens 25 MB).".into());
+    }
+    let changed = conn.execute("UPDATE attachments SET data = ?1, size = ?2 WHERE id = ?3", params![data, data.len() as i64, id]).map_err(db_err)?;
+    if changed == 0 {
+        return Err("Datei nicht gefunden.".into());
+    }
+    conn.query_row("SELECT id, name, mime, size FROM attachments WHERE id = ?1", params![id], |r| {
+        Ok(FileInfo { id: r.get(0)?, name: r.get(1)?, mime: r.get(2)?, size: r.get(3)? })
+    })
+    .map_err(db_err)
+}
+
+/// Eine geöffnete Datei im temporären Ordner, die auf Änderungen beobachtet wird.
+pub struct Watch {
+    path: PathBuf,
+    /// Änderungszeit der Datei, deren Inhalt zuletzt in die Datenbank übernommen wurde
+    synced: Option<SystemTime>,
+    /// Neuere Änderungszeit, die einmal beobachtet wurde; erst wenn sie stabil bleibt (Word schreibt noch), wird gelesen
+    seen: Option<SystemTime>,
+    /// Wie oft die Datei hintereinander fehlte: Word ersetzt sie beim Speichern kurz durch eine neue
+    missing: u8,
+}
+
+/// So viele Durchgänge in Folge darf die Datei fehlen, bevor sie nicht mehr beobachtet wird.
+const MISSING_LIMIT: u8 = 4;
+
+/// Alle Anhänge, die gerade zum Bearbeiten geöffnet sind (Anhang-ID → Datei).
+#[derive(Default)]
+pub struct Watches(pub Mutex<HashMap<i64, Watch>>);
+
+impl Watches {
+    pub fn is_empty(&self) -> bool {
+        self.0.lock().map(|m| m.is_empty()).unwrap_or(true)
+    }
+
+    /// Beobachtet die Datei ab ihrem jetzigen Stand; spätere Änderungen wandern in den Anhang zurück.
+    pub fn watch(&self, id: i64, path: PathBuf) {
+        let synced = std::fs::metadata(&path).and_then(|m| m.modified()).ok();
+        if let Ok(mut map) = self.0.lock() {
+            map.insert(id, Watch { path, synced, seen: None, missing: 0 });
+        }
+    }
+
+    /// Die Datei eines Anhangs, die schon geöffnet ist und noch existiert.
+    pub fn open_path(&self, id: i64) -> Option<PathBuf> {
+        let map = self.0.lock().ok()?;
+        map.get(&id).map(|w| w.path.clone()).filter(|p| p.is_file())
+    }
+}
+
+/// Übernimmt Änderungen an geöffneten Dateien in die Anhänge. Mit `settle` muss sich die Änderungszeit zwischen zwei
+/// Aufrufen gleich geblieben sein (das Programm schreibt nicht mehr); beim Beenden gilt sie sofort. Liefert die
+/// aktualisierten Anhänge.
+pub fn sync_changes(conn: &Connection, watches: &Watches, settle: bool) -> Vec<FileInfo> {
+    let mut updated = Vec::new();
+    let Ok(mut map) = watches.0.lock() else { return updated };
+    let mut gone = Vec::new();
+    for (&id, watch) in map.iter_mut() {
+        let Ok(modified) = std::fs::metadata(&watch.path).and_then(|m| m.modified()) else {
+            watch.missing += 1;
+            if watch.missing >= MISSING_LIMIT {
+                gone.push(id);
+            }
+            continue;
+        };
+        watch.missing = 0;
+        if Some(modified) == watch.synced {
+            watch.seen = None;
+            continue;
+        }
+        if settle && watch.seen != Some(modified) {
+            watch.seen = Some(modified);
+            continue;
+        }
+        // Gesperrt oder halb geschrieben: beim nächsten Durchgang noch einmal versuchen
+        let Ok(bytes) = std::fs::read(&watch.path) else { continue };
+        match update_data(conn, id, &bytes) {
+            Ok(info) => {
+                watch.synced = Some(modified);
+                watch.seen = None;
+                updated.push(info);
+            }
+            // Der Anhang gehört nicht mehr dazu (aufgeräumt): nicht weiter beobachten
+            Err(e) if e == "Datei nicht gefunden." => gone.push(id),
+            Err(_) => {}
+        }
+    }
+    for id in gone {
+        map.remove(&id);
+    }
+    updated
 }
 
 /// Darf diese Datei direkt geöffnet werden? Programme und Skripte nicht.
@@ -189,5 +291,57 @@ mod tests {
         assert_eq!(gc(&c).unwrap(), 1, "nur die alte, unverwendete Datei");
         assert!(get(&c, in_page).is_ok() && get(&c, in_note).is_ok() && get(&c, fresh).is_ok());
         assert!(get(&c, unused).is_err());
+    }
+
+    #[test]
+    fn update_replaces_content_and_size() {
+        let c = conn();
+        let id = add(&c, "Brief.docx", "application/vnd.openxmlformats", b"alt").unwrap().id;
+        let info = update_data(&c, id, b"neuer, laengerer Inhalt").unwrap();
+        assert_eq!((info.name.as_str(), info.size), ("Brief.docx", 23));
+        assert_eq!(get(&c, id).unwrap().1, b"neuer, laengerer Inhalt");
+        assert!(update_data(&c, id, b"").is_err());
+        assert!(update_data(&c, 999, b"x").is_err());
+    }
+
+    #[test]
+    fn edits_in_the_opened_file_flow_back_into_the_attachment() {
+        let c = conn();
+        let id = add(&c, "Brief.docx", "", b"version 1").unwrap().id;
+        let dir = std::env::temp_dir().join(format!("wz-test-{}-{id}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("Brief.docx");
+        std::fs::write(&path, b"version 1").unwrap();
+
+        let watches = Watches::default();
+        watches.watch(id, path.clone());
+        assert!(sync_changes(&c, &watches, true).is_empty(), "unverändert: nichts zu tun");
+
+        // Die Änderungszeit kann bei schnellen Schreibvorgängen gleich bleiben: sicher in die Zukunft setzen
+        std::fs::write(&path, b"version 2 aus Word").unwrap();
+        let later = SystemTime::now() + std::time::Duration::from_secs(5);
+        std::fs::File::options().write(true).open(&path).unwrap().set_modified(later).unwrap();
+
+        assert!(sync_changes(&c, &watches, true).is_empty(), "erst abwarten, ob noch geschrieben wird");
+        assert_eq!(get(&c, id).unwrap().1, b"version 1");
+        let done = sync_changes(&c, &watches, true);
+        assert_eq!(done.len(), 1);
+        assert_eq!(get(&c, id).unwrap().1, b"version 2 aus Word");
+        assert!(sync_changes(&c, &watches, true).is_empty(), "nicht noch einmal übernehmen");
+
+        // Beim Beenden gilt jede Änderung sofort
+        std::fs::write(&path, b"version 3").unwrap();
+        std::fs::File::options().write(true).open(&path).unwrap().set_modified(later + std::time::Duration::from_secs(5)).unwrap();
+        assert_eq!(sync_changes(&c, &watches, false).len(), 1);
+        assert_eq!(get(&c, id).unwrap().1, b"version 3");
+
+        // Eine gelöschte Datei wird nicht weiter beobachtet
+        std::fs::remove_dir_all(&dir).unwrap();
+        for _ in 0..MISSING_LIMIT - 1 {
+            assert!(sync_changes(&c, &watches, true).is_empty());
+            assert!(!watches.is_empty(), "kurz fehlende Datei (Speichern in Word) bleibt unter Beobachtung");
+        }
+        assert!(sync_changes(&c, &watches, true).is_empty());
+        assert!(watches.is_empty());
     }
 }

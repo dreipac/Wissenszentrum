@@ -4,6 +4,7 @@ import type { CalendarEvent, EventInput } from "../calendar";
 import type { Note, NoteInput } from "../notes";
 import type { Bucket, BucketInput, Subtask, SubtaskInput, Task, TaskInput } from "../tasks";
 import { addDays, startOfDay, startOfWeek, toDateStr } from "../dates";
+import { eventTaskDate, MAX_EVENT_OFFSET } from "../tasks";
 
 let nextId = 1;
 const events: CalendarEvent[] = [];
@@ -26,6 +27,10 @@ function seed() {
       startsAt: `${d} ${allDay ? "00:00" : from}`,
       endsAt: `${d} ${allDay ? "23:59" : to}`,
       allDay,
+      prepTotal: 0,
+      prepDone: 0,
+      followTotal: 0,
+      followDone: 0,
     });
   };
   add(0, "09:30", "10:30", "Team-Meeting");
@@ -39,24 +44,56 @@ function seed() {
 }
 seed();
 
+/** Termin mit dem aktuellen Stand seiner Aufgaben (wie im Backend: Vorbereitung bis zum Tag selbst, dann Nachbereitung). */
+function withCounts(e: CalendarEvent): CalendarEvent {
+  const mine = tasks.filter((t) => t.eventId === e.id);
+  const prep = mine.filter((t) => (t.eventOffset ?? 0) <= 0);
+  const follow = mine.filter((t) => (t.eventOffset ?? 0) > 0);
+  return {
+    ...e,
+    prepTotal: prep.length,
+    prepDone: prep.filter((t) => t.done).length,
+    followTotal: follow.length,
+    followDone: follow.filter((t) => t.done).length,
+  };
+}
+
 export const browserStore = {
   async list(from: string, to: string) {
-    return events.filter((e) => e.startsAt < to && e.endsAt > from).sort((a, b) => a.startsAt.localeCompare(b.startsAt));
+    return events
+      .filter((e) => e.startsAt < to && e.endsAt > from)
+      .sort((a, b) => a.startsAt.localeCompare(b.startsAt))
+      .map(withCounts);
   },
   async create(input: EventInput) {
-    const e = { ...input, id: nextId++ };
+    const e = { ...input, id: nextId++, prepTotal: 0, prepDone: 0, followTotal: 0, followDone: 0 };
     events.push(e);
-    return e;
+    return withCounts(e);
   },
   async update(id: number, input: EventInput) {
     const i = events.findIndex((e) => e.id === id);
     if (i < 0) throw "Termin nicht gefunden.";
-    events[i] = { ...input, id };
-    return events[i];
+    events[i] = { ...events[i], ...input, id };
+    // Aufgaben am Termin ziehen mit und behalten ihre Dauer
+    for (const t of tasks.filter((x) => x.eventId === id && x.eventOffset !== null)) {
+      const due = eventTaskDate(events[i].startsAt, events[i].endsAt, t.eventOffset!);
+      if (t.startDate && t.dueDate) {
+        const span = Math.round((Date.parse(t.dueDate) - Date.parse(t.startDate)) / 86_400_000);
+        t.startDate = toDateStr(addDays(new Date(`${due}T00:00:00`), -span));
+      }
+      t.dueDate = due;
+    }
+    return withCounts(events[i]);
   },
   async remove(id: number) {
     const i = events.findIndex((e) => e.id === id);
     if (i < 0) throw "Termin nicht gefunden.";
+    tasks.forEach((t) => {
+      if (t.eventId === id) {
+        t.eventId = null;
+        t.eventOffset = null;
+      }
+    });
     events.splice(i, 1);
   },
 };
@@ -94,9 +131,25 @@ function checkDates(start: string | null, due: string | null) {
   if (start !== null && due !== null && start > due) throw "Der Beginn darf nicht nach dem Fälligkeitsdatum liegen.";
 }
 
+/** Aufgabe mit den aktuellen Angaben ihres Termins. */
+function view(t: Task): Task {
+  const e = t.eventId === null ? undefined : events.find((x) => x.id === t.eventId);
+  return { ...t, eventTitle: e?.title ?? null, eventStartsAt: e?.startsAt ?? null, eventEndsAt: e?.endsAt ?? null };
+}
+
+/** Prüft den Terminbezug und liefert das Fälligkeitsdatum, das gilt: bei einem Termin das berechnete. */
+function effectiveDue(input: TaskInput): string | null {
+  if (input.eventId === null) return input.dueDate;
+  const e = events.find((x) => x.id === input.eventId);
+  if (!e) throw "Der gewählte Termin existiert nicht mehr.";
+  if (input.eventOffset === null) throw "Bitte gib an, wie viele Tage vor oder nach dem Termin die Aufgabe liegt.";
+  if (Math.abs(input.eventOffset) > MAX_EVENT_OFFSET) throw `Der Abstand zum Termin darf höchstens ${MAX_EVENT_OFFSET} Tage betragen.`;
+  return eventTaskDate(e.startsAt, e.endsAt, input.eventOffset);
+}
+
 function checkTask(input: TaskInput) {
   if (!input.title.trim()) throw "Der Titel darf nicht leer sein.";
-  checkDates(input.startDate, input.dueDate);
+  checkDates(input.startDate, effectiveDue(input));
   if (input.bucketId !== null && !buckets.some((b) => b.id === input.bucketId)) {
     throw "Der gewählte Bucket existiert nicht mehr.";
   }
@@ -107,7 +160,7 @@ export const tasksStore = {
     return buckets.map((b) => ({ ...b }));
   },
   async listTasks() {
-    return sortedTasks().map((t) => ({ ...t }));
+    return sortedTasks().map(view);
   },
   async createBucket(input: BucketInput) {
     const bucket: Bucket = { id: nextBucketId++, name: checkBucket(input, null), onCompleteBucketId: input.onCompleteBucketId, color: input.color };
@@ -136,9 +189,20 @@ export const tasksStore = {
   async createTask(input: TaskInput) {
     checkTask(input);
     const { subtasks, ...rest } = input;
-    const task: Task = { ...rest, title: input.title.trim(), id: nextTaskId++, done: false, subtasks: toSubtasks(subtasks) };
+    const task: Task = {
+      ...rest,
+      title: input.title.trim(),
+      dueDate: effectiveDue(input),
+      eventOffset: input.eventId === null ? null : input.eventOffset,
+      id: nextTaskId++,
+      done: false,
+      eventTitle: null,
+      eventStartsAt: null,
+      eventEndsAt: null,
+      subtasks: toSubtasks(subtasks),
+    };
     tasks.push(task);
-    return { ...task };
+    return view(task);
   },
   async updateTask(id: number, input: TaskInput) {
     checkTask(input);
@@ -146,8 +210,13 @@ export const tasksStore = {
     if (!task) throw "Aufgabe nicht gefunden.";
     const { subtasks, ...rest } = input;
     const steps = toSubtasks(subtasks);
-    Object.assign(task, rest, { title: input.title.trim(), subtasks: steps });
-    return { ...task };
+    Object.assign(task, rest, {
+      title: input.title.trim(),
+      dueDate: effectiveDue(input),
+      eventOffset: input.eventId === null ? null : input.eventOffset,
+      subtasks: steps,
+    });
+    return view(task);
   },
   async deleteTask(id: number) {
     if (!tasks.some((t) => t.id === id)) throw "Aufgabe nicht gefunden.";
@@ -157,27 +226,37 @@ export const tasksStore = {
     const task = tasks.find((t) => t.id === id);
     if (!task) throw "Aufgabe nicht gefunden.";
     if (bucketId !== null && !buckets.some((b) => b.id === bucketId)) throw "Der Ziel-Bucket existiert nicht mehr.";
-    if (beforeTaskId === id && task.bucketId === bucketId) return { ...task };
+    if (beforeTaskId === id && task.bucketId === bucketId) return view(task);
     tasks = tasks.filter((t) => t.id !== id);
     task.bucketId = bucketId;
     const at = beforeTaskId === null || beforeTaskId === id ? -1 : tasks.findIndex((t) => t.id === beforeTaskId);
     if (at === -1) tasks.push(task);
     else tasks.splice(at, 0, task);
-    return { ...task };
+    return view(task);
   },
   async setDates(id: number, startDate: string | null, dueDate: string | null) {
     checkDates(startDate, dueDate);
     const task = tasks.find((t) => t.id === id);
     if (!task) throw "Aufgabe nicht gefunden.";
+    // Hängt die Aufgabe an einem Termin, ändert sich ihr Abstand zu ihm; ohne Fälligkeit wird sie gelöst
+    const e = task.eventId === null ? undefined : events.find((x) => x.id === task.eventId);
+    if (e && dueDate) {
+      const days = (a: string, b: string) => Math.round((Date.parse(a) - Date.parse(b.slice(0, 10))) / 86_400_000);
+      const fromEnd = days(dueDate, e.endsAt);
+      task.eventOffset = Math.max(-MAX_EVENT_OFFSET, Math.min(MAX_EVENT_OFFSET, fromEnd > 0 ? fromEnd : Math.min(days(dueDate, e.startsAt), 0)));
+    } else if (e) {
+      task.eventId = null;
+      task.eventOffset = null;
+    }
     task.startDate = startDate;
     task.dueDate = dueDate;
-    return { ...task };
+    return view(task);
   },
   async setSubtaskDone(id: number, done: boolean) {
     const task = tasks.find((t) => t.subtasks.some((s) => s.id === id));
     if (!task) throw "Zwischenschritt nicht gefunden.";
     task.subtasks = task.subtasks.map((s) => (s.id === id ? { ...s, done } : s));
-    return { ...task };
+    return view(task);
   },
   async setDone(id: number, done: boolean) {
     const task = tasks.find((t) => t.id === id);
@@ -188,7 +267,7 @@ export const tasksStore = {
       if (target !== null) task.bucketId = target;
     }
     task.done = done;
-    return { ...task };
+    return view(task);
   },
 };
 

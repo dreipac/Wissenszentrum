@@ -3,6 +3,8 @@ import { AlignLeft, Clock, MapPin } from "lucide-react";
 import { SecondaryButton } from "../ui/SecondaryButton";
 import { formatTimeRange, type CalendarEvent } from "../../lib/calendar";
 import { formatLongDay, parseDateTime } from "../../lib/dates";
+import { useTasks } from "../../lib/useTasks";
+import { EventLinkedTasks } from "./EventLinkedTasks";
 
 const WIDTH = 288;
 const GAP = 12; // Abstand zum Termin (Platz für den Pfeil)
@@ -27,6 +29,9 @@ interface EventPreviewProps {
 export function EventPreview({ target, onClose, onEdit }: EventPreviewProps) {
   const { event, rect } = target;
   const ref = useRef<HTMLDivElement>(null);
+  const { tasks } = useTasks();
+  // Die Aufgaben laden nach und machen die Blase höher: Position danach neu bestimmen
+  const linkedCount = tasks.filter((t) => t.eventId === event.id).length;
   const [pos, setPos] = useState<{ left: number; top: number; side: "left" | "right"; arrowY: number } | null>(null);
 
   // Position erst nach dem Messen der Höhe festlegen (verhindert Springen)
@@ -39,7 +44,7 @@ export function EventPreview({ target, onClose, onEdit }: EventPreviewProps) {
     const anchorY = rect.top + Math.min(rect.height, 56) / 2;
     const arrowY = Math.min(Math.max(anchorY - top, 18), Math.max(18, height - 18));
     setPos({ left, top, side, arrowY });
-  }, [rect, event.id]);
+  }, [rect, event.id, linkedCount]);
 
   useEffect(() => {
     // Capture-Phase: Die Termin-Elemente stoppen die Weitergabe von mousedown selbst.
@@ -111,6 +116,7 @@ export function EventPreview({ target, onClose, onEdit }: EventPreviewProps) {
             <span className="event-preview-desc">{event.description}</span>
           </div>
         )}
+        <EventLinkedTasks event={event} tasks={tasks} rowClass="event-preview-row" />
       </div>
 
       <div className="event-preview-foot">

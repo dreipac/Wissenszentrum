@@ -53,10 +53,6 @@
   width: auto;
 }
 
-.ev-datetime .field-control[type="date"] {
-  min-width: 150px;
-}
-
 .ev-datetime .field-control[type="time"] {
   min-width: 112px;
 }
@@ -66,5 +62,5 @@
 }
 
 .ev-description {
-  min-height: 200px;
+  min-height: 100px;
 }
