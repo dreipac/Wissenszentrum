@@ -1,5 +1,6 @@
 mod assistant;
 mod db;
+mod docbuild;
 mod docs;
 mod events;
 mod files;
@@ -590,6 +591,13 @@ fn create_doc_page(db: State<Db>, parent_id: Option<i64>, title: String, kind: S
     docs::create_page(&conn, parent_id, &title, &kind)
 }
 
+/// Legt Ordner und Seiten samt Inhalt in einem Zug an (ganz oder gar nicht). Kommt aus bestätigten Vorschlägen des Assistenten.
+#[tauri::command]
+fn create_doc_tree(db: State<Db>, parent_id: Option<i64>, nodes: Vec<docbuild::DocNodeSpec>) -> Result<Vec<i64>, String> {
+    let conn = lock(&db)?;
+    docbuild::create_tree(&conn, parent_id, &nodes)
+}
+
 #[tauri::command]
 fn update_doc_page(db: State<Db>, id: i64, input: DocInput) -> Result<DocPage, String> {
     let conn = lock(&db)?;
@@ -1010,6 +1018,7 @@ pub fn run() {
             save_attachment,
             open_attachment,
             create_doc_page,
+            create_doc_tree,
             update_doc_page,
             set_doc_favorite,
             move_doc_page,

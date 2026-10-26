@@ -1,3 +1,4 @@
+import { blocksToHtml, blocksToPlain, type DocNodeSpec } from "../docBlocks";
 import { MAX_DEPTH, buildTree, descendantIds, subtreeHeight, type DocInput, type DocKind, type DocNode, type DocPage } from "../docs";
 
 // Browser-Preview ohne Tauri: dieselben Regeln wie im Backend, aber nur im Speicher.
@@ -60,6 +61,20 @@ export const docsStore = {
     };
     pages.push(page);
     return { ...page };
+  },
+  /** Wie im Backend: ein Baum aus Ordnern und Seiten samt Inhalt. */
+  async createTree(parentId: number | null, nodes: DocNodeSpec[]): Promise<number[]> {
+    const make = async (parent: number | null, node: DocNodeSpec): Promise<number> => {
+      const page = await docsStore.create(parent, node.title, node.type);
+      if (node.type === "page" && node.blocks.length > 0) {
+        await docsStore.update(page.id, { title: node.title, content: blocksToHtml(node.blocks), plain: blocksToPlain(node.blocks) });
+      }
+      for (const child of node.children) await make(page.id, child);
+      return page.id;
+    };
+    const ids: number[] = [];
+    for (const node of nodes) ids.push(await make(parentId, node));
+    return ids;
   },
   async update(id: number, input: DocInput): Promise<DocPage> {
     const page = find(id);

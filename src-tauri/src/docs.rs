@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 
 const MAX_TITLE: usize = 200;
 const MAX_BODY_BYTES: usize = 2_000_000;
-const MAX_DEPTH: usize = 8;
+pub const MAX_DEPTH: usize = 8;
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -88,7 +88,7 @@ fn parent_of(conn: &Connection, id: i64) -> Result<Option<i64>, String> {
 }
 
 /// Anzahl der Ebenen von der Wurzel bis zur Seite (Hauptebene = 1).
-fn depth_of(conn: &Connection, id: i64) -> Result<usize, String> {
+pub fn depth_of(conn: &Connection, id: i64) -> Result<usize, String> {
     let mut depth = 1;
     let mut current = parent_of(conn, id)?;
     while let Some(parent) = current {

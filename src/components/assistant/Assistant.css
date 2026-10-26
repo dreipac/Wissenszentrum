@@ -547,6 +547,276 @@
   text-decoration: line-through;
 }
 
+.as-prop-bucket {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.as-prop-bucket .priority {
+  margin-top: 0;
+}
+
+.as-dot {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background-color: var(--border-strong-hover);
+}
+
+.as-dot.empty {
+  border: 1px dashed var(--border-strong-hover);
+  background: transparent;
+}
+
+.as-prop-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--text-muted);
+}
+
+.as-prop-gap {
+  display: block;
+  width: 13px;
+  flex-shrink: 0;
+}
+
+/* ---------- Änderungen an Bestehendem ---------- */
+.as-action {
+  border-left-color: var(--accent);
+}
+
+.as-action.as-danger {
+  border-left-color: var(--negative);
+}
+
+.as-action.as-danger.open .as-prop-head,
+.as-action.as-danger.working .as-prop-head {
+  color: var(--negative);
+}
+
+.as-action.done {
+  border-left-color: var(--positive);
+}
+
+.as-action.as-danger.done {
+  border-left-color: var(--border-strong);
+  opacity: 0.6;
+}
+
+.as-action.as-danger.done .as-prop-title {
+  text-decoration: line-through;
+}
+
+.as-action.dismissed {
+  border-left-color: var(--border-strong);
+  opacity: 0.6;
+}
+
+.as-changes {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  margin: 0;
+  padding: 0.55rem 0.65rem;
+  list-style: none;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  background-color: var(--bg-sidebar);
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+
+.as-changes li {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.as-change-label {
+  font-size: 0.66rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.as-change-values {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.2rem 0.45rem;
+  word-break: break-word;
+}
+
+.as-before {
+  color: var(--text-faint);
+}
+
+.as-arrow {
+  flex-shrink: 0;
+  align-self: center;
+  color: var(--text-faint);
+}
+
+.as-after {
+  color: var(--text);
+  font-weight: 500;
+}
+
+.as-removed {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+/* ---------- Dokumentation anlegen ---------- */
+.as-docs {
+  border-left-color: var(--accent);
+}
+
+.as-docs.created {
+  border-left-color: var(--positive);
+}
+
+.as-docs-target {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+
+.as-docs-target svg {
+  flex-shrink: 0;
+  color: var(--text-faint);
+}
+
+.as-doctree {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.as-doctree.nested {
+  margin-left: 0.55rem;
+  padding-left: 0.7rem;
+  border-left: 1px solid var(--border-soft);
+}
+
+.as-node-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 26px;
+  font-size: 0.86rem;
+}
+
+.as-node-icon {
+  flex-shrink: 0;
+  color: var(--text-faint);
+}
+
+.as-node-icon.folder {
+  color: var(--text-muted);
+}
+
+.as-node-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.as-docs-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.as-docs-stats span {
+  padding: 0 0.5rem;
+  border: 1px solid var(--border-soft);
+  border-radius: 999px;
+  font-size: 0.72rem;
+  line-height: 20px;
+  color: var(--text-muted);
+}
+
+/* ---------- Bucket-Auswahl ---------- */
+.as-choice {
+  border-left-color: var(--accent);
+}
+
+.as-choice.answered {
+  border-left-color: var(--positive);
+}
+
+.as-buckets {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.as-bucket {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  width: 100%;
+  padding: 0.5rem 0.7rem;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  background-color: var(--bg-sidebar);
+  color: var(--text);
+  font-size: 0.86rem;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s, background-color 0.15s, opacity 0.15s;
+}
+
+.as-bucket:hover:not(:disabled) {
+  border-color: var(--border-strong-hover);
+  background-color: var(--bg-hover);
+}
+
+.as-bucket:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.as-bucket.picked:disabled {
+  opacity: 1;
+  border-color: var(--positive);
+}
+
+.as-bucket-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.as-bucket-count {
+  flex-shrink: 0;
+  font-size: 0.74rem;
+  color: var(--text-faint);
+}
+
+.as-bucket.none {
+  color: var(--text-muted);
+}
+
 .as-prop-rows {
   display: flex;
   flex-direction: column;

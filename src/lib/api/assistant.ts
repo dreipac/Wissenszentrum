@@ -1,5 +1,6 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { formatLongDay, toDateTimeStr } from "../dates";
+import type { DocNodeSpec, DocStats } from "../docBlocks";
 import { previewAnswer } from "./assistantPreview";
 import { inTauri } from "./runtime";
 
@@ -52,6 +53,67 @@ export interface EventDeletion {
   linkedTasks: number;
 }
 
+/** Aufgabe, die der Assistent vorschlägt. Angelegt wird sie erst nach Bestätigung durch die Person. */
+export interface TaskProposal {
+  title: string;
+  description: string;
+  /** "high", "medium" oder "low" */
+  priority: string;
+  /** YYYY-MM-DD */
+  dueDate: string | null;
+  bucketId: number | null;
+  bucketName: string | null;
+  subtasks: string[];
+}
+
+export interface BucketOption {
+  id: number;
+  name: string;
+  /** Farbschlüssel, leer = keine Farbe */
+  color: string;
+  openTasks: number;
+}
+
+/** Auswahl des Buckets für eine neue Aufgabe: die Person klickt einen Bucket in der Karte an. */
+export interface BucketChoice {
+  taskTitle: string;
+  buckets: BucketOption[];
+}
+
+/** Eine Zeile einer vorgeschlagenen Änderung: was bisher galt und was gelten soll. */
+export interface ActionChange {
+  label: string;
+  before: string | null;
+  after: string | null;
+}
+
+/** Vorschlag, etwas Bestehendes zu ändern, abzuhaken oder zu löschen. Ausgeführt wird er erst nach Bestätigung. */
+export interface AssistantAction {
+  kind: "task_done" | "task_reopen" | "task_delete" | "task_update" | "event_update";
+  id: number;
+  title: string;
+  bucket: string | null;
+  dueDate: string | null;
+  startsAt: string | null;
+  endsAt: string | null;
+  allDay: boolean;
+  changes: ActionChange[];
+  /** Bei Änderungen der vollständige neue Stand zum Speichern (TaskInput bzw. EventInput) */
+  input: unknown;
+}
+
+/** Vorschlag für neue Ordner und Seiten der Dokumentation. Angelegt wird er erst nach Bestätigung durch die Person. */
+export interface DocProposal {
+  /** Zielordner oder -seite, null = Hauptebene */
+  parentId: number | null;
+  /** Pfad des Ziels zur Anzeige */
+  parentPath: string;
+  nodes: DocNodeSpec[];
+  stats: DocStats;
+  /** Oberste Einträge, deren Titel es dort schon gibt */
+  existing: string[];
+}
+
 export interface AssistantAnswer {
   text: string;
   /** Was der Assistent nachgeschlagen hat */
@@ -62,6 +124,14 @@ export interface AssistantAnswer {
   proposals: EventProposal[];
   /** Termine, deren Löschen vorgeschlagen wird: noch nicht gelöscht */
   deletions: EventDeletion[];
+  /** Vorgeschlagene Aufgaben: noch nicht angelegt */
+  tasks: TaskProposal[];
+  /** Bucket-Auswahl, bevor eine Aufgabe vorgeschlagen wird */
+  choices: BucketChoice[];
+  /** Vorgeschlagene Änderungen an Bestehendem: noch nicht ausgeführt */
+  actions: AssistantAction[];
+  /** Vorgeschlagene Ordner und Seiten für die Dokumentation: noch nicht angelegt */
+  docs: DocProposal[];
 }
 
 export interface ChatTurn {

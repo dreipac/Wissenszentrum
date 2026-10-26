@@ -21,6 +21,10 @@ interface TaskModalProps {
   task?: Task;
   /** Vorausgewählter Bucket (z. B. beim Klick auf „+“ in einer Spalte). */
   bucketId?: number | null;
+  /** Vorbelegung für eine neue Aufgabe (z. B. aus einem Vorschlag des Assistenten). */
+  draft?: { title: string; bucketId: number | null; priority: Priority; dueDate: string | null; description: string; subtasks: string[] };
+  /** Wird nach erfolgreichem Speichern aufgerufen, vor dem Schließen. */
+  onSaved?: () => void;
   onClose: () => void;
 }
 
@@ -38,19 +42,21 @@ interface StepDraft {
   done: boolean;
 }
 
-export function TaskModal({ task, bucketId = null, onClose }: TaskModalProps) {
+export function TaskModal({ task, bucketId = null, draft, onSaved, onClose }: TaskModalProps) {
   const editing = task !== undefined;
   const { buckets } = useTasks();
 
-  const [title, setTitle] = useState(task?.title ?? "");
-  const [bucket, setBucket] = useState<number | null>(task?.bucketId ?? bucketId);
-  const [priority, setPriority] = useState<Priority>(task?.priority ?? "medium");
-  const [dueDate, setDueDate] = useState(task?.dueDate ?? "");
+  const [title, setTitle] = useState(task?.title ?? draft?.title ?? "");
+  const [bucket, setBucket] = useState<number | null>(task?.bucketId ?? draft?.bucketId ?? bucketId);
+  const [priority, setPriority] = useState<Priority>(task?.priority ?? draft?.priority ?? "medium");
+  const [dueDate, setDueDate] = useState(task?.dueDate ?? draft?.dueDate ?? "");
   const [startDate, setStartDate] = useState(task?.startDate ?? "");
-  const [description, setDescription] = useState(task?.description ?? "");
+  const [description, setDescription] = useState(task?.description ?? draft?.description ?? "");
   const nextKey = useRef(0);
   const [steps, setSteps] = useState<StepDraft[]>(() =>
-    (task?.subtasks ?? []).map((s) => ({ key: nextKey.current++, id: s.id, title: s.title, done: s.done })),
+    task
+      ? task.subtasks.map((s) => ({ key: nextKey.current++, id: s.id, title: s.title, done: s.done }))
+      : (draft?.subtasks ?? []).map((title) => ({ key: nextKey.current++, id: null, title, done: false })),
   );
   const [newStep, setNewStep] = useState("");
   const [showSubtasks, setShowSubtasks] = useState(task?.showSubtasks ?? false);
@@ -98,6 +104,7 @@ export function TaskModal({ task, bucketId = null, onClose }: TaskModalProps) {
     setError(null);
     try {
       await action();
+      onSaved?.();
       onClose();
     } catch (e) {
       setError(String(e));

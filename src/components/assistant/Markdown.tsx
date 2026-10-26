@@ -7,15 +7,24 @@ import type { ReactNode } from "react";
 
 type Block = { type: "p"; text: string } | { type: "h"; text: string } | { type: "ul" | "ol"; items: string[] };
 
-function inline(text: string): ReactNode[] {
+/** Auszeichnung im Text: **fett**, *kursiv* und `Code`. */
+export function inline(text: string): ReactNode[] {
   const out: ReactNode[] = [];
-  const pattern = /(\*\*[^*\n]+\*\*|`[^`\n]+`)/g;
+  const pattern = /(\*\*[^*\n]+\*\*|\*[^*\s][^*\n]*\*|`[^`\n]+`)/g;
   let last = 0;
   let key = 0;
   for (let m = pattern.exec(text); m; m = pattern.exec(text)) {
     if (m.index > last) out.push(text.slice(last, m.index));
     const token = m[0];
-    out.push(token.startsWith("**") ? <strong key={key++}>{token.slice(2, -2)}</strong> : <code key={key++}>{token.slice(1, -1)}</code>);
+    out.push(
+      token.startsWith("**") ? (
+        <strong key={key++}>{token.slice(2, -2)}</strong>
+      ) : token.startsWith("*") ? (
+        <em key={key++}>{token.slice(1, -1)}</em>
+      ) : (
+        <code key={key++}>{token.slice(1, -1)}</code>
+      ),
+    );
     last = m.index + token.length;
   }
   if (last < text.length) out.push(text.slice(last));

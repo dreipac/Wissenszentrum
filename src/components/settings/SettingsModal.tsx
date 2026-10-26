@@ -345,7 +345,7 @@ function AssistantSection() {
 
       <Group title="Hinweise">
         <div className="st-note">
-          <p>Der Assistent liest deine Daten. Einen Termin kann er nur vorschlagen: eingetragen oder gelöscht wird er erst, wenn du die Karte im Chat bestätigst. Sonst ändert er nichts.</p>
+          <p>Der Assistent liest deine Daten. Aufgaben und Termine anlegen, ändern, abhaken oder löschen kann er nur vorschlagen: es passiert erst, wenn du die Karte im Chat bestätigst. Neue Ordner und Seiten für die Dokumentation legt er ebenfalls erst nach deiner Bestätigung an. Notizen und bestehende Seiten ändert er nie.</p>
           <p>Für eine Antwort schickt die App die dazu nötigen Auszüge deiner Aufgaben, Termine, Notizen und Seiten an Anthropic. Trading und Strategien bleiben ausgeschlossen.</p>
           <p>Auf einem Firmenrechner nutze den Assistenten nur, wenn die IT es für diese Daten erlaubt.</p>
         </div>

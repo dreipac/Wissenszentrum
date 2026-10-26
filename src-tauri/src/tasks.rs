@@ -416,7 +416,7 @@ pub fn unlink_event_tasks(conn: &Connection, event_id: i64) -> Result<(), String
     Ok(())
 }
 
-fn validate_task(conn: &Connection, input: &TaskInput) -> Result<(), String> {
+pub fn validate_task(conn: &Connection, input: &TaskInput) -> Result<(), String> {
     if input.title.trim().is_empty() {
         return Err("Der Titel darf nicht leer sein.".into());
     }

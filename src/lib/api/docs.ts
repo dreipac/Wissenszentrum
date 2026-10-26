@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { notifyChange } from "../changes";
+import type { DocNodeSpec } from "../docBlocks";
 import type { DocInput, DocKind, DocPage } from "../docs";
 import { docsStore } from "./docsPreview";
 import { inTauri } from "./runtime";
@@ -15,6 +16,10 @@ async function changed<T>(result: Promise<T>): Promise<T> {
 
 export const createDocPage = (parentId: number | null, title: string, kind: DocKind): Promise<DocPage> =>
   changed(inTauri ? invoke("create_doc_page", { parentId, title, kind }) : docsStore.create(parentId, title, kind));
+
+/** Legt Ordner und Seiten samt Inhalt in einem Zug an (ganz oder gar nicht) und liefert die Nummern der obersten Einträge. */
+export const createDocTree = (parentId: number | null, nodes: DocNodeSpec[]): Promise<number[]> =>
+  changed(inTauri ? invoke("create_doc_tree", { parentId, nodes }) : docsStore.createTree(parentId, nodes));
 
 export const updateDocPage = (id: number, input: DocInput): Promise<DocPage> =>
   changed(inTauri ? invoke("update_doc_page", { id, input }) : docsStore.update(id, input));
