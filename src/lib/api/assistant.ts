@@ -26,12 +26,42 @@ export interface AssistantSource {
   title: string;
 }
 
+/** Termin, den der Assistent vorschlägt. Eingetragen wird er erst nach Bestätigung durch die Person. */
+export interface EventProposal {
+  title: string;
+  description: string;
+  location: string;
+  /** YYYY-MM-DD HH:MM */
+  startsAt: string;
+  endsAt: string;
+  allDay: boolean;
+  /** Bestehende Termine, die sich mit dem Vorschlag überschneiden */
+  conflicts: string[];
+}
+
+/** Termin, dessen Löschen der Assistent vorschlägt. Gelöscht wird er erst nach Bestätigung durch die Person. */
+export interface EventDeletion {
+  id: number;
+  title: string;
+  location: string;
+  /** YYYY-MM-DD HH:MM */
+  startsAt: string;
+  endsAt: string;
+  allDay: boolean;
+  /** Aufgaben, die an dem Termin hängen (sie bleiben beim Löschen bestehen) */
+  linkedTasks: number;
+}
+
 export interface AssistantAnswer {
   text: string;
   /** Was der Assistent nachgeschlagen hat */
   steps: string[];
   /** Gelesene Seiten und Notizen */
   sources: AssistantSource[];
+  /** Vorgeschlagene Termine: noch nicht eingetragen */
+  proposals: EventProposal[];
+  /** Termine, deren Löschen vorgeschlagen wird: noch nicht gelöscht */
+  deletions: EventDeletion[];
 }
 
 export interface ChatTurn {

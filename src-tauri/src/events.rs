@@ -71,7 +71,7 @@ fn is_datetime(s: &str) -> bool {
             .all(|(i, c)| matches!(i, 4 | 7 | 10 | 13) || c.is_ascii_digit())
 }
 
-fn validate(input: &EventInput) -> Result<(), String> {
+pub fn validate(input: &EventInput) -> Result<(), String> {
     if input.title.trim().is_empty() {
         return Err("Der Titel darf nicht leer sein.".into());
     }

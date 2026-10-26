@@ -18,7 +18,14 @@ export function useEvents(from: string, to: string) {
   }, [from, to]);
 
   // Aufgaben am Termin zählen im Termin mit: Änderungen an Aufgaben laden die Termine neu
-  useEffect(() => onChange("tasks", () => void reload()), [reload]);
+  useEffect(() => {
+    const offTasks = onChange("tasks", () => void reload());
+    const offEvents = onChange("events", () => void reload());
+    return () => {
+      offTasks();
+      offEvents();
+    };
+  }, [reload]);
 
   useEffect(() => {
     let cancelled = false;

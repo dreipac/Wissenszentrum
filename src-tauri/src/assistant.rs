@@ -199,16 +199,58 @@ pub struct ChatResult {
     pub steps: Vec<String>,
     /// Seiten und Notizen, die er gelesen hat
     pub sources: Vec<Source>,
+    /// Termine, die er vorschlägt; eingetragen werden sie erst, wenn die Person sie bestätigt
+    pub proposals: Vec<EventProposal>,
+    /// Termine, die er löschen möchte; gelöscht wird erst, wenn die Person bestätigt
+    pub deletions: Vec<EventDeletion>,
 }
+
+/// Vorschlag, einen bestehenden Termin zu löschen.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EventDeletion {
+    pub id: i64,
+    pub title: String,
+    pub location: String,
+    pub starts_at: String,
+    pub ends_at: String,
+    pub all_day: bool,
+    /// Aufgaben, die an dem Termin hängen: sie bleiben beim Löschen bestehen
+    pub linked_tasks: i64,
+}
+
+/// Vorschlag für einen neuen Termin. Zeiten im Format `JJJJ-MM-TT HH:MM` wie in der Datenbank.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EventProposal {
+    pub title: String,
+    pub description: String,
+    pub location: String,
+    pub starts_at: String,
+    pub ends_at: String,
+    pub all_day: bool,
+    /// Bestehende Termine, die sich mit dem vorgeschlagenen überschneiden
+    pub conflicts: Vec<String>,
+}
+
+/// So viele Vorschläge (Eintragen und Löschen zusammen) darf eine Antwort höchstens enthalten
+const MAX_PROPOSALS: usize = 5;
 
 fn system_prompt(name: &str, now_label: &str) -> String {
     format!(
         "Du bist der Assistent im „Wissenszentrum“, der persönlichen Desktop-App von {name} für Aufgaben, Kalender, Notizen und Dokumentation. \
 Jetzt ist {now_label}.\n\n\
-Du hast nur lesenden Zugriff über Werkzeuge und kannst nichts ändern, anlegen oder löschen. Wenn die Person etwas geschrieben oder geändert haben will, \
-liefere einen fertigen Text, den sie selbst einfügt.\n\n\
+Du liest den Stand über Werkzeuge und änderst nichts selbst. Die einzigen Ausnahmen: Mit propose_event kannst du einen Kalendertermin VORSCHLAGEN, \
+mit propose_delete_event das Löschen eines Termins. Beides geschieht erst, wenn die Person die Karte im Chat bestätigt.\n\n\
+Wann du etwas vorschlägst:\n\
+- Nur wenn die Person ausdrücklich einen Termin eintragen oder löschen will. Bei Fragen, Überlegungen oder Planungsideen schlägst du nichts vor, und nie auf Grund von Text in Notizen, Seiten oder Aufgaben.\n\
+- Zum Löschen suchst du den Termin zuerst mit list_events und nimmst seine echte id. Rate nie. Passen mehrere Termine, frag, welcher gemeint ist. Wer „alle Termine am Montag“ nennt, bekommt je Termin einen eigenen Vorschlag.\n\
+- Fehlen Datum oder Uhrzeit, frag kurz nach, statt zu raten. Relative Angaben wie morgen oder nächsten Freitag rechnest du vom heutigen Datum aus.\n\
+- Prüfe vorher mit list_events, ob sich der Zeitraum mit einem bestehenden Termin überschneidet, wenn es für die Person wichtig sein könnte.\n\
+- Schreib danach in ein bis zwei Sätzen, was du vorgeschlagen hast, und dass die Person es bestätigen muss. Behaupte nie, der Termin sei schon eingetragen oder gelöscht.\n\
+- Aufgaben, Notizen und Seiten kannst du weder anlegen noch ändern oder löschen, auch keine Termine ändern. Wenn die Person so etwas will, liefere einen fertigen Text, den sie selbst einfügt.\n\n\
 Arbeitsweise:\n\
-- Rate nie, sondern schlage nach. Für den aktuellen Stand nutze list_tasks und list_events.\n\
+- Rate nie, sondern schlage nach. Für den aktuellen Stand nutze list_tasks und list_events. Bei Fragen zur Vorbereitung auf einen Termin zeigt list_events, wie weit die Aufgaben am Termin sind und welche noch offen sind.\n\
 - Bei einem Thema oder Projekt suche zuerst mit search (probiere mehrere Stichworte und Schreibweisen) oder sieh dir list_doc_tree an, \
 lies dann die passenden Seiten mit get_doc_page oder get_note, bevor du antwortest.\n\
 - Nenne nur, was in den Daten steht. Wenn du etwas nicht findest, sag das klar.\n\
@@ -237,7 +279,7 @@ pub async fn assistant_ask(
     let system = system_prompt(&name, &now_label);
 
     let skip = history.len().saturating_sub(MAX_HISTORY);
-    let mut messages: Vec<Value> = history
+    let messages: Vec<Value> = history
         .iter()
         .skip(skip)
         .filter(|t| (t.role == "user" || t.role == "assistant") && !t.text.trim().is_empty())
@@ -270,6 +312,8 @@ async fn converse(
     let mut lean = false;
     let mut steps: Vec<String> = Vec::new();
     let mut sources: Vec<Source> = Vec::new();
+    let mut proposals: Vec<EventProposal> = Vec::new();
+    let mut deletions: Vec<EventDeletion> = Vec::new();
 
     for _ in 0..MAX_ROUNDS {
         let response = loop {
@@ -294,10 +338,22 @@ async fn converse(
                 for block in content.iter().filter(|b| b["type"] == "tool_use") {
                     let id = block["id"].as_str().unwrap_or_default();
                     let name = block["name"].as_str().unwrap_or_default();
-                    let outcome = {
+                    let mut outcome = {
                         let conn = db.0.lock().map_err(|_| "Datenbank ist gesperrt.".to_string())?;
                         run_tool(&conn, name, &block["input"], today)
                     };
+                    if (outcome.proposal.is_some() || outcome.deletion.is_some()) && proposals.len() + deletions.len() >= MAX_PROPOSALS {
+                        outcome = Outcome::fail("Zu viele Vorschläge", format!("Eine Antwort darf höchstens {MAX_PROPOSALS} Vorschläge enthalten. Schlage die übrigen später vor."));
+                    }
+                    if let Some(proposal) = outcome.proposal.take() {
+                        proposals.push(proposal);
+                    }
+                    if let Some(deletion) = outcome.deletion.take() {
+                        // Dieselbe Karte nicht doppelt zeigen, falls das Modell den Termin mehrfach nennt
+                        if !deletions.iter().any(|d| d.id == deletion.id) {
+                            deletions.push(deletion);
+                        }
+                    }
                     if !steps.contains(&outcome.step) {
                         steps.push(outcome.step.clone());
                         on_step(outcome.step.clone());
@@ -320,11 +376,17 @@ async fn converse(
             "max_tokens" if text.trim().is_empty() => return Err("Die Antwort wurde zu lang und abgebrochen. Stelle die Frage enger.".into()),
             _ => {
                 let text = if stop == "max_tokens" { format!("{}\n\n(Die Antwort wurde gekürzt.)", text.trim()) } else { text.trim().to_string() };
+                // Ein Vorschlag ohne Begleittext bekommt einen Standardsatz
+                let text = if text.is_empty() && !(proposals.is_empty() && deletions.is_empty()) {
+                    "Das ist mein Vorschlag. Er wird erst ausgeführt, wenn du ihn bestätigst.".to_string()
+                } else {
+                    text
+                };
                 if text.is_empty() {
                     return Err("Der Assistent hat keine Antwort geliefert. Versuche es noch einmal.".into());
                 }
                 sources.truncate(6);
-                return Ok(ChatResult { text, steps, sources });
+                return Ok(ChatResult { text, steps, sources, proposals, deletions });
             }
         }
     }
@@ -341,7 +403,7 @@ fn tool_definitions() -> Value {
     json!([
         {
             "name": "list_tasks",
-            "description": "Listet Aufgaben mit Bucket, Priorität, Start- und Fälligkeitsdatum, Beschreibung und Zwischenschritten.",
+            "description": "Listet Aufgaben mit Bucket, Priorität, Start- und Fälligkeitsdatum, Beschreibung und Zwischenschritten. Hängt eine Aufgabe an einem Termin, stehen dort dessen Titel, Beginn und der Abstand in Tagen (negativ = davor, 0 = am Tag, positiv = danach).",
             "input_schema": {
                 "type": "object",
                 "properties": {
@@ -354,7 +416,7 @@ fn tool_definitions() -> Value {
         },
         {
             "name": "list_events",
-            "description": "Listet Termine eines Zeitraums mit Zeit, Ort und Beschreibung.",
+            "description": "Listet Termine eines Zeitraums mit Zeit, Ort und Beschreibung. Hängen Aufgaben an einem Termin, steht dabei der Stand der Vorbereitung (bis einschließlich am Tag selbst) und der Nachbereitung (danach) mit erledigten und gesamten Aufgaben sowie die noch offenen Aufgaben.",
             "input_schema": {
                 "type": "object",
                 "properties": {
@@ -408,6 +470,31 @@ fn tool_definitions() -> Value {
                 "properties": { "id": { "type": "integer" } },
                 "required": ["id"]
             }
+        },
+        {
+            "name": "propose_event",
+            "description": "Schlägt einen neuen Kalendertermin vor. Der Termin wird dadurch NICHT eingetragen: die Person sieht eine Karte und bestätigt sie selbst. Nur aufrufen, wenn sie ausdrücklich einen Termin eintragen will und Datum (und bei Terminen mit Uhrzeit auch die Zeit) klar sind.",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "title": { "type": "string", "description": "Titel des Termins" },
+                    "starts_at": { "type": "string", "description": "Beginn: JJJJ-MM-TT HH:MM, bei ganztägigen Terminen nur JJJJ-MM-TT" },
+                    "ends_at": { "type": "string", "description": "Ende im selben Format (optional). Ohne Angabe dauert ein Termin mit Uhrzeit eine Stunde, ein ganztägiger einen Tag. Bei mehrtägigen ganztägigen Terminen der letzte Tag." },
+                    "all_day": { "type": "boolean", "description": "Ganztägig, Standard: nein" },
+                    "location": { "type": "string", "description": "Ort (optional)" },
+                    "description": { "type": "string", "description": "Beschreibung (optional)" }
+                },
+                "required": ["title", "starts_at"]
+            }
+        },
+        {
+            "name": "propose_delete_event",
+            "description": "Schlägt vor, einen bestehenden Termin zu löschen. Gelöscht wird dadurch NICHT: die Person sieht eine Karte und bestätigt selbst. Nur aufrufen, wenn sie ausdrücklich das Löschen will. Die id kommt aus list_events.",
+            "input_schema": {
+                "type": "object",
+                "properties": { "id": { "type": "integer", "description": "id des Termins aus list_events" } },
+                "required": ["id"]
+            }
         }
     ])
 }
@@ -417,16 +504,20 @@ struct Outcome {
     /// Kurzer Hinweis für die Anzeige, z. B. „Aufgaben gelesen“
     step: String,
     source: Option<Source>,
+    /// Termin, den die Person noch bestätigen muss (nur bei propose_event)
+    proposal: Option<EventProposal>,
+    /// Termin, dessen Löschen die Person noch bestätigen muss (nur bei propose_delete_event)
+    deletion: Option<EventDeletion>,
     is_error: bool,
 }
 
 impl Outcome {
     fn ok(step: impl Into<String>, value: Value) -> Self {
-        Outcome { content: value.to_string(), step: step.into(), source: None, is_error: false }
+        Outcome { content: value.to_string(), step: step.into(), source: None, proposal: None, deletion: None, is_error: false }
     }
 
     fn fail(step: impl Into<String>, message: impl Into<String>) -> Self {
-        Outcome { content: message.into(), step: step.into(), source: None, is_error: true }
+        Outcome { content: message.into(), step: step.into(), source: None, proposal: None, deletion: None, is_error: true }
     }
 }
 
@@ -440,6 +531,8 @@ fn run_tool(conn: &Connection, name: &str, input: &Value, today: &str) -> Outcom
         "list_doc_tree" => tool_doc_tree(conn),
         "get_doc_page" => tool_get_doc_page(conn, input),
         "get_note" => tool_get_note(conn, input),
+        "propose_event" => tool_propose_event(conn, input),
+        "propose_delete_event" => tool_propose_delete_event(conn, input),
         other => Outcome::fail("Unbekanntes Werkzeug", format!("Das Werkzeug „{other}“ gibt es nicht.")),
     }
 }
@@ -581,6 +674,8 @@ fn tool_list_tasks(conn: &Connection, input: &Value, today: &str) -> Outcome {
                 "description": trunc(&t.description, 400),
                 "subtasks": steps,
                 "linked_event": t.event_title,
+                "linked_event_starts_at": t.event_starts_at,
+                "days_from_event": t.event_offset,
             })
         })
         .collect();
@@ -599,11 +694,26 @@ fn tool_list_events(conn: &Connection, input: &Value, today: &str) -> Outcome {
     match events::list_events(conn, &format!("{from} 00:00"), &format!("{end} 00:00")) {
         Ok(list) => {
             let total = list.len();
+            // Offene Aufgaben je Termin, damit klar ist, was an der Vor- und Nachbereitung noch fehlt
+            let mut open_by_event: HashMap<i64, Vec<Value>> = HashMap::new();
+            for t in tasks::list_tasks(conn).unwrap_or_default().into_iter().filter(|t| !t.done) {
+                if let (Some(id), Some(offset)) = (t.event_id, t.event_offset) {
+                    open_by_event.entry(id).or_default().push(json!({
+                        "id": t.id,
+                        "title": t.title,
+                        "days_from_event": offset,
+                        "due_date": t.due_date,
+                        "priority": t.priority,
+                    }));
+                }
+            }
             let items: Vec<Value> = list
                 .into_iter()
                 .take(80)
                 .map(|e| {
-                    json!({
+                    let mut open = open_by_event.remove(&e.id).unwrap_or_default();
+                    open.sort_by_key(|t| t["days_from_event"].as_i64().unwrap_or(0));
+                    let mut item = json!({
                         "id": e.id,
                         "title": e.title,
                         "starts_at": e.starts_at,
@@ -611,13 +721,150 @@ fn tool_list_events(conn: &Connection, input: &Value, today: &str) -> Outcome {
                         "all_day": e.all_day,
                         "location": e.location,
                         "description": trunc(&e.description, 300),
-                    })
+                    });
+                    // Nur wenn Aufgaben am Termin hängen
+                    if e.prep_total + e.follow_total > 0 {
+                        item["tasks"] = json!({
+                            "preparation": { "done": e.prep_done, "total": e.prep_total },
+                            "follow_up": { "done": e.follow_done, "total": e.follow_total },
+                            "open": open,
+                        });
+                    }
+                    item
                 })
                 .collect();
             Outcome::ok(STEP, json!({ "from": from, "to": to, "total": total, "events": items }))
         }
         Err(e) => Outcome::fail(STEP, e),
     }
+}
+
+// --- Termin vorschlagen -----------------------------------------------------------------
+
+/// `JJJJ-MM-TT` mit oder ohne `HH:MM` dahinter in Datum und Uhrzeit zerlegen.
+fn split_datetime(s: &str) -> Option<(String, Option<(u32, u32)>)> {
+    let s = s.trim();
+    parse_date(s)?;
+    let date = s.get(..10)?.to_string();
+    let rest = s.get(10..)?.trim_start_matches(['T', ' ']).trim();
+    if rest.is_empty() {
+        return Some((date, None));
+    }
+    let (h, m) = rest.get(..5.min(rest.len()))?.split_once(':')?;
+    let (h, m): (u32, u32) = (h.parse().ok()?, m.parse().ok()?);
+    (h < 24 && m < 60).then_some((date, Some((h, m))))
+}
+
+/// Prüft den Vorschlag wie beim manuellen Eintragen und merkt ihn für die Bestätigung vor. Eingetragen wird hier nichts.
+fn tool_propose_event(conn: &Connection, input: &Value) -> Outcome {
+    const STEP: &str = "Termin vorgeschlagen";
+    let title = input["title"].as_str().unwrap_or("").trim();
+    if title.is_empty() {
+        return Outcome::fail(STEP, "Der Titel fehlt.");
+    }
+    let all_day = input["all_day"].as_bool().unwrap_or(false);
+    let Some((start_date, start_time)) = input["starts_at"].as_str().and_then(split_datetime) else {
+        return Outcome::fail(STEP, "starts_at fehlt oder ist ungültig. Erwartet: JJJJ-MM-TT HH:MM.");
+    };
+    let end = match input["ends_at"].as_str().filter(|e| !e.trim().is_empty()) {
+        Some(raw) => match split_datetime(raw) {
+            Some(parsed) => Some(parsed),
+            None => return Outcome::fail(STEP, "ends_at ist ungültig. Erwartet: JJJJ-MM-TT HH:MM."),
+        },
+        None => None,
+    };
+
+    let (starts_at, ends_at) = if all_day {
+        let end_date = end.map(|(d, _)| d).unwrap_or_else(|| start_date.clone());
+        (format!("{start_date} 00:00"), format!("{end_date} 23:59"))
+    } else {
+        let Some((h, m)) = start_time else {
+            return Outcome::fail(STEP, "Die Uhrzeit fehlt. Frag die Person danach oder setze all_day auf true.");
+        };
+        let ends = match end {
+            Some((d, Some((eh, em)))) => format!("{d} {eh:02}:{em:02}"),
+            Some((_, None)) => return Outcome::fail(STEP, "ends_at braucht bei einem Termin mit Uhrzeit auch eine Uhrzeit."),
+            None => {
+                // Ohne Ende eine Stunde, notfalls über Mitternacht hinaus
+                let total = h * 60 + m + 60;
+                let (date, minutes) = if total >= 24 * 60 { (add_days(&start_date, 1).unwrap_or_else(|| start_date.clone()), total - 24 * 60) } else { (start_date.clone(), total) };
+                format!("{date} {:02}:{:02}", minutes / 60, minutes % 60)
+            }
+        };
+        (format!("{start_date} {h:02}:{m:02}"), ends)
+    };
+
+    let event = events::EventInput {
+        title: title.to_string(),
+        description: trunc(input["description"].as_str().unwrap_or(""), 1000),
+        location: trunc(input["location"].as_str().unwrap_or(""), 200),
+        starts_at,
+        ends_at,
+        all_day,
+    };
+    if let Err(e) = events::validate(&event) {
+        return Outcome::fail(STEP, e);
+    }
+
+    // Überschneidungen, damit die Person sie sieht, bevor sie bestätigt
+    let conflicts: Vec<String> = events::list_events(conn, &event.starts_at, &event.ends_at)
+        .unwrap_or_default()
+        .into_iter()
+        .take(3)
+        .map(|e| if e.all_day { format!("{} (ganztägig)", e.title) } else { format!("{} ({}–{})", e.title, &e.starts_at[11..], &e.ends_at[11..]) })
+        .collect();
+
+    let proposal = EventProposal {
+        title: event.title,
+        description: event.description,
+        location: event.location,
+        starts_at: event.starts_at,
+        ends_at: event.ends_at,
+        all_day: event.all_day,
+        conflicts: conflicts.clone(),
+    };
+    let mut outcome = Outcome::ok(
+        STEP,
+        json!({
+            "status": "vorgeschlagen",
+            "hinweis": "Der Termin ist NOCH NICHT eingetragen. Die Person sieht jetzt eine Karte und bestätigt selbst.",
+            "termin": { "title": proposal.title, "starts_at": proposal.starts_at, "ends_at": proposal.ends_at, "all_day": proposal.all_day },
+            "ueberschneidet_sich_mit": conflicts,
+        }),
+    );
+    outcome.proposal = Some(proposal);
+    outcome
+}
+
+/// Merkt das Löschen eines Termins zur Bestätigung vor. Gelöscht wird hier nichts.
+fn tool_propose_delete_event(conn: &Connection, input: &Value) -> Outcome {
+    const STEP: &str = "Löschen vorgeschlagen";
+    let Some(id) = input["id"].as_i64() else {
+        return Outcome::fail(STEP, "Die id des Termins fehlt. Sie steht in der Ausgabe von list_events.");
+    };
+    let Ok(event) = events::get_event(conn, id) else {
+        return Outcome::fail(STEP, "Einen Termin mit dieser id gibt es nicht (mehr). Such ihn mit list_events.");
+    };
+    let deletion = EventDeletion {
+        id: event.id,
+        title: event.title,
+        location: trunc(&event.location, 200),
+        starts_at: event.starts_at,
+        ends_at: event.ends_at,
+        all_day: event.all_day,
+        linked_tasks: event.prep_total + event.follow_total,
+    };
+    let mut outcome = Outcome::ok(
+        STEP,
+        json!({
+            "status": "vorgeschlagen",
+            "hinweis": "Der Termin ist NOCH NICHT gelöscht. Die Person sieht jetzt eine Karte und bestätigt selbst.",
+            "termin": { "id": deletion.id, "title": deletion.title, "starts_at": deletion.starts_at, "ends_at": deletion.ends_at },
+            "verbundene_aufgaben": deletion.linked_tasks,
+        }),
+    );
+    outcome.deletion = Some(deletion);
+    outcome
 }
 
 // --- Notizen --------------------------------------------------------------------------
@@ -1010,7 +1257,7 @@ mod tests {
         let messages = vec![json!({ "role": "user", "content": "Hallo" })];
         let full = request_body("claude-haiku-5-5", "System", &messages, false);
         assert_eq!(full["model"], "claude-haiku-5-5");
-        assert_eq!(full["tools"].as_array().unwrap().len(), 7);
+        assert_eq!(full["tools"].as_array().unwrap().len(), 9);
         assert!(full["cache_control"].is_object() && full["output_config"]["effort"] == "medium");
         assert!(full.get("temperature").is_none() && full.get("thinking").is_none());
 
@@ -1163,5 +1410,89 @@ mod tests {
         let result = converse_blocking(&url, &db, &Arc::new(Mutex::new(Vec::new()))).unwrap();
         assert_eq!(result.sources, [Source { kind: "doc".into(), id: 1, title: "Ablauf".into() }], "doppelt gelesene Seiten zählen einmal, Fehler nicht");
         assert_eq!(result.steps.len(), 2, "gleiche Schritte werden nicht doppelt gemeldet: {:?}", result.steps);
+    }
+
+    #[test]
+    fn events_report_the_state_of_their_tasks() {
+        let c = conn();
+        c.execute("INSERT INTO events (title, starts_at, ends_at) VALUES ('Prüfung', '2026-10-28 09:00', '2026-10-28 11:00')", []).unwrap();
+        c.execute("INSERT INTO events (title, starts_at, ends_at) VALUES ('Ohne Aufgaben', '2026-10-29 09:00', '2026-10-29 10:00')", []).unwrap();
+        let mk = |title: &str, offset: i64, done: bool| {
+            c.execute(
+                "INSERT INTO tasks (title, priority, position, event_id, event_offset, due_date, done) VALUES (?1, 'medium', 0, 1, ?2, date('2026-10-28', printf('%+d days', ?2)), ?3)",
+                rusqlite::params![title, offset, done as i64],
+            )
+            .unwrap();
+        };
+        mk("Lernen", -2, true);
+        mk("Unterlagen drucken", -1, false);
+        mk("Protokoll schreiben", 1, false);
+
+        let value = parse(&run_tool(&c, "list_events", &json!({ "from": "2026-10-28", "to": "2026-10-29" }), "2026-10-26"));
+        let exam = &value["events"][0];
+        assert_eq!(exam["tasks"]["preparation"], json!({ "done": 1, "total": 2 }));
+        assert_eq!(exam["tasks"]["follow_up"], json!({ "done": 0, "total": 1 }));
+        let open: Vec<(&str, i64)> = exam["tasks"]["open"].as_array().unwrap().iter().map(|t| (t["title"].as_str().unwrap(), t["days_from_event"].as_i64().unwrap())).collect();
+        assert_eq!(open, [("Unterlagen drucken", -1), ("Protokoll schreiben", 1)], "nur offene, nach Abstand sortiert");
+        assert!(value["events"][1].get("tasks").is_none(), "Termine ohne Aufgaben bleiben schlank");
+
+        let tasks = parse(&run_tool(&c, "list_tasks", &json!({ "status": "all" }), "2026-10-26"));
+        let learn = tasks["tasks"].as_array().unwrap().iter().find(|t| t["title"] == "Lernen").unwrap();
+        assert_eq!((learn["linked_event"].as_str(), learn["days_from_event"].as_i64()), (Some("Prüfung"), Some(-2)));
+        assert_eq!(learn["linked_event_starts_at"], "2026-10-28 09:00");
+    }
+
+    #[test]
+    fn proposing_an_event_checks_it_but_writes_nothing() {
+        let c = conn();
+        c.execute("INSERT INTO events (title, starts_at, ends_at) VALUES ('Team-Meeting', '2026-10-29 14:30', '2026-10-29 15:30')", []).unwrap();
+
+        let ok = run_tool(&c, "propose_event", &json!({ "title": " Zahnarzt ", "starts_at": "2026-10-29 14:00", "location": "Praxis" }), "2026-10-26");
+        assert!(!ok.is_error, "{}", ok.content);
+        let p = ok.proposal.expect("Vorschlag");
+        assert_eq!((p.title.as_str(), p.starts_at.as_str(), p.ends_at.as_str(), p.all_day), ("Zahnarzt", "2026-10-29 14:00", "2026-10-29 15:00", false));
+        assert_eq!(p.conflicts, ["Team-Meeting (14:30–15:30)"]);
+        assert!(ok.content.contains("NOCH NICHT"));
+        let count: i64 = c.query_row("SELECT COUNT(*) FROM events", [], |r| r.get(0)).unwrap();
+        assert_eq!(count, 1, "nichts wurde eingetragen");
+
+        let late = run_tool(&c, "propose_event", &json!({ "title": "Spät", "starts_at": "2026-10-29 23:30" }), "2026-10-26").proposal.unwrap();
+        assert_eq!(late.ends_at, "2026-10-30 00:30", "Standarddauer reicht über Mitternacht");
+
+        let day = run_tool(&c, "propose_event", &json!({ "title": "Urlaub", "starts_at": "2026-11-02", "ends_at": "2026-11-04", "all_day": true }), "2026-10-26").proposal.unwrap();
+        assert_eq!((day.starts_at.as_str(), day.ends_at.as_str(), day.all_day), ("2026-11-02 00:00", "2026-11-04 23:59", true));
+
+        for bad in [
+            json!({ "title": "", "starts_at": "2026-10-29 14:00" }),
+            json!({ "title": "x" }),
+            json!({ "title": "x", "starts_at": "morgen 14 Uhr" }),
+            json!({ "title": "x", "starts_at": "2026-10-29" }),
+            json!({ "title": "x", "starts_at": "2026-10-29 14:00", "ends_at": "2026-10-29 13:00" }),
+            json!({ "title": "x", "starts_at": "2026-10-29 25:00" }),
+        ] {
+            let out = run_tool(&c, "propose_event", &bad, "2026-10-26");
+            assert!(out.is_error && out.proposal.is_none(), "sollte abgelehnt werden: {bad}");
+        }
+    }
+
+    #[test]
+    fn proposing_a_deletion_names_the_event_but_deletes_nothing() {
+        let c = conn();
+        c.execute("INSERT INTO events (title, location, starts_at, ends_at) VALUES ('Zahnarzt', 'Praxis', '2026-10-29 14:00', '2026-10-29 15:00')", []).unwrap();
+        c.execute("INSERT INTO tasks (title, priority, position, event_id, event_offset) VALUES ('Karte suchen', 'medium', 0, 1, -1)", []).unwrap();
+
+        let out = run_tool(&c, "propose_delete_event", &json!({ "id": 1 }), "2026-10-26");
+        assert!(!out.is_error, "{}", out.content);
+        let d = out.deletion.expect("Vorschlag");
+        assert_eq!((d.id, d.title.as_str(), d.location.as_str(), d.linked_tasks), (1, "Zahnarzt", "Praxis", 1));
+        assert!(out.content.contains("NOCH NICHT"));
+        assert!(out.proposal.is_none());
+        let count: i64 = c.query_row("SELECT COUNT(*) FROM events", [], |r| r.get(0)).unwrap();
+        assert_eq!(count, 1, "nichts wurde gelöscht");
+
+        for bad in [json!({}), json!({ "id": "eins" }), json!({ "id": 99 })] {
+            let out = run_tool(&c, "propose_delete_event", &bad, "2026-10-26");
+            assert!(out.is_error && out.deletion.is_none(), "sollte abgelehnt werden: {bad}");
+        }
     }
 }

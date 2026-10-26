@@ -9,13 +9,20 @@ export function listEvents(from: string, to: string): Promise<CalendarEvent[]> {
   return inTauri ? invoke("list_events", { from, to }) : browserStore.list(from, to);
 }
 
+/** Nach jeder Änderung laden alle Ansichten mit Terminen neu, z. B. der Kalender, wenn der Assistent einen einträgt. */
+async function changed<T>(result: Promise<T>): Promise<T> {
+  const value = await result;
+  notifyChange("events");
+  return value;
+}
+
 export function createEvent(input: EventInput): Promise<CalendarEvent> {
-  return inTauri ? invoke("create_event", { input }) : browserStore.create(input);
+  return changed(inTauri ? invoke("create_event", { input }) : browserStore.create(input));
 }
 
 /** Ein verschobener oder gelöschter Termin ändert die Daten seiner Aufgaben; die Aufgaben-Ansichten laden danach neu. */
 async function tasksFollow<T>(result: Promise<T>): Promise<T> {
-  const value = await result;
+  const value = await changed(result);
   notifyChange("tasks");
   return value;
 }
