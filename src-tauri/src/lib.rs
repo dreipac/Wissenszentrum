@@ -1,3 +1,4 @@
+mod assistant;
 mod db;
 mod docs;
 mod events;
@@ -1049,7 +1050,11 @@ pub fn run() {
             update_journal,
             delete_journal,
             asset_profile,
-            search_symbols
+            search_symbols,
+            assistant::assistant_status,
+            assistant::set_assistant_model,
+            assistant::save_assistant_key,
+            assistant::assistant_ask
         ])
         .run(tauri::generate_context!())
         .expect("Fehler beim Starten von Wissenszentrum");

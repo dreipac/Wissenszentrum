@@ -66,6 +66,23 @@
   text-align: left;
 }
 
+.titlebar-end {
+  display: flex;
+  align-items: center;
+  height: 100%;
+}
+
+.titlebar-assistant {
+  width: 26px;
+  height: 26px;
+  margin-right: 0.5rem;
+}
+
+.titlebar-assistant.active {
+  background-color: var(--bg-selected);
+  color: var(--text);
+}
+
 .window-controls {
   display: flex;
   height: 100%;

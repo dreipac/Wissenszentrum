@@ -1809,6 +1809,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "keyring"
+version = "3.6.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eebcc3aff044e5944a8fbaf69eb277d11986064cba30c468730e8b9909fb551c"
+dependencies = [
+ "byteorder",
+ "log",
+ "windows-sys 0.60.2",
+ "zeroize",
+]
+
+[[package]]
 name = "libappindicator"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4865,6 +4877,7 @@ name = "wissenszentrum"
 version = "1.2.0"
 dependencies = [
  "futures-util",
+ "keyring",
  "reqwest 0.12.28",
  "rusqlite",
  "serde",

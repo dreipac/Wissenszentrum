@@ -1,5 +1,5 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { Minus, PanelLeftClose, PanelLeftOpen, Search, Square, X } from "lucide-react";
+import { Minus, PanelLeftClose, PanelLeftOpen, Search, Sparkles, Square, X } from "lucide-react";
 import { Logo } from "../ui/Logo";
 import "./TitleBar.css";
 
@@ -9,11 +9,14 @@ interface TitleBarProps {
   onToggleSidebar?: () => void;
   /** Öffnet den Schnellzugriff (Suche und Befehle) */
   onSearch?: () => void;
+  assistantOpen?: boolean;
+  /** Blendet das Assistent-Panel ein oder aus */
+  onToggleAssistant?: () => void;
   /** Nur Marke und Fenstersteuerung, z. B. im Onboarding */
   minimal?: boolean;
 }
 
-export function TitleBar({ sidebarCollapsed = false, onToggleSidebar, onSearch, minimal = false }: TitleBarProps) {
+export function TitleBar({ sidebarCollapsed = false, onToggleSidebar, onSearch, assistantOpen = false, onToggleAssistant, minimal = false }: TitleBarProps) {
   const ToggleIcon = sidebarCollapsed ? PanelLeftOpen : PanelLeftClose;
   return (
     <header className="titlebar" data-tauri-drag-region>
@@ -43,31 +46,45 @@ export function TitleBar({ sidebarCollapsed = false, onToggleSidebar, onSearch, 
         </button>
       )}
 
-      <div className="window-controls">
-        <button
-          type="button"
-          className="window-control"
-          aria-label="Minimieren"
-          onClick={() => getCurrentWindow().minimize()}
-        >
-          <Minus size={14} />
-        </button>
-        <button
-          type="button"
-          className="window-control"
-          aria-label="Maximieren"
-          onClick={() => getCurrentWindow().toggleMaximize()}
-        >
-          <Square size={11} />
-        </button>
-        <button
-          type="button"
-          className="window-control close"
-          aria-label="Schließen"
-          onClick={() => getCurrentWindow().close()}
-        >
-          <X size={15} />
-        </button>
+      <div className="titlebar-end">
+        {!minimal && (
+          <button
+            type="button"
+            className={`icon-btn titlebar-assistant${assistantOpen ? " active" : ""}`}
+            aria-label={assistantOpen ? "Assistent ausblenden" : "Assistent einblenden"}
+            aria-pressed={assistantOpen}
+            title={`${assistantOpen ? "Assistent ausblenden" : "Assistent einblenden"} (Strg J)`}
+            onClick={onToggleAssistant}
+          >
+            <Sparkles size={15} />
+          </button>
+        )}
+        <div className="window-controls">
+          <button
+            type="button"
+            className="window-control"
+            aria-label="Minimieren"
+            onClick={() => getCurrentWindow().minimize()}
+          >
+            <Minus size={14} />
+          </button>
+          <button
+            type="button"
+            className="window-control"
+            aria-label="Maximieren"
+            onClick={() => getCurrentWindow().toggleMaximize()}
+          >
+            <Square size={11} />
+          </button>
+          <button
+            type="button"
+            className="window-control close"
+            aria-label="Schließen"
+            onClick={() => getCurrentWindow().close()}
+          >
+            <X size={15} />
+          </button>
+        </div>
       </div>
     </header>
   );

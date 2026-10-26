@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { Check, Copy, Database, Info, LineChart, Palette, RefreshCw, User, X, type LucideIcon } from "lucide-react";
+import { Check, Copy, Database, Info, LineChart, Palette, RefreshCw, Sparkles, User, X, type LucideIcon } from "lucide-react";
 import { Button } from "../ui/Button";
 import { Logo } from "../ui/Logo";
 import { SecondaryButton } from "../ui/SecondaryButton";
+import { ASSISTANT_MODELS, assistantStatus, saveAssistantKey, setAssistantModel, type AssistantStatus } from "../../lib/api/assistant";
 import { getApiKey, saveApiKey } from "../../lib/api/trading";
 import { useEditorTheme, type EditorTheme } from "../../lib/editorTheme";
 import { useProfile } from "../../lib/profile";
@@ -12,7 +13,7 @@ import { SyncSection } from "../sync/SyncSection";
 import "../ui/Modal.css";
 import "./Settings.css";
 
-export type SettingsSection = "profile" | "appearance" | "data" | "sync" | "trading" | "about";
+export type SettingsSection = "profile" | "appearance" | "data" | "sync" | "assistant" | "trading" | "about";
 
 interface SectionInfo {
   id: SettingsSection;
@@ -27,6 +28,7 @@ const SECTIONS: SectionInfo[] = [
   { id: "appearance", label: "Darstellung", title: "Darstellung", lead: "Wie die Schreibfläche in Notizen und Dokumentation aussieht.", icon: Palette },
   { id: "data", label: "Daten", title: "Daten und Speicherort", lead: "Wo deine Inhalte liegen.", icon: Database },
   { id: "sync", label: "Abgleich", title: "Abgleich zwischen Rechnern", lead: "Zuhause und unterwegs mit demselben Stand arbeiten.", icon: RefreshCw },
+  { id: "assistant", label: "Assistent", title: "Assistent", lead: "Fragen an deine Daten, beantwortet von einem KI-Modell.", icon: Sparkles },
   { id: "trading", label: "Trading", title: "Trading", lead: "Kursdaten für Aktien und Krypto.", icon: LineChart },
   { id: "about", label: "Info", title: "Info und Kurzbefehle", lead: "Version und Tastenkombinationen.", icon: Info },
 ];
@@ -248,6 +250,110 @@ function SyncPanel({ onClose }: { onClose: () => void }) {
   );
 }
 
+function AssistantSection() {
+  const [status, setStatus] = useState<AssistantStatus | null>(null);
+  const [key, setKey] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [flash, setFlash] = useFlash();
+
+  useEffect(() => {
+    assistantStatus()
+      .then(setStatus)
+      .catch((e) => setError(String(e)));
+  }, []);
+
+  const changeKey = async (value: string) => {
+    setBusy(true);
+    setError(null);
+    try {
+      await saveAssistantKey(value);
+      setKey("");
+      setStatus(await assistantStatus());
+      setFlash(value.trim() ? "Key geprüft und gespeichert" : "Key entfernt");
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const chooseModel = async (model: string) => {
+    setError(null);
+    try {
+      await setAssistantModel(model);
+      setStatus((s) => (s ? { ...s, model } : s));
+      setFlash("Modell geändert");
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+
+  const current = ASSISTANT_MODELS.find((m) => m.id === status?.model) ?? ASSISTANT_MODELS[0];
+
+  return (
+    <>
+      <Group title="Anbindung">
+        <Row label="Anthropic API-Key" hint="Aus der Anthropic Console (console.anthropic.com). Die Abrechnung läuft über dein Konto dort, nach Verbrauch." htmlFor="st-anthropic">
+          <input
+            id="st-anthropic"
+            type="password"
+            className="field-control"
+            value={key}
+            placeholder={status?.hasKey ? "Key gespeichert, zum Ersetzen neuen einfügen" : "sk-ant-…"}
+            autoComplete="off"
+            spellCheck={false}
+            onChange={(e) => {
+              setKey(e.target.value);
+              setFlash(null);
+            }}
+            onKeyDown={(e) => e.key === "Enter" && key.trim() && !busy && void changeKey(key)}
+          />
+        </Row>
+        <div className="st-row compact">
+          <span className="st-hint">Der Key liegt verschlüsselt im Windows-Schlüsselspeicher dieses Benutzers, nicht in der Datenbank. Er wird nicht abgeglichen und muss auf jedem Rechner neu eingetragen werden.</span>
+        </div>
+      </Group>
+      <div className="st-actions">
+        {flash && (
+          <span className="st-flash">
+            <Check size={14} /> {flash}
+          </span>
+        )}
+        {status?.hasKey && (
+          <SecondaryButton className="danger" disabled={busy} onClick={() => void changeKey("")}>
+            Key entfernen
+          </SecondaryButton>
+        )}
+        <Button disabled={busy || !key.trim()} onClick={() => void changeKey(key)}>
+          {busy ? "Prüfe …" : "Testen und speichern"}
+        </Button>
+      </div>
+      {error && <p className="field-error">{error}</p>}
+
+      <Group title="Modell">
+        <Row label="Modell" hint={current.hint}>
+          <div className="segmented" role="radiogroup" aria-label="Modell">
+            {ASSISTANT_MODELS.map((m) => (
+              <button key={m.id} type="button" role="radio" aria-checked={m.id === current.id} className={m.id === current.id ? "active" : ""} onClick={() => void chooseModel(m.id)}>
+                {m.label}
+              </button>
+            ))}
+          </div>
+        </Row>
+      </Group>
+
+      <Group title="Hinweise">
+        <div className="st-note">
+          <p>Der Assistent liest nur. Er kann nichts ändern, anlegen oder löschen.</p>
+          <p>Für eine Antwort schickt die App die dazu nötigen Auszüge deiner Aufgaben, Termine, Notizen und Seiten an Anthropic. Trading und Strategien bleiben ausgeschlossen.</p>
+          <p>Auf einem Firmenrechner nutze den Assistenten nur, wenn die IT es für diese Daten erlaubt.</p>
+        </div>
+      </Group>
+    </>
+  );
+}
+
 function TradingSection() {
   const [apiKey, setApiKey] = useState("");
   const [saved, setSaved] = useState("");
@@ -321,6 +427,8 @@ function TradingSection() {
 
 const SHORTCUTS: { keys: string; what: string }[] = [
   { keys: "Strg B", what: "Seitenleiste ein- und ausblenden" },
+  { keys: "Strg J", what: "Assistent ein- und ausblenden" },
+  { keys: "Strg K", what: "Suche und Befehle öffnen" },
   { keys: "Strg Z / Strg Y", what: "Rückgängig / Wiederholen im Editor" },
   { keys: "Strg I / Strg U", what: "Kursiv / Unterstrichen im Editor" },
   { keys: "Enter", what: "Im Kalender Termin zur Markierung anlegen" },
@@ -400,6 +508,7 @@ export function SettingsModal({ onClose, initial = "profile" }: SettingsModalPro
             {section === "appearance" && <AppearanceSection />}
             {section === "data" && <DataSection />}
             {section === "sync" && <SyncPanel onClose={onClose} />}
+            {section === "assistant" && <AssistantSection />}
             {section === "trading" && <TradingSection />}
             {section === "about" && <AboutSection />}
           </div>

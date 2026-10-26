@@ -17,6 +17,7 @@ import { SyncProvider } from "./lib/useSync";
 import { EditorThemeProvider } from "./lib/editorTheme";
 import { SyncBanner } from "./components/sync/SyncBanner";
 import { CommandPalette } from "./components/search/CommandPalette";
+import { AssistantPanel } from "./components/assistant/AssistantPanel";
 import "./App.css";
 
 const views: Record<ViewId, ComponentType> = {
@@ -30,6 +31,7 @@ const views: Record<ViewId, ComponentType> = {
 };
 
 const SIDEBAR_KEY = "sidebarCollapsed";
+const ASSISTANT_KEY = "assistantOpen";
 
 function Main() {
   const [view, setView] = useState<ViewId>("dashboard");
@@ -40,10 +42,18 @@ function Main() {
       return false;
     }
   });
+  const [assistantOpen, setAssistantOpen] = useState(() => {
+    try {
+      return localStorage.getItem(ASSISTANT_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
   const [searchOpen, setSearchOpen] = useState(false);
   const View = views[view];
 
   const toggleSidebar = () => setCollapsed((c) => !c);
+  const toggleAssistant = () => setAssistantOpen((o) => !o);
 
   useEffect(() => {
     try {
@@ -53,7 +63,15 @@ function Main() {
     }
   }, [collapsed]);
 
-  // Strg+B blendet die Seitenleiste ein/aus, Strg+K öffnet den Schnellzugriff
+  useEffect(() => {
+    try {
+      localStorage.setItem(ASSISTANT_KEY, assistantOpen ? "1" : "0");
+    } catch {
+      /* Speichern ist nur Komfort */
+    }
+  }, [assistantOpen]);
+
+  // Strg+B blendet die Seitenleiste ein/aus, Strg+J den Assistenten, Strg+K öffnet den Schnellzugriff
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (!(e.ctrlKey || e.metaKey)) return;
@@ -61,6 +79,9 @@ function Main() {
       if (key === "b") {
         e.preventDefault();
         setCollapsed((c) => !c);
+      } else if (key === "j") {
+        e.preventDefault();
+        setAssistantOpen((o) => !o);
       } else if (key === "k") {
         e.preventDefault();
         setSearchOpen((open) => !open);
@@ -74,12 +95,19 @@ function Main() {
     <NavigationContext.Provider value={setView}>
       <DialogsProvider>
         <div className="app-shell">
-          <TitleBar sidebarCollapsed={collapsed} onToggleSidebar={toggleSidebar} onSearch={() => setSearchOpen(true)} />
+          <TitleBar
+            sidebarCollapsed={collapsed}
+            onToggleSidebar={toggleSidebar}
+            onSearch={() => setSearchOpen(true)}
+            assistantOpen={assistantOpen}
+            onToggleAssistant={toggleAssistant}
+          />
           <div className="app-body">
             <Sidebar active={view} onNavigate={setView} collapsed={collapsed} />
             <main className="app-content">
               <View />
             </main>
+            <AssistantPanel open={assistantOpen} onClose={() => setAssistantOpen(false)} />
             <SyncBanner />
           </div>
         </div>

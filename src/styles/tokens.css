@@ -83,6 +83,7 @@
   /* Layout */
   --titlebar-height: 36px;
   --sidebar-width: 244px;
+  --assistant-width: 380px;
 
   color: var(--text);
   background-color: var(--bg-app);
