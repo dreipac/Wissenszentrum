@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { notifyChange } from "../changes";
-import type { DocNodeSpec } from "../docBlocks";
+import type { DocNodeSpec, EditOp } from "../docBlocks";
 import type { DocInput, DocKind, DocPage } from "../docs";
 import { docsStore } from "./docsPreview";
 import { inTauri } from "./runtime";
@@ -20,6 +20,10 @@ export const createDocPage = (parentId: number | null, title: string, kind: DocK
 /** Legt Ordner und Seiten samt Inhalt in einem Zug an (ganz oder gar nicht) und liefert die Nummern der obersten Einträge. */
 export const createDocTree = (parentId: number | null, nodes: DocNodeSpec[]): Promise<number[]> =>
   changed(inTauri ? invoke("create_doc_tree", { parentId, nodes }) : docsStore.createTree(parentId, nodes));
+
+/** Setzt eine bestätigte Änderung des Assistenten um. Die Seite darf sich seit dem Vorschlag nicht geändert haben. */
+export const applyDocEdit = (id: number, baseUpdatedAt: string, newTitle: string | null, ops: EditOp[]): Promise<DocPage> =>
+  changed(inTauri ? invoke("apply_doc_edit", { id, baseUpdatedAt, newTitle, ops }) : docsStore.applyEdit(id, baseUpdatedAt, newTitle, ops));
 
 export const updateDocPage = (id: number, input: DocInput): Promise<DocPage> =>
   changed(inTauri ? invoke("update_doc_page", { id, input }) : docsStore.update(id, input));

@@ -1,4 +1,4 @@
-import { blocksToHtml, blocksToPlain, type DocNodeSpec } from "../docBlocks";
+import { blocksToHtml, blocksToPlain, type DocBlock, type DocNodeSpec, type EditLine, type EditOp } from "../docBlocks";
 import { MAX_DEPTH, buildTree, descendantIds, subtreeHeight, type DocInput, type DocKind, type DocNode, type DocPage } from "../docs";
 
 // Browser-Preview ohne Tauri: dieselben Regeln wie im Backend, aber nur im Speicher.
@@ -37,7 +37,22 @@ const nodeOf = (id: number): DocNode => buildTree(pages).flatMap(function walk(n
   return n.page.id === id ? [n] : n.children.flatMap(walk);
 })[0];
 
+// Nur für den Vorschau-Assistenten: die Seite nach einem vorgeschlagenen Umbau, damit „Übernehmen“ etwas bewirkt
+const stashed = new Map<number, EditLine[]>();
+
 export const docsStore = {
+  stashEdit(pageId: number, lines: EditLine[]) {
+    stashed.set(pageId, lines);
+  },
+  /** Wie im Backend: nur, wenn sich die Seite seit dem Vorschlag nicht geändert hat. */
+  async applyEdit(id: number, baseUpdatedAt: string, newTitle: string | null, _ops: EditOp[]): Promise<DocPage> {
+    const page = find(id);
+    if (page.updatedAt !== baseUpdatedAt) throw "Die Seite wurde seit dem Vorschlag geändert. Lass dir den Vorschlag neu machen.";
+    const lines = stashed.get(id) ?? [];
+    const blocks: DocBlock[] = lines.flatMap((l) => (l.kind === "same" ? (l.old?.block ? [l.old.block] : []) : l.kind === "removed" ? [] : l.new));
+    Object.assign(page, { title: newTitle ?? page.title, content: blocksToHtml(blocks), plain: blocksToPlain(blocks), updatedAt: utcNow() });
+    return { ...page };
+  },
   async list(): Promise<DocPage[]> {
     return pages.map((p) => ({ ...p }));
   },

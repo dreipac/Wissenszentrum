@@ -68,6 +68,64 @@ fn text_ok(what: &str, text: &str, max: usize) -> Result<(), String> {
     Ok(())
 }
 
+/// Prüft einen einzelnen Baustein (Länge, Aufbau). Die Reihenfolge der Überschriften prüft der Aufrufer.
+pub fn check_block(page: &str, block: &Block, stats: &mut Stats) -> Result<(), String> {
+    match block {
+        Block::Heading { level, text } => {
+            if !(1..=3).contains(level) {
+                return Err(format!("Seite „{page}“: Überschriften gibt es nur in den Ebenen 1 bis 3."));
+            }
+            text_ok(&format!("Eine Überschrift auf Seite „{page}“"), text, MAX_HEADING)?;
+            stats.headings += 1;
+        }
+        Block::Paragraph { text } => text_ok(&format!("Ein Absatz auf Seite „{page}“"), text, MAX_TEXT)?,
+        Block::Quote { text } => text_ok(&format!("Ein Zitat auf Seite „{page}“"), text, MAX_TEXT)?,
+        Block::Code { text } => text_ok(&format!("Ein Codeblock auf Seite „{page}“"), text, MAX_TEXT)?,
+        Block::BulletList { items } | Block::NumberedList { items } => {
+            if items.is_empty() || items.len() > MAX_ITEMS {
+                return Err(format!("Eine Liste auf Seite „{page}“ braucht 1 bis {MAX_ITEMS} Einträge."));
+            }
+            for item in items {
+                text_ok(&format!("Ein Listeneintrag auf Seite „{page}“"), item, MAX_CELL)?;
+            }
+        }
+        Block::Table { headers, rows } => {
+            if headers.is_empty() || headers.len() > MAX_COLS {
+                return Err(format!("Eine Tabelle auf Seite „{page}“ braucht 1 bis {MAX_COLS} Spalten."));
+            }
+            if rows.is_empty() || rows.len() > MAX_ROWS {
+                return Err(format!("Eine Tabelle auf Seite „{page}“ braucht 1 bis {MAX_ROWS} Zeilen."));
+            }
+            for header in headers {
+                text_ok(&format!("Eine Spaltenüberschrift der Tabelle auf Seite „{page}“"), header, MAX_CELL)?;
+            }
+            for (i, row) in rows.iter().enumerate() {
+                if row.len() != headers.len() {
+                    return Err(format!("Tabelle auf Seite „{page}“: Zeile {} hat {} statt {} Zellen. Jede Zeile braucht so viele Zellen wie Spalten.", i + 1, row.len(), headers.len()));
+                }
+                if row.iter().any(|c| c.chars().count() > MAX_CELL) {
+                    return Err(format!("Tabelle auf Seite „{page}“: Eine Zelle ist zu lang (höchstens {MAX_CELL} Zeichen)."));
+                }
+            }
+            stats.tables += 1;
+        }
+        Block::Divider => stats.dividers += 1,
+    }
+    Ok(())
+}
+
+/// Die Meldung, wenn eine Überschrift eine Ebene überspringt. `before` ist die Ebene der Überschrift davor (0 = keine).
+pub fn heading_order_error(page: &str, level: u8, text: &str, before: u8) -> Option<String> {
+    if level <= before + 1 {
+        return None;
+    }
+    Some(if before == 0 {
+        format!("Seite „{page}“: Die erste Überschrift muss Ebene 1 haben, nicht {level}.")
+    } else {
+        format!("Seite „{page}“: Überschrift „{}“ (Ebene {level}) überspringt eine Ebene. Auf Ebene {before} folgt höchstens Ebene {}.", text.trim(), before + 1)
+    })
+}
+
 fn validate_blocks(page: &str, blocks: &[Block], stats: &mut Stats) -> Result<(), String> {
     if blocks.len() > MAX_BLOCKS {
         return Err(format!("Seite „{page}“ hat zu viele Bausteine (höchstens {MAX_BLOCKS})."));
@@ -75,54 +133,12 @@ fn validate_blocks(page: &str, blocks: &[Block], stats: &mut Stats) -> Result<()
     // Überschriften bauen aufeinander auf: Ebene 1, darunter 2, darunter 3, keine Ebene wird übersprungen
     let mut level = 0u8;
     for block in blocks {
-        match block {
-            Block::Heading { level: l, text } => {
-                if !(1..=3).contains(l) {
-                    return Err(format!("Seite „{page}“: Überschriften gibt es nur in den Ebenen 1 bis 3."));
-                }
-                text_ok(&format!("Eine Überschrift auf Seite „{page}“"), text, MAX_HEADING)?;
-                if *l > level + 1 {
-                    return Err(if level == 0 {
-                        format!("Seite „{page}“: Die erste Überschrift muss Ebene 1 haben, nicht {l}.")
-                    } else {
-                        format!("Seite „{page}“: Überschrift „{}“ (Ebene {l}) überspringt eine Ebene. Auf Ebene {level} folgt höchstens Ebene {}.", text.trim(), level + 1)
-                    });
-                }
-                level = *l;
-                stats.headings += 1;
+        check_block(page, block, &mut *stats)?;
+        if let Block::Heading { level: l, text } = block {
+            if let Some(e) = heading_order_error(page, *l, text, level) {
+                return Err(e);
             }
-            Block::Paragraph { text } => text_ok(&format!("Ein Absatz auf Seite „{page}“"), text, MAX_TEXT)?,
-            Block::Quote { text } => text_ok(&format!("Ein Zitat auf Seite „{page}“"), text, MAX_TEXT)?,
-            Block::Code { text } => text_ok(&format!("Ein Codeblock auf Seite „{page}“"), text, MAX_TEXT)?,
-            Block::BulletList { items } | Block::NumberedList { items } => {
-                if items.is_empty() || items.len() > MAX_ITEMS {
-                    return Err(format!("Eine Liste auf Seite „{page}“ braucht 1 bis {MAX_ITEMS} Einträge."));
-                }
-                for item in items {
-                    text_ok(&format!("Ein Listeneintrag auf Seite „{page}“"), item, MAX_CELL)?;
-                }
-            }
-            Block::Table { headers, rows } => {
-                if headers.is_empty() || headers.len() > MAX_COLS {
-                    return Err(format!("Eine Tabelle auf Seite „{page}“ braucht 1 bis {MAX_COLS} Spalten."));
-                }
-                if rows.is_empty() || rows.len() > MAX_ROWS {
-                    return Err(format!("Eine Tabelle auf Seite „{page}“ braucht 1 bis {MAX_ROWS} Zeilen."));
-                }
-                for header in headers {
-                    text_ok(&format!("Eine Spaltenüberschrift der Tabelle auf Seite „{page}“"), header, MAX_CELL)?;
-                }
-                for (i, row) in rows.iter().enumerate() {
-                    if row.len() != headers.len() {
-                        return Err(format!("Tabelle auf Seite „{page}“: Zeile {} hat {} statt {} Zellen. Jede Zeile braucht so viele Zellen wie Spalten.", i + 1, row.len(), headers.len()));
-                    }
-                    if row.iter().any(|c| c.chars().count() > MAX_CELL) {
-                        return Err(format!("Tabelle auf Seite „{page}“: Eine Zelle ist zu lang (höchstens {MAX_CELL} Zeichen)."));
-                    }
-                }
-                stats.tables += 1;
-            }
-            Block::Divider => stats.dividers += 1,
+            level = *l;
         }
     }
     Ok(())
@@ -284,7 +300,7 @@ pub fn block_html(block: &Block) -> String {
 }
 
 /// Reiner Text aus HTML für die Suche: Tags weg, Umbrüche als Zeilenwechsel.
-fn plain_of(html: &str) -> String {
+pub fn plain_of(html: &str) -> String {
     let mut out = String::new();
     let mut in_tag = false;
     let mut tag = String::new();

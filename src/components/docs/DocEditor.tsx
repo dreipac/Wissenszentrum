@@ -157,6 +157,18 @@ export function DocEditor({ page, editing, subpages, onOpen }: DocEditorProps) {
     },
   });
 
+  // Ändert sich die Seite von außen (z. B. übernimmt man einen Vorschlag des Assistenten), erscheint der neue Stand hier.
+  // Wer gerade tippt (nicht gespeicherte Änderungen), behält seinen Text.
+  useEffect(() => {
+    if (!editor || dirty.current) return;
+    if (page.content === draft.current.content && page.title === draft.current.title) return;
+    draft.current = { title: page.title, content: page.content, plain: page.plain };
+    setTitle(page.title);
+    editor.commands.setContent(page.content, { emitUpdate: false });
+    setOutline(readOutline(editor));
+    setEmpty(page.plain.trim() === "");
+  }, [editor, page.content, page.title, page.plain]);
+
   // Bilder verkleinern, speichern und an der Stelle einfügen (Cursor, Ablageort oder Ende)
   insertImages.current = (files, pos) => {
     if (!editor) return;

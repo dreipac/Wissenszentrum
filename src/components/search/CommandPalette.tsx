@@ -14,6 +14,7 @@ import {
   RefreshCw,
   Search,
   Settings,
+  Sparkles,
   TrendingUp,
   type LucideIcon,
 } from "lucide-react";
@@ -119,6 +120,7 @@ export function CommandPalette({ onClose, onToggleSidebar }: CommandPaletteProps
       { id: "calendar", label: "Kalender", icon: CalendarDays, words: "termine" },
       { id: "notes", label: "Notizen", icon: NotebookText, words: "notiz" },
       { id: "docs", label: "Dokumentation", icon: BookOpen, words: "wiki seiten" },
+      { id: "assistant", label: "Assistent", icon: Sparkles, words: "ki chat projekte fragen" },
       { id: "trading", label: "Trading", icon: TrendingUp, words: "vermögen positionen assets depot" },
       { id: "strategies", label: "Strategien", icon: Network, words: "graph" },
     ];

@@ -1,6 +1,7 @@
 mod assistant;
 mod db;
 mod docbuild;
+mod dochtml;
 mod docs;
 mod events;
 mod files;
@@ -8,6 +9,7 @@ mod finnhub;
 mod journal;
 mod notes;
 mod profile;
+mod projects;
 mod strategies;
 mod sync;
 mod tasks;
@@ -528,6 +530,17 @@ fn add_attachment(db: State<Db>, request: tauri::ipc::Request<'_>) -> Result<fil
     files::add(&conn, &name, &header("x-mime"), bytes)
 }
 
+/// Schreibt einen Export (Word-Datei) an den im Dialog gewählten Ort. Rohe Bytes als Körper, der Pfad steht prozentkodiert
+/// in der Kopfzeile `x-path`.
+#[tauri::command]
+fn write_export_file(request: tauri::ipc::Request<'_>) -> Result<(), String> {
+    let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else {
+        return Err("Die Datei kam nicht an.".into());
+    };
+    let path = request.headers().get("x-path").and_then(|v| v.to_str().ok()).map(files::percent_decode).unwrap_or_default();
+    files::write_export(&path, bytes)
+}
+
 /// Schreibt einen Anhang an einen vom Nutzer gewählten Ort („Speichern unter“).
 #[tauri::command]
 fn save_attachment(db: State<Db>, id: i64, path: String) -> Result<(), String> {
@@ -596,6 +609,38 @@ fn create_doc_page(db: State<Db>, parent_id: Option<i64>, title: String, kind: S
 fn create_doc_tree(db: State<Db>, parent_id: Option<i64>, nodes: Vec<docbuild::DocNodeSpec>) -> Result<Vec<i64>, String> {
     let conn = lock(&db)?;
     docbuild::create_tree(&conn, parent_id, &nodes)
+}
+
+/// Setzt eine vom Assistenten vorgeschlagene und bestätigte Änderung an einer Seite um. Die Seite darf sich seit dem
+/// Vorschlag nicht geändert haben.
+#[tauri::command]
+fn apply_doc_edit(db: State<Db>, id: i64, base_updated_at: String, new_title: Option<String>, ops: Vec<dochtml::EditOp>) -> Result<DocPage, String> {
+    let conn = lock(&db)?;
+    dochtml::apply_to_page(&conn, id, &base_updated_at, new_title.as_deref(), &ops)
+}
+
+#[tauri::command]
+fn list_assistant_projects(db: State<Db>) -> Result<Vec<projects::Project>, String> {
+    let conn = lock(&db)?;
+    projects::list(&conn)
+}
+
+#[tauri::command]
+fn create_assistant_project(db: State<Db>, input: projects::ProjectInput) -> Result<projects::Project, String> {
+    let conn = lock(&db)?;
+    projects::create(&conn, &input)
+}
+
+#[tauri::command]
+fn update_assistant_project(db: State<Db>, id: i64, input: projects::ProjectInput) -> Result<projects::Project, String> {
+    let conn = lock(&db)?;
+    projects::update(&conn, id, &input)
+}
+
+#[tauri::command]
+fn delete_assistant_project(db: State<Db>, id: i64) -> Result<(), String> {
+    let conn = lock(&db)?;
+    projects::delete(&conn, id)
 }
 
 #[tauri::command]
@@ -1016,9 +1061,15 @@ pub fn run() {
             get_doc_image,
             add_attachment,
             save_attachment,
+            write_export_file,
             open_attachment,
             create_doc_page,
             create_doc_tree,
+            list_assistant_projects,
+            create_assistant_project,
+            update_assistant_project,
+            delete_assistant_project,
+            apply_doc_edit,
             update_doc_page,
             set_doc_favorite,
             move_doc_page,

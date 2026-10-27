@@ -1,0 +1,135 @@
+/* Export einer Seite als Word-Dokument */
+.dx-summary {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  background-color: var(--bg-sidebar);
+}
+
+.dx-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  background-color: var(--bg-card);
+  color: var(--text-muted);
+}
+
+.dx-summary > div {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.dx-summary strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.dx-summary span:not(.dx-icon) {
+  font-size: 0.78rem;
+  color: var(--text-faint);
+}
+
+.dx-option {
+  align-items: flex-start;
+  gap: 0.7rem;
+  font-size: 0.9rem;
+}
+
+.dx-option .check {
+  margin-top: 2px;
+}
+
+.dx-option > span:last-child {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.dx-option em {
+  font-size: 0.78rem;
+  font-style: normal;
+  line-height: 1.4;
+  color: var(--text-faint);
+}
+
+.dx-hint {
+  margin: 0;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: var(--text-faint);
+}
+
+/* Rückmeldung nach dem Export, unten mittig */
+.dx-toast {
+  position: fixed;
+  bottom: 1.5rem;
+  left: 50%;
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  max-width: min(560px, calc(100vw - 2rem));
+  padding: 0.65rem 0.6rem 0.65rem 0.9rem;
+  border: 1px solid var(--border-strong);
+  border-left: 3px solid var(--positive);
+  border-radius: var(--radius-lg);
+  background-color: var(--bg-card);
+  box-shadow: var(--shadow-pop);
+  transform: translateX(-50%);
+  animation: dx-toast-in 0.2s ease;
+}
+
+.dx-toast.error {
+  border-left-color: var(--negative);
+}
+
+.dx-toast > svg {
+  flex-shrink: 0;
+  color: var(--positive);
+}
+
+.dx-toast.error > svg {
+  color: var(--negative);
+}
+
+.dx-toast-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  font-size: 0.85rem;
+}
+
+.dx-toast-text strong {
+  font-weight: 600;
+}
+
+.dx-toast-text span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.76rem;
+  color: var(--text-muted);
+}
+
+@keyframes dx-toast-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%);
+  }
+}

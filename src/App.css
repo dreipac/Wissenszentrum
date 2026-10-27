@@ -18,6 +18,11 @@
   background-color: var(--bg-app);
 }
 
+/* Große Ansicht des Assistenten: das Panel übernimmt den Platz der Ansicht */
+.app-body.assistant-page .app-content {
+  display: none;
+}
+
 .app-error {
   margin: 2rem;
 }

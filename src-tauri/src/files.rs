@@ -192,6 +192,26 @@ pub fn sync_changes(conn: &Connection, watches: &Watches, settle: bool) -> Vec<F
     updated
 }
 
+/// Schreibt einen Export (Word-Datei) an den Ort, den die Person im Speichern-Dialog gewählt hat. Nur `.docx` in einem
+/// vorhandenen Ordner; eine bestehende Datei wird überschrieben (das hat der Dialog schon abgefragt).
+pub fn write_export(path: &str, data: &[u8]) -> Result<(), String> {
+    let target = std::path::Path::new(path);
+    let is_docx = target.extension().map(|e| e.eq_ignore_ascii_case("docx")).unwrap_or(false);
+    if !is_docx {
+        return Err("Es kann nur eine Word-Datei (.docx) gespeichert werden.".into());
+    }
+    if target.is_dir() {
+        return Err("Der gewählte Ort ist ein Ordner.".into());
+    }
+    if !target.parent().map(|p| p.as_os_str().is_empty() || p.is_dir()).unwrap_or(false) {
+        return Err("Der gewählte Ordner existiert nicht.".into());
+    }
+    if data.is_empty() {
+        return Err("Die Datei ist leer.".into());
+    }
+    std::fs::write(target, data).map_err(|e| format!("Die Datei konnte nicht gespeichert werden: {e}"))
+}
+
 /// Darf diese Datei direkt geöffnet werden? Programme und Skripte nicht.
 pub fn can_open(name: &str) -> bool {
     let ext = name.rsplit_once('.').map(|(_, e)| e.to_lowercase()).unwrap_or_default();
@@ -343,5 +363,22 @@ mod tests {
         }
         assert!(sync_changes(&c, &watches, true).is_empty());
         assert!(watches.is_empty());
+    }
+
+    #[test]
+    fn exports_are_written_only_as_docx_into_existing_folders() {
+        let dir = std::env::temp_dir().join(format!("wz-export-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let ok = dir.join("Seite.DOCX");
+        write_export(ok.to_str().unwrap(), b"PK-test").unwrap();
+        assert_eq!(std::fs::read(&ok).unwrap(), b"PK-test");
+        write_export(ok.to_str().unwrap(), b"neu").unwrap();
+        assert_eq!(std::fs::read(&ok).unwrap(), b"neu", "überschreibt");
+
+        assert!(write_export(dir.join("x.exe").to_str().unwrap(), b"x").is_err(), "nur .docx");
+        assert!(write_export(dir.join("x").to_str().unwrap(), b"x").is_err());
+        assert!(write_export(dir.join("fehlt").join("x.docx").to_str().unwrap(), b"x").is_err(), "Ordner muss existieren");
+        assert!(write_export(ok.to_str().unwrap(), b"").is_err(), "leer");
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

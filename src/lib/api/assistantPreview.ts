@@ -1,6 +1,8 @@
 import { addDays, startOfDay, toDateStr, toDateTimeStr } from "../dates";
 import { listEvents } from "./events";
 import { listBuckets, listTasks } from "./tasks";
+import { docsStore } from "./docsPreview";
+import type { DocBlock, EditLine } from "../docBlocks";
 import type { AssistantAnswer, ChatTurn } from "./assistant";
 
 // Nur für den Browser-Preview (npm run dev ohne Tauri-Fenster): feste Beispielantworten statt einer echten KI.
@@ -15,6 +17,7 @@ const TODAY: AssistantAnswer = {
   deletions: [],
   tasks: [],
   choices: [],
+  docEdits: [],
   docs: [],
   actions: [],
 };
@@ -27,6 +30,7 @@ const FALLBACK: AssistantAnswer = {
   deletions: [],
   tasks: [],
   choices: [],
+  docEdits: [],
   docs: [],
   actions: [],
 };
@@ -51,6 +55,7 @@ const PROPOSE = (): AssistantAnswer => {
     deletions: [],
     tasks: [],
     choices: [],
+  docEdits: [],
   docs: [],
   actions: [],
   };
@@ -79,6 +84,7 @@ const DELETE = async (): Promise<AssistantAnswer> => {
     ],
     tasks: [],
     choices: [],
+  docEdits: [],
   docs: [],
   actions: [],
   };
@@ -88,7 +94,8 @@ const fmt = (dt: string) => `${dt.slice(8, 10)}.${dt.slice(5, 7)}.${dt.slice(0, 
 
 /** Vorschläge für Änderungen an Bestehendem, passend zu dem, was die Person schreibt. */
 const CHANGE = async (last: string): Promise<AssistantAnswer> => {
-  const empty = { sources: [], proposals: [], deletions: [], tasks: [], choices: [], docs: [] };
+  const empty = { sources: [], proposals: [], deletions: [], tasks: [], choices: [],
+  docEdits: [], docs: [] };
   const base = { bucket: null, dueDate: null, startsAt: null, endsAt: null, allDay: false, changes: [], input: null };
   const today = startOfDay(new Date());
 
@@ -172,6 +179,7 @@ const DOCS = (): AssistantAnswer => ({
   deletions: [],
   tasks: [],
   choices: [],
+  docEdits: [],
   actions: [],
   docs: [
     {
@@ -217,6 +225,67 @@ const DOCS = (): AssistantAnswer => ({
   ],
 });
 
+/** Die Beispielseite „Überblick“ aus dem Vorschlag oben, hier als bestehende Seite. */
+const SAMPLE: DocBlock[] = [
+  { type: "heading", level: 1, text: "Ziel" },
+  { type: "paragraph", text: "Das Projekt bündelt **alle Unterlagen** an einem Ort." },
+  { type: "heading", level: 2, text: "Beteiligte" },
+  { type: "bullet_list", items: ["Projektleitung", "Entwicklung", "Fachbereich"] },
+  { type: "divider" },
+  { type: "heading", level: 1, text: "Zeitplan" },
+  { type: "table", headers: ["Phase", "Start", "Ende"], rows: [["Planung", "01.11.", "15.11."], ["Umsetzung", "16.11.", "20.12."]] },
+];
+
+/** Änderung an einer bestehenden Seite: Neues in Grün, Ersetztes und Entfallendes in Rot. */
+const EDIT = async (): Promise<AssistantAnswer> => {
+  const page = (await docsStore.list()).find((p) => p.kind === "page" && p.title === "Überblick");
+  if (!page) return { ...FALLBACK, text: "Ich finde keine Seite „Überblick“. Lege sie zuerst an: „Leg in der Dokumentation einen Ordner mit Seiten an“." };
+  const same = (b: DocBlock): EditLine => ({ kind: "same", old: { block: b, label: "", text: "" }, new: [] });
+  const lines: EditLine[] = [
+    same(SAMPLE[0]),
+    {
+      kind: "replaced",
+      old: { block: SAMPLE[1], label: "Absatz", text: "" },
+      new: [{ type: "paragraph", text: "Das Projekt bündelt **alle Unterlagen, Entscheidungen und Termine** an einem Ort." }],
+    },
+    same(SAMPLE[2]),
+    same(SAMPLE[3]),
+    { kind: "added", old: null, new: [{ type: "paragraph", text: "Zusätzlich beteiligt: *Einkauf* und Recht." }] },
+    { kind: "removed", old: { block: SAMPLE[4], label: "Trennlinie", text: "" }, new: [] },
+    same(SAMPLE[5]),
+    {
+      kind: "replaced",
+      old: { block: SAMPLE[6], label: "Tabelle", text: "" },
+      new: [{ type: "table", headers: ["Phase", "Start", "Ende"], rows: [["Planung", "01.11.", "15.11."], ["Umsetzung", "16.11.", "20.12."], ["Abnahme", "21.12.", "10.01."]] }],
+    },
+    { kind: "added", old: null, new: [{ type: "heading", level: 2, text: "Offene Punkte" }, { type: "numbered_list", items: ["Budget freigeben", "Termine bestätigen"] }] },
+  ];
+  docsStore.stashEdit(page.id, lines);
+  return {
+    steps: ["Seite gelesen", "Seitenänderung vorgeschlagen"],
+    text: "Ich habe die Seite „Überblick“ überarbeitet: ein Absatz ist neu formuliert, die Tabelle hat eine Zeile mehr, ein Abschnitt „Offene Punkte“ kommt dazu. Prüfe die Änderungen in der Vorschau.",
+    sources: [],
+    proposals: [],
+    deletions: [],
+    tasks: [],
+    choices: [],
+    actions: [],
+    docs: [],
+    docEdits: [
+      {
+        pageId: page.id,
+        title: page.title,
+        newTitle: null,
+        path: "Projekt Alpha",
+        baseUpdatedAt: page.updatedAt,
+        ops: [],
+        lines,
+        stats: { added: 5, replaced: 2, removed: 3 },
+      },
+    ],
+  };
+};
+
 /** Erst die Bucket-Auswahl, nach der Wahl der Aufgabenvorschlag – wie beim echten Assistenten. */
 const CHOOSE = async (): Promise<AssistantAnswer> => {
   const buckets = await listBuckets();
@@ -231,6 +300,7 @@ const CHOOSE = async (): Promise<AssistantAnswer> => {
     choices: [{ taskTitle: "Angebot überarbeiten", buckets: buckets.map((b) => ({ id: b.id, name: b.name, color: b.color, openTasks: 0 })) }],
     actions: [],
     docs: [],
+    docEdits: [],
   };
 };
 
@@ -255,6 +325,7 @@ const TASK = async (bucketName: string | null): Promise<AssistantAnswer> => {
       },
     ],
     choices: [],
+  docEdits: [],
   docs: [],
   actions: [],
   };
@@ -262,7 +333,9 @@ const TASK = async (bucketName: string | null): Promise<AssistantAnswer> => {
 
 export async function previewAnswer(history: ChatTurn[], onStep: (step: string) => void): Promise<AssistantAnswer> {
   const last = history[history.length - 1]?.text ?? "";
-  const answer = /(doku|seite|ordner)/i.test(last) && /(anleg|erstell|leg|schreib)/i.test(last)
+  const answer = /(ändere|passe|überarbeite|ergänze).*(seite|doku)|(seite|doku).*(ändern|anpassen|überarbeiten|ergänzen)/i.test(last)
+    ? await EDIT()
+    : /(doku|seite|ordner)/i.test(last) && /(anleg|erstell|leg|schreib)/i.test(last)
     ? DOCS()
     : /hake|abhak|erledig|verschieb|ergänz|ändere|aufgabe.*lösch|lösch.*aufgabe/i.test(last)
     ? await CHANGE(last)

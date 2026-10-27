@@ -1,4 +1,4 @@
-import { useEffect, useState, type ComponentType } from "react";
+import { useEffect, useRef, useState, type ComponentType } from "react";
 import { TitleBar } from "./components/layout/TitleBar";
 import { Sidebar } from "./components/layout/Sidebar";
 import { NavigationContext, type ViewId } from "./lib/navigation";
@@ -20,12 +20,16 @@ import { CommandPalette } from "./components/search/CommandPalette";
 import { AssistantPanel } from "./components/assistant/AssistantPanel";
 import "./App.css";
 
+/** Die große Ansicht des Assistenten ist das Panel selbst, das den Platz übernimmt: hier gibt es nichts zu zeigen. */
+const AssistantPage = () => null;
+
 const views: Record<ViewId, ComponentType> = {
   dashboard: DashboardView,
   tasks: TasksView,
   calendar: CalendarView,
   notes: NotesView,
   docs: DocsView,
+  assistant: AssistantPage,
   trading: TradingView,
   strategies: StrategiesView,
 };
@@ -35,6 +39,14 @@ const ASSISTANT_KEY = "assistantOpen";
 
 function Main() {
   const [view, setView] = useState<ViewId>("dashboard");
+  // Wohin „Als Seitenleiste“ in der großen Ansicht des Assistenten zurückführt
+  const previous = useRef<ViewId>("dashboard");
+  const currentView = useRef(view);
+  currentView.current = view;
+  const go = (next: ViewId) => {
+    if (currentView.current !== "assistant") previous.current = currentView.current;
+    setView(next);
+  };
   const [collapsed, setCollapsed] = useState(() => {
     try {
       return localStorage.getItem(SIDEBAR_KEY) === "1";
@@ -51,9 +63,15 @@ function Main() {
   });
   const [searchOpen, setSearchOpen] = useState(false);
   const View = views[view];
+  const assistantPage = view === "assistant";
 
   const toggleSidebar = () => setCollapsed((c) => !c);
-  const toggleAssistant = () => setAssistantOpen((o) => !o);
+  // In der großen Ansicht führt der Schalter zurück, sonst blendet er die Seitenleiste ein oder aus
+  const toggleAssistant = () => (currentView.current === "assistant" ? go(previous.current) : setAssistantOpen((o) => !o));
+  const leaveAssistantPage = () => {
+    go(previous.current);
+    setAssistantOpen(true);
+  };
 
   useEffect(() => {
     try {
@@ -81,7 +99,8 @@ function Main() {
         setCollapsed((c) => !c);
       } else if (key === "j") {
         e.preventDefault();
-        setAssistantOpen((o) => !o);
+        if (currentView.current === "assistant") go(previous.current);
+        else setAssistantOpen((o) => !o);
       } else if (key === "k") {
         e.preventDefault();
         setSearchOpen((open) => !open);
@@ -92,22 +111,28 @@ function Main() {
   }, []);
 
   return (
-    <NavigationContext.Provider value={setView}>
+    <NavigationContext.Provider value={go}>
       <DialogsProvider>
         <div className="app-shell">
           <TitleBar
             sidebarCollapsed={collapsed}
             onToggleSidebar={toggleSidebar}
             onSearch={() => setSearchOpen(true)}
-            assistantOpen={assistantOpen}
+            assistantOpen={assistantOpen || assistantPage}
             onToggleAssistant={toggleAssistant}
           />
-          <div className="app-body">
-            <Sidebar active={view} onNavigate={setView} collapsed={collapsed} />
+          <div className={`app-body${assistantPage ? " assistant-page" : ""}`}>
+            <Sidebar active={view} onNavigate={go} collapsed={collapsed} />
             <main className="app-content">
               <View />
             </main>
-            <AssistantPanel open={assistantOpen} onClose={() => setAssistantOpen(false)} />
+            <AssistantPanel
+              open={assistantOpen || assistantPage}
+              mode={assistantPage ? "page" : "panel"}
+              onClose={() => setAssistantOpen(false)}
+              onExpand={() => go("assistant")}
+              onCollapse={leaveAssistantPage}
+            />
             <SyncBanner />
           </div>
         </div>

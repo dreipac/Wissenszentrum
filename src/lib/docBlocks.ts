@@ -26,6 +26,33 @@ export interface DocStats {
   dividers: number;
 }
 
+/** Eine Änderung an einer bestehenden Seite; die Nummern beziehen sich auf die Bausteine, wie der Assistent sie gelesen hat. */
+export type EditOp =
+  | { op: "replace"; index: number; blocks: DocBlock[] }
+  | { op: "insert_after"; index: number; blocks: DocBlock[] }
+  | { op: "delete"; index: number }
+  | { op: "append"; blocks: DocBlock[] };
+
+/** Ein bestehender Baustein: als Baustein, oder – wenn er sich nicht darstellen lässt (Bild, Datei …) – mit Bezeichnung und Text. */
+export interface ShownBlock {
+  block: DocBlock | null;
+  label: string;
+  text: string;
+}
+
+/** Ein Abschnitt der Seite nach der Änderung: unverändert, neu, ersetzt oder entfernt. */
+export interface EditLine {
+  kind: "same" | "added" | "replaced" | "removed";
+  old: ShownBlock | null;
+  new: DocBlock[];
+}
+
+export interface EditStats {
+  added: number;
+  replaced: number;
+  removed: number;
+}
+
 const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
 /** Nur für den Browser-Preview: einfache Umwandlung ohne die Auszeichnung im Text. Im Programm baut das Backend das HTML. */

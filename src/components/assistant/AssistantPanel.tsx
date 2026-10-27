@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { AlertTriangle, ArrowUp, BookOpen, CalendarDays, CalendarPlus, Check, CheckSquare, ListPlus, KeyRound, NotebookText, RotateCcw, ShieldCheck, SquarePen, Sparkles, X, type LucideIcon } from "lucide-react";
+import { AlertTriangle, ArrowUp, BookOpen, CalendarDays, CalendarPlus, Check, CheckSquare, FolderKanban, ListPlus, Maximize2, PanelRight, PenLine, KeyRound, NotebookText, RotateCcw, ShieldCheck, SquarePen, Sparkles, X, type LucideIcon } from "lucide-react";
 import { Button } from "../ui/Button";
 import { EventModal } from "../calendar/EventModal";
 import { ASSISTANT_CHANGED_EVENT, askAssistant, assistantStatus, modelLabel, type AssistantSource, type AssistantStatus, type EventProposal } from "../../lib/api/assistant";
 import { createEvent, deleteEvent, updateEvent } from "../../lib/api/events";
 import { createTask, deleteTask, setTaskDone, updateTask } from "../../lib/api/tasks";
-import { createDocTree } from "../../lib/api/docs";
+import { applyDocEdit, createDocTree } from "../../lib/api/docs";
 import type { EventInput } from "../../lib/calendar";
 import { useTasks } from "../../lib/useTasks";
 import { TaskModal } from "../tasks/TaskModal";
@@ -15,8 +15,15 @@ import { requestOpenDoc } from "../../lib/docsNav";
 import { useNavigate } from "../../lib/navigation";
 import { requestOpenNote } from "../../lib/notesNav";
 import { requestOpen } from "../../lib/openTarget";
+import { useDocs } from "../../lib/useDocs";
+import { useProjects } from "../../lib/useProjects";
+import { docPath, type Project } from "../../lib/projects";
+import { ProjectBar } from "./ProjectBar";
+import { ProjectModal } from "./ProjectModal";
 import { Markdown } from "./Markdown";
 import { ActionCard, type ActionItem, type ActionStatus } from "./ActionCard";
+import { DocEditCard, type DocEditItem, type DocEditStatus } from "./DocEditCard";
+import { DocEditOverlay } from "./DocEditOverlay";
 import { DocsPreviewOverlay } from "./DocsPreviewOverlay";
 import { DocsProposalCard, type DocsItem, type DocsStatus } from "./DocsProposalCard";
 import { BucketChoiceCard, type BucketChoiceItem } from "./BucketChoiceCard";
@@ -41,6 +48,8 @@ interface Message {
   actions?: ActionItem[];
   /** Vorgeschlagene Ordner und Seiten der Dokumentation mit ihrem Stand */
   docs?: DocsItem[];
+  /** Vorgeschlagene Änderungen an bestehenden Seiten mit ihrem Stand */
+  docEdits?: DocEditItem[];
   /** Bucket-Auswahl vor einem Aufgabenvorschlag */
   choices?: BucketChoiceItem[];
   /** Fehlermeldung statt Antwort */
@@ -55,6 +64,7 @@ const SUGGESTIONS: { icon: LucideIcon; text: string }[] = [
   { icon: CalendarPlus, text: "Trag morgen um 10 Uhr einen Termin „Team-Abstimmung“ ein" },
   { icon: ListPlus, text: "Leg eine neue Aufgabe „Angebot überarbeiten“ an" },
   { icon: BookOpen, text: "Leg in der Dokumentation einen Ordner mit Seiten für ein Projekt an" },
+  { icon: PenLine, text: "Überarbeite die Seite „Überblick“ in meiner Dokumentation" },
 ];
 
 /** Was der Assistent beim nächsten Mal über seine Vorschläge wissen muss: wurden sie angelegt oder verworfen? */
@@ -93,14 +103,23 @@ const DOCS_NOTE: Record<DocsStatus, string> = {
   dismissed: "von der Person verworfen",
 };
 
+const EDIT_NOTE: Record<DocEditStatus, string> = {
+  open: "noch nicht bestätigt, die Seite ist unverändert",
+  applying: "noch nicht bestätigt, die Seite ist unverändert",
+  applied: "von der Person bestätigt und übernommen: lies die Seite neu, bevor du weiter änderst",
+  dismissed: "von der Person verworfen, die Seite ist unverändert",
+};
+
 const proposalNote = (
   proposals: ProposalItem[] | undefined,
   deletions: DeletionItem[] | undefined,
   tasks: TaskProposalItem[] | undefined,
   actions: ActionItem[] | undefined,
   docs: DocsItem[] | undefined,
+  docEdits: DocEditItem[] | undefined,
 ) =>
   [
+    ...(docEdits ?? []).map((e) => `\n[Änderungsvorschlag für die Seite „${e.data.title}“ (id ${e.data.pageId}): ${EDIT_NOTE[e.status]}]`),
     ...(docs ?? []).map((d) => `\n[Vorschlag für die Dokumentation (${d.data.parentPath}: ${d.data.nodes.map((n) => n.title).join(", ")}): ${DOCS_NOTE[d.status]}]`),
     ...(actions ?? []).map((a) => `\n[Vorschlag ${a.data.kind} für „${a.data.title}“ (id ${a.data.id}): ${ACTION_NOTE[a.status]}]`),
     ...(tasks ?? []).map((t) => `\n[Aufgabenvorschlag „${t.data.title}“ (Bucket: ${t.data.bucketName ?? "Ohne Bucket"}): ${TASK_NOTE[t.status]}]`),
@@ -118,17 +137,56 @@ const draftOf = (p: EventProposal) => ({
   allDay: p.allDay,
 });
 
+/** Vorschläge, wenn ein Projekt mit Dokumentation gewählt ist: Fragen und Aufträge zu diesem Bereich. */
+const PROJECT_SUGGESTIONS: { icon: LucideIcon; text: string }[] = [
+  { icon: BookOpen, text: "Gib mir einen Überblick über diesen Bereich" },
+  { icon: BookOpen, text: "Welche Seiten fehlen hier noch?" },
+  { icon: PenLine, text: "Leg hier eine neue Seite an" },
+  { icon: CheckSquare, text: "Welche Aufgaben und Termine passen dazu?" },
+];
+
+const PROJECT_KEY = "assistantProject";
+const NO_MESSAGES: Message[] = [];
+
 interface AssistantPanelProps {
   open: boolean;
   onClose: () => void;
+  /** "panel": schmale Seitenleiste rechts, "page": große Ansicht mit der Leiste der Projekte */
+  mode?: "panel" | "page";
+  /** Öffnet die große Ansicht (nur in der Seitenleiste) */
+  onExpand?: () => void;
+  /** Zurück zur Seitenleiste (nur in der großen Ansicht) */
+  onCollapse?: () => void;
 }
 
-/** Seitenpanel rechts: Fragen an den Assistenten zu Aufgaben, Terminen, Notizen und Dokumentation. */
-export function AssistantPanel({ open, onClose }: AssistantPanelProps) {
+/**
+ * Der Assistent: Fragen zu Aufgaben, Terminen, Notizen und Dokumentation. Als Seitenleiste oder als große Ansicht mit
+ * Projekten; es ist dieselbe Instanz, das Gespräch geht beim Wechsel also weiter. Je Projekt gibt es ein eigenes Gespräch.
+ */
+export function AssistantPanel({ open, onClose, mode = "panel", onExpand, onCollapse }: AssistantPanelProps) {
   const navigate = useNavigate();
+  const page = mode === "page";
   const { openSettings } = useDialogs();
+  const { pages } = useDocs();
+  const { projects } = useProjects();
   const [status, setStatus] = useState<AssistantStatus | null>(null);
-  const [messages, setMessages] = useState<Message[]>([]);
+  // Das aktive Projekt gibt dem Gespräch seinen Kontext; je Projekt bleibt das Gespräch für diese Sitzung erhalten
+  const [activeId, setActiveId] = useState<number | null>(() => {
+    try {
+      const saved = localStorage.getItem(PROJECT_KEY);
+      return saved ? Number(saved) : null;
+    } catch {
+      return null;
+    }
+  });
+  const project = projects.find((p) => p.id === activeId) ?? null;
+  const [projectModal, setProjectModal] = useState<{ project?: Project } | null>(null);
+  const [chats, setChats] = useState<Record<string, Message[]>>({});
+  const chatKey = project ? String(project.id) : "none";
+  const messages = chats[chatKey] ?? NO_MESSAGES;
+  const setMessages = (next: Message[] | ((m: Message[]) => Message[])) =>
+    setChats((all) => ({ ...all, [chatKey]: typeof next === "function" ? next(all[chatKey] ?? NO_MESSAGES) : next }));
+  const contextPath = project ? docPath(pages, project.docId) : "";
   const [draft, setDraft] = useState("");
   const [pending, setPending] = useState(false);
   const [liveSteps, setLiveSteps] = useState<string[]>([]);
@@ -138,6 +196,8 @@ export function AssistantPanel({ open, onClose }: AssistantPanelProps) {
   const [editingTask, setEditingTask] = useState<{ messageId: number; key: number } | null>(null);
   /** Dokumentationsvorschlag, dessen große Vorschau gerade in der Mitte des Fensters offen ist */
   const [docsPreview, setDocsPreview] = useState<{ messageId: number; key: number } | null>(null);
+  /** Seitenänderung, deren Vorschau mit den hervorgehobenen Änderungen gerade offen ist */
+  const [editPreview, setEditPreview] = useState<{ messageId: number; key: number } | null>(null);
   /** Gewählter Bucket je Auswahlkarte (Schlüssel der Karte → Name) */
   const [chosen, setChosen] = useState<Record<number, string>>({});
   const { buckets } = useTasks();
@@ -194,8 +254,8 @@ export function AssistantPanel({ open, onClose }: AssistantPanelProps) {
     setPending(true);
     setLiveSteps([]);
     try {
-      const turns = history.filter((m) => !m.error).map((m) => ({ role: m.role, text: m.text + proposalNote(m.proposals, m.deletions, m.tasks, m.actions, m.docs) }));
-      const answer = await askAssistant(turns, (step) => {
+      const turns = history.filter((m) => !m.error).map((m) => ({ role: m.role, text: m.text + proposalNote(m.proposals, m.deletions, m.tasks, m.actions, m.docs, m.docEdits) }));
+      const answer = await askAssistant(turns, project?.id ?? null, (step) => {
         if (mine === request.current) setLiveSteps((s) => (s.includes(step) ? s : [...s, step]));
       });
       if (mine !== request.current) return;
@@ -205,8 +265,19 @@ export function AssistantPanel({ open, onClose }: AssistantPanelProps) {
       const choices = (answer.choices ?? []).map<BucketChoiceItem>((data) => ({ key: nextId.current++, data }));
       const actions = (answer.actions ?? []).map<ActionItem>((data) => ({ key: nextId.current++, data, status: "open" }));
       const docs = (answer.docs ?? []).map<DocsItem>((data) => ({ key: nextId.current++, data, status: "open" }));
+      const docEdits = (answer.docEdits ?? []).map<DocEditItem>((data) => ({ key: nextId.current++, data, status: "open" }));
       const messageId = nextId.current++;
-      setMessages((m) => [...m, { id: messageId, role: "assistant", text: answer.text, steps: answer.steps, sources: answer.sources, proposals, deletions, tasks, choices, actions, docs }]);
+      // Ein neuer Vorschlag für dieselbe Seite ersetzt den alten, der noch offen ist
+      const replaced = new Set(docEdits.map((e) => e.data.pageId));
+      setMessages((m) => [
+        ...m.map((msg) =>
+          msg.docEdits?.some((e) => e.status === "open" && replaced.has(e.data.pageId))
+            ? { ...msg, docEdits: msg.docEdits.map((e) => (e.status === "open" && replaced.has(e.data.pageId) ? { ...e, status: "dismissed" as const } : e)) }
+            : msg,
+        ),
+        { id: messageId, role: "assistant", text: answer.text, steps: answer.steps, sources: answer.sources, proposals, deletions, tasks, choices, actions, docs, docEdits },
+      ]);
+      if (docEdits.length > 0) setEditPreview({ messageId, key: docEdits[0].key });
       // Seiteninhalte sind für den schmalen Chat zu groß: die Vorschau öffnet sich gleich in der Mitte des Fensters
       if (docs.length > 0) setDocsPreview({ messageId, key: docs[0].key });
     } catch (e) {
@@ -296,6 +367,21 @@ export function AssistantPanel({ open, onClose }: AssistantPanelProps) {
     }
   };
 
+  const patchEdit = (messageId: number, key: number, patch: Partial<DocEditItem>) =>
+    setMessages((list) => list.map((m) => (m.id === messageId ? { ...m, docEdits: m.docEdits?.map((e) => (e.key === key ? { ...e, ...patch } : e)) } : m)));
+
+  /** „Änderungen übernehmen“: setzt die bestätigte Änderung um; die Seite darf sich seit dem Vorschlag nicht geändert haben. */
+  const applyEdit = async (messageId: number, item: DocEditItem) => {
+    patchEdit(messageId, item.key, { status: "applying", error: undefined });
+    try {
+      await applyDocEdit(item.data.pageId, item.data.baseUpdatedAt, item.data.newTitle, item.data.ops);
+      patchEdit(messageId, item.key, { status: "applied" });
+      setEditPreview(null);
+    } catch (e) {
+      patchEdit(messageId, item.key, { status: "open", error: String(e) });
+    }
+  };
+
   const patchDocs = (messageId: number, key: number, patch: Partial<DocsItem>) =>
     setMessages((list) => list.map((m) => (m.id === messageId ? { ...m, docs: m.docs?.map((d) => (d.key === key ? { ...d, ...patch } : d)) } : m)));
 
@@ -351,6 +437,22 @@ export function AssistantPanel({ open, onClose }: AssistantPanelProps) {
     navigate("calendar");
   };
 
+  const selectProject = (id: number | null) => {
+    if (pending) return;
+    setActiveId(id);
+    try {
+      localStorage.setItem(PROJECT_KEY, id === null ? "" : String(id));
+    } catch {
+      /* Speichern ist nur Komfort */
+    }
+    // Offene Vorschauen gehören zum Gespräch des bisherigen Projekts
+    setDocsPreview(null);
+    setEditPreview(null);
+    setEditing(null);
+    setEditingTask(null);
+    window.setTimeout(() => inputRef.current?.focus(), 0);
+  };
+
   const reset = () => {
     request.current++;
     setMessages([]);
@@ -379,26 +481,66 @@ export function AssistantPanel({ open, onClose }: AssistantPanelProps) {
   };
 
   const empty = messages.length === 0 && !pending;
+  const suggestions = project?.docId != null && contextPath ? PROJECT_SUGGESTIONS : SUGGESTIONS;
   const lastIsError = messages[messages.length - 1]?.error !== undefined;
 
   return (
-    <aside className={`assistant${open ? "" : " collapsed"}`} aria-label="Assistent" aria-hidden={!open} inert={!open}>
+    <aside className={`assistant${page ? " page" : ""}${open ? "" : " collapsed"}`} aria-label="Assistent" aria-hidden={!open} inert={!open}>
+      {page && (
+        <ProjectBar
+          projects={projects}
+          pages={pages}
+          activeId={project?.id ?? null}
+          disabled={pending}
+          onSelect={selectProject}
+          onCreate={() => setProjectModal({})}
+          onEdit={(p) => setProjectModal({ project: p })}
+        />
+      )}
       <div className="as-inner">
         <header className="as-head">
-          <div className="as-title">
-            <Sparkles size={15} />
-            <span>Assistent</span>
-            {status?.hasKey && status.model && <span className="tag">{modelLabel(status.model)}</span>}
-          </div>
+          {page ? (
+            <div className="as-page-title">
+              <h1>{project?.name ?? "Assistent"}</h1>
+              <span className="as-context">
+                {project ? contextPath || (project.docId === null ? "Keine Dokumentation zugeordnet" : "Die zugeordnete Seite gibt es nicht mehr") : "Ohne festen Kontext: er sieht alle deine Daten"}
+              </span>
+            </div>
+          ) : (
+            <div className="as-title">
+              <Sparkles size={15} />
+              <span>Assistent</span>
+              {status?.hasKey && status.model && <span className="tag">{modelLabel(status.model)}</span>}
+            </div>
+          )}
           <div className="as-head-actions">
+            {page && status?.hasKey && status.model && <span className="tag as-model">{modelLabel(status.model)}</span>}
             <button type="button" className="icon-btn" aria-label="Neuer Chat" title="Neuer Chat" disabled={empty} onClick={reset}>
               <SquarePen size={15} />
             </button>
-            <button type="button" className="icon-btn" aria-label="Assistent schließen" title="Schließen (Strg J)" onClick={onClose}>
-              <X size={16} />
-            </button>
+            {page ? (
+              <button type="button" className="icon-btn" aria-label="Als Seitenleiste" title="Als Seitenleiste (Strg J)" onClick={onCollapse}>
+                <PanelRight size={16} />
+              </button>
+            ) : (
+              <>
+                <button type="button" className="icon-btn" aria-label="Große Ansicht öffnen" title="Große Ansicht mit Projekten" onClick={onExpand}>
+                  <Maximize2 size={15} />
+                </button>
+                <button type="button" className="icon-btn" aria-label="Assistent schließen" title="Schließen (Strg J)" onClick={onClose}>
+                  <X size={16} />
+                </button>
+              </>
+            )}
           </div>
         </header>
+
+        {!page && project && (
+          <button type="button" className="as-project-chip" title="Projekt wechseln: große Ansicht öffnen" onClick={onExpand}>
+            <FolderKanban size={13} />
+            <span>{project.name}</span>
+          </button>
+        )}
 
         <div className="as-body" ref={bodyRef}>
           {!ready ? (
@@ -417,10 +559,14 @@ export function AssistantPanel({ open, onClose }: AssistantPanelProps) {
               <span className="as-empty-icon">
                 <Sparkles size={18} />
               </span>
-              <h2>Wie kann ich helfen?</h2>
-              <p>Frag mich zu deinen Aufgaben, Terminen, Notizen und deiner Dokumentation.</p>
+              <h2>{project ? `Was steht in „${project.name}“ an?` : "Wie kann ich helfen?"}</h2>
+              <p>
+                {project && contextPath
+                  ? `Ich kenne den Bereich „${contextPath}“ und lege Neues dort an, wenn du nichts anderes sagst.`
+                  : "Frag mich zu deinen Aufgaben, Terminen, Notizen und deiner Dokumentation."}
+              </p>
               <div className="as-suggestions">
-                {SUGGESTIONS.map(({ icon: Icon, text }) => (
+                {suggestions.map(({ icon: Icon, text }) => (
                   <button key={text} type="button" className="as-suggest" onClick={() => send(text)}>
                     <Icon size={15} />
                     <span>{text}</span>
@@ -484,6 +630,22 @@ export function AssistantPanel({ open, onClose }: AssistantPanelProps) {
                             onEdit={() => setEditingTask({ messageId: m.id, key: t.key })}
                             onDismiss={() => patchTask(m.id, t.key, { status: "dismissed", error: undefined })}
                             onShow={() => navigate("tasks")}
+                          />
+                        ))}
+                      </div>
+                    )}
+                    {m.docEdits && m.docEdits.length > 0 && (
+                      <div className="as-proposals">
+                        {m.docEdits.map((e) => (
+                          <DocEditCard
+                            key={e.key}
+                            item={e}
+                            onPreview={() => setEditPreview({ messageId: m.id, key: e.key })}
+                            onDismiss={() => patchEdit(m.id, e.key, { status: "dismissed", error: undefined })}
+                            onShow={() => {
+                              requestOpenDoc(e.data.pageId);
+                              navigate("docs");
+                            }}
                           />
                         ))}
                       </div>
@@ -569,7 +731,7 @@ export function AssistantPanel({ open, onClose }: AssistantPanelProps) {
               rows={1}
               value={draft}
               disabled={!ready}
-              placeholder={ready ? "Frag etwas zu deinem Stand …" : "Erst den API-Key hinterlegen …"}
+              placeholder={ready ? (project ? `Frag etwas zu „${project.name}“ …` : "Frag etwas zu deinem Stand …") : "Erst den API-Key hinterlegen …"}
               aria-label="Nachricht an den Assistenten"
               spellCheck={false}
               onChange={(e) => setDraft(e.target.value)}
@@ -587,6 +749,33 @@ export function AssistantPanel({ open, onClose }: AssistantPanelProps) {
           </div>
         </div>
       </div>
+
+      {projectModal && (
+        <ProjectModal
+          project={projectModal.project}
+          onClose={() => setProjectModal(null)}
+          // Ein neues oder geändertes Projekt wird gleich das aktive
+          onSaved={(p) => selectProject(p.id)}
+          onDeleted={(id) => id === activeId && selectProject(null)}
+        />
+      )}
+
+      {editPreview &&
+        (() => {
+          const item = messages.find((m) => m.id === editPreview.messageId)?.docEdits?.find((e) => e.key === editPreview.key);
+          if (!item || item.status === "applied" || item.status === "dismissed") return null;
+          return (
+            <DocEditOverlay
+              item={item}
+              onApply={() => void applyEdit(editPreview.messageId, item)}
+              onClose={() => setEditPreview(null)}
+              onDiscard={() => {
+                patchEdit(editPreview.messageId, editPreview.key, { status: "dismissed", error: undefined });
+                setEditPreview(null);
+              }}
+            />
+          );
+        })()}
 
       {docsPreview &&
         (() => {

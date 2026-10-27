@@ -16,7 +16,8 @@ export async function addDocImage(blob: Blob, mime: string): Promise<number> {
   return id;
 }
 
-async function loadBlob(id: number): Promise<Blob> {
+/** Die Bytes eines Bildes (für den Export). */
+export async function loadBlob(id: number): Promise<Blob> {
   if (inTauri) return new Blob([await invoke<ArrayBuffer>("get_doc_image", { id })]);
   const blob = preview.get(id);
   if (!blob) throw "Bild nicht gefunden.";

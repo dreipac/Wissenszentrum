@@ -1,6 +1,6 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { formatLongDay, toDateTimeStr } from "../dates";
-import type { DocNodeSpec, DocStats } from "../docBlocks";
+import type { DocNodeSpec, DocStats, EditLine, EditOp, EditStats } from "../docBlocks";
 import { previewAnswer } from "./assistantPreview";
 import { inTauri } from "./runtime";
 
@@ -114,6 +114,21 @@ export interface DocProposal {
   existing: string[];
 }
 
+/** Vorschlag, eine bestehende Seite der Dokumentation zu ändern. Übernommen wird er erst nach Bestätigung durch die Person. */
+export interface DocEdit {
+  pageId: number;
+  title: string;
+  newTitle: string | null;
+  /** Ordner, in dem die Seite liegt */
+  path: string;
+  /** Stand der Seite beim Vorschlag: ändert sie sich bis zur Bestätigung, wird nichts übernommen */
+  baseUpdatedAt: string;
+  ops: EditOp[];
+  /** Die Seite nach der Änderung, Abschnitt für Abschnitt, mit Kennzeichnung von Neuem und Entfallendem */
+  lines: EditLine[];
+  stats: EditStats;
+}
+
 export interface AssistantAnswer {
   text: string;
   /** Was der Assistent nachgeschlagen hat */
@@ -132,6 +147,8 @@ export interface AssistantAnswer {
   actions: AssistantAction[];
   /** Vorgeschlagene Ordner und Seiten für die Dokumentation: noch nicht angelegt */
   docs: DocProposal[];
+  /** Vorgeschlagene Änderungen an bestehenden Seiten der Dokumentation: noch nicht übernommen */
+  docEdits: DocEdit[];
 }
 
 export interface ChatTurn {
@@ -166,7 +183,7 @@ export async function setAssistantModel(model: string): Promise<void> {
  * Stellt dem Assistenten die Frage (mit dem bisherigen Verlauf). `onStep` meldet laufend, was er gerade nachschlägt.
  * Die Antwort kommt als Ganzes, wenn er fertig ist.
  */
-export function askAssistant(history: ChatTurn[], onStep: (step: string) => void): Promise<AssistantAnswer> {
+export function askAssistant(history: ChatTurn[], projectId: number | null, onStep: (step: string) => void): Promise<AssistantAnswer> {
   if (!inTauri) return previewAnswer(history, onStep);
   const now = new Date();
   const stamp = toDateTimeStr(now);
@@ -176,6 +193,7 @@ export function askAssistant(history: ChatTurn[], onStep: (step: string) => void
     history,
     today: stamp.slice(0, 10),
     nowLabel: `${formatLongDay(now)}, ${stamp.slice(11)} Uhr`,
+    projectId,
     onStep: channel,
   });
 }

@@ -10,6 +10,7 @@ import {
   Settings,
   HelpCircle,
   RefreshCw,
+  Sparkles,
   type LucideIcon,
 } from "lucide-react";
 import { Button } from "../ui/Button";
@@ -33,6 +34,7 @@ const navItems: { id: ViewId; label: string; icon: LucideIcon }[] = [
   { id: "calendar", label: "Kalender", icon: CalendarDays },
   { id: "notes", label: "Notizen", icon: NotebookText },
   { id: "docs", label: "Dokumentation", icon: BookOpen },
+  { id: "assistant", label: "Assistent", icon: Sparkles },
 ];
 
 const tradingItems: { id: ViewId; label: string; icon: LucideIcon }[] = [

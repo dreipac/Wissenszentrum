@@ -228,6 +228,16 @@ pub(crate) const MIGRATIONS: &[&str] = &[
     "ALTER TABLE tasks ADD COLUMN event_id INTEGER REFERENCES events(id) ON DELETE SET NULL;
     ALTER TABLE tasks ADD COLUMN event_offset INTEGER;
     CREATE INDEX idx_tasks_event_id ON tasks(event_id);",
+    // 20: Projekte des Assistenten: ein fester Kontext (Ordner oder Seite der Dokumentation, Hinweise) für Gespräche.
+    // Wird die Seite gelöscht, bleibt das Projekt ohne Zuordnung bestehen.
+    "CREATE TABLE assistant_projects (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        name         TEXT NOT NULL,
+        doc_id       INTEGER REFERENCES doc_pages(id) ON DELETE SET NULL,
+        instructions TEXT NOT NULL DEFAULT '',
+        position     INTEGER NOT NULL DEFAULT 0,
+        created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+    );",
 ];
 
 /// Öffnet die Verbindung vor, setzt Pragmas und führt offene Migrationen aus.

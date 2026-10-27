@@ -23,6 +23,7 @@ import { SecondaryButton } from "../components/ui/SecondaryButton";
 import { ConfirmDialog } from "../components/ui/ConfirmDialog";
 import { ContextMenu, type ContextMenuItem } from "../components/ui/ContextMenu";
 import { DocEditor } from "../components/docs/DocEditor";
+import { DocExport } from "../components/docs/DocExport";
 import { FolderView } from "../components/docs/FolderView";
 import { MovePageModal, NewPageModal } from "../components/docs/PageModals";
 import { deleteDocPage, placeDocPage, setDocFavorite, shiftDocPage } from "../lib/api/docs";
@@ -409,6 +410,16 @@ export function DocsView() {
                 >
                   <Star size={16} fill={active.favorite ? "currentColor" : "none"} />
                 </button>
+                <DocExport
+                  page={active}
+                  pages={pages}
+                  // Wer gerade schreibt, hat Änderungen, die erst nach kurzer Zeit gespeichert sind: Bearbeiten beenden speichert sofort
+                  beforeExport={async () => {
+                    if (editingId !== active.id) return;
+                    setEditingId(null);
+                    await new Promise((resolve) => window.setTimeout(resolve, 700));
+                  }}
+                />
                 {isFolder(active) ? null : editingId === active.id ? (
                   <Button className="sm" onClick={() => setEditingId(null)}>
                     <Check size={14} />
