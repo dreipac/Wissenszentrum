@@ -17,7 +17,7 @@
 }
 
 .tm-title:focus {
-  border-bottom-color: #ffffff;
+  border-bottom-color: var(--ink);
 }
 
 .tm-row {
@@ -226,7 +226,7 @@
 }
 
 .color-swatch.active {
-  box-shadow: 0 0 0 2px var(--bg-card), 0 0 0 4px #ffffff;
+  box-shadow: 0 0 0 2px var(--bg-card), 0 0 0 4px var(--ink);
 }
 
 /* „Keine Farbe“: hohler Kreis */

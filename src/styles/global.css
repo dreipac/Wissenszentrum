@@ -258,7 +258,7 @@ button {
   bottom: -1px;
   height: 2px;
   border-radius: 999px;
-  background-color: #ffffff;
+  background-color: var(--ink);
 }
 
 /* Kleine segmentierte Auswahl */
@@ -379,7 +379,7 @@ textarea.field-control {
 .field-control[type="date"],
 .field-control[type="time"],
 .field-control[type="datetime-local"] {
-  color-scheme: dark;
+  color-scheme: inherit;
 }
 
 .field-error {

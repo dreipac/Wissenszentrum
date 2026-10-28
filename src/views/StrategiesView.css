@@ -169,7 +169,7 @@
 }
 
 .graph-edge.positive {
-  stroke: rgba(255, 255, 255, 0.3);
+  stroke: rgba(var(--wash), 0.3);
 }
 
 .graph-edge.negative {
@@ -178,7 +178,7 @@
 }
 
 .graph-edge.positive.active {
-  stroke: rgba(255, 255, 255, 0.85);
+  stroke: rgba(var(--wash), 0.85);
 }
 
 .graph-edge.negative.active {
@@ -186,7 +186,7 @@
 }
 
 .graph-arrow.positive {
-  fill: rgba(255, 255, 255, 0.5);
+  fill: rgba(var(--wash), 0.5);
 }
 
 .graph-arrow.negative {
@@ -257,8 +257,8 @@
 }
 
 .graph-node.selected {
-  border-color: #ffffff;
-  box-shadow: 0 0 0 1px #ffffff, 0 8px 22px rgba(0, 0, 0, 0.45);
+  border-color: var(--ink);
+  box-shadow: 0 0 0 1px var(--ink), 0 8px 22px rgba(0, 0, 0, 0.45);
 }
 
 .graph-node-top {
@@ -407,7 +407,7 @@
 .inspector-text {
   font-size: 0.85rem;
   line-height: 1.5;
-  color: #d4d4d4;
+  color: var(--editor-text);
 }
 
 .inspector-section {
@@ -539,7 +539,7 @@ button.inspector-link-label.negative {
 }
 
 .graph-handle:hover {
-  border-color: #ffffff;
+  border-color: var(--ink);
   transform: scale(1.2);
 }
 
@@ -549,16 +549,16 @@ button.inspector-link-label.negative {
 }
 
 .graph-wrap.connecting .graph-node:hover {
-  border-color: #ffffff;
+  border-color: var(--ink);
 }
 
 .graph-node.source {
-  border-color: #ffffff;
+  border-color: var(--ink);
   border-style: dashed;
 }
 
 .graph-edge-preview {
-  stroke: rgba(255, 255, 255, 0.7);
+  stroke: rgba(var(--wash), 0.7);
   stroke-width: 1.6;
   stroke-dasharray: 5 5;
 }

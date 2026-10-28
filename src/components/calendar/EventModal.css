@@ -18,7 +18,7 @@
 }
 
 .ev-title:focus {
-  border-bottom-color: #ffffff;
+  border-bottom-color: var(--ink);
 }
 
 /* Zeilen mit Icon links */

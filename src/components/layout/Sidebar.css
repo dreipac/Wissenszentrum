@@ -75,7 +75,7 @@
   bottom: 6px;
   width: 3px;
   border-radius: 999px;
-  background-color: #ffffff;
+  background-color: var(--ink);
 }
 
 .sidebar-link.small {

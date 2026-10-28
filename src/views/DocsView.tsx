@@ -163,7 +163,6 @@ export function DocsView() {
 
   const tree = useMemo(() => buildTree(pages), [pages]);
   const active = pages.find((p) => p.id === activeId) ?? null;
-  const favorites = pages.filter((p) => p.favorite);
   const hits = useMemo(() => searchPages(pages, query), [pages, query]);
   const trail = active ? ancestors(pages, active.id) : [];
   const subpages = active ? pages.filter((p) => p.parentId === active.id).sort((a, b) => a.position - b.position || a.id - b.id) : [];
@@ -341,17 +340,6 @@ export function DocsView() {
             </ul>
           ) : (
             <>
-              {favorites.length > 0 && (
-                <section className="docs-favorites" aria-label="Favoriten">
-                  <span className="docs-label">Favoriten</span>
-                  {favorites.map((p) => (
-                    <button key={p.id} type="button" className={`tree-item fav${p.id === activeId ? " active" : ""}`} onClick={() => select(p.id)}>
-                      <Star size={13} fill="currentColor" />
-                      <span className="tree-label">{pageTitle(p)}</span>
-                    </button>
-                  ))}
-                </section>
-              )}
               <ul className="tree-list root">
                 {tree.map((n) => (
                   <TreeRow

@@ -40,38 +40,6 @@
   color: var(--text-faint);
 }
 
-.docs-label {
-  display: block;
-  padding: 0.85rem 0.5rem 0.35rem;
-  font-size: 0.68rem;
-  font-weight: 600;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-  color: var(--text-faint);
-}
-
-.docs-favorites {
-  margin-bottom: 0.2rem;
-}
-
-.docs-favorites .tree-item {
-  width: 100%;
-  flex: none;
-  height: 30px;
-  margin-bottom: 1px;
-  padding-left: 0.5rem;
-}
-
-.docs-favorites .tree-item:hover,
-.docs-favorites .tree-item.active {
-  background-color: var(--bg-hover);
-  color: var(--text);
-}
-
-.docs-favorites .tree-item.fav svg {
-  color: var(--warning);
-}
-
 .docs-empty-list {
   padding: 1.25rem 0.5rem;
   font-size: 0.85rem;
@@ -215,6 +183,7 @@
 
 .tree-fav {
   flex-shrink: 0;
+  margin-left: auto;
   color: var(--warning) !important;
 }
 

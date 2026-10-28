@@ -56,7 +56,7 @@ const TABS: { id: Tab; label: string; icon: LucideIcon }[] = [
 ];
 
 const classIcon: Record<AssetClass, LucideIcon> = { aktie: Building2, krypto: Bitcoin, edelmetall: Gem };
-const classColor: Record<AssetClass, string> = { aktie: "#646cff", krypto: "#ffffff", edelmetall: "#9a9a9a" };
+const classColor: Record<AssetClass, string> = { aktie: "var(--accent)", krypto: "var(--ink)", edelmetall: "var(--text-muted)" };
 
 const pnlClass = (v: number) => (v >= 0 ? "tr-pos" : "tr-neg");
 
@@ -106,7 +106,7 @@ function Overview({ model, snapshots, samples, movements, live, hasData, openTra
   // Auf Rappen gerundet, damit ein Rest von -0.001 nicht als Verlust gilt
   const change = Math.round((model.total - first) * 100) / 100;
   const changePct = hasSeries && first !== 0 ? (change / first) * 100 : 0;
-  const color = change >= 0 ? "#4ade80" : "#ff6b6b";
+  const color = change >= 0 ? "var(--positive)" : "var(--negative)";
   const flash = useFlash(model.total);
   // Insgesamt: Vermögen minus netto eingezahltes Kapital. Ohne Einzahlungen zählen Verkäufe plus aktuelle Kursgewinne.
   const deposited = netDeposits(movements);
@@ -164,10 +164,10 @@ function Overview({ model, snapshots, samples, movements, live, hasData, openTra
   ];
 
   const allocation = [
-    { label: "Guthaben", value: model.allocation.cash, color: "#ffffff" },
-    { label: "Aktien", value: model.allocation.aktie, color: "#646cff" },
-    { label: "Krypto", value: model.allocation.krypto, color: "#9a9a9a" },
-    { label: "Edelmetalle", value: model.allocation.edelmetall, color: "#4a4a4a" },
+    { label: "Guthaben", value: model.allocation.cash, color: "var(--ink)" },
+    { label: "Aktien", value: model.allocation.aktie, color: "var(--accent)" },
+    { label: "Krypto", value: model.allocation.krypto, color: "var(--text-muted)" },
+    { label: "Edelmetalle", value: model.allocation.edelmetall, color: "var(--border-strong-hover)" },
   ];
   const allocationTotal = allocation.reduce((s, a) => s + a.value, 0);
 

@@ -92,7 +92,7 @@ export function AssetInsight({ symbol, assetClass, currency, price = null, entry
   const change = current !== null && first !== null ? current - first : null;
   const changePct = change !== null && first ? (change / first) * 100 : null;
   const up = (change ?? 0) >= 0;
-  const color = up ? "#4ade80" : "#ff6b6b";
+  const color = up ? "var(--positive)" : "var(--negative)";
 
   const series = useMemo(() => {
     if (points.length === 0) return [];

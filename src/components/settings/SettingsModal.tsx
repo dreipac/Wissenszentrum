@@ -6,6 +6,7 @@ import { Logo } from "../ui/Logo";
 import { SecondaryButton } from "../ui/SecondaryButton";
 import { ASSISTANT_MODELS, assistantStatus, saveAssistantKey, setAssistantModel, type AssistantStatus } from "../../lib/api/assistant";
 import { getApiKey, saveApiKey } from "../../lib/api/trading";
+import { useAppTheme, type AppTheme } from "../../lib/appTheme";
 import { useEditorTheme, type EditorTheme } from "../../lib/editorTheme";
 import { useProfile } from "../../lib/profile";
 import { OPEN_CONFLICT_EVENT } from "../sync/SyncBanner";
@@ -25,7 +26,7 @@ interface SectionInfo {
 
 const SECTIONS: SectionInfo[] = [
   { id: "profile", label: "Profil", title: "Profil", lead: "So wirst du in der App angesprochen.", icon: User },
-  { id: "appearance", label: "Darstellung", title: "Darstellung", lead: "Wie die Schreibfläche in Notizen und Dokumentation aussieht.", icon: Palette },
+  { id: "appearance", label: "Darstellung", title: "Darstellung", lead: "Hell oder dunkel: für die ganze App und die Schreibfläche in Notizen und Dokumentation.", icon: Palette },
   { id: "data", label: "Daten", title: "Daten und Speicherort", lead: "Wo deine Inhalte liegen.", icon: Database },
   { id: "sync", label: "Abgleich", title: "Abgleich zwischen Rechnern", lead: "Zuhause und unterwegs mit demselben Stand arbeiten.", icon: RefreshCw },
   { id: "assistant", label: "Assistent", title: "Assistent", lead: "Fragen an deine Daten, beantwortet von einem KI-Modell.", icon: Sparkles },
@@ -142,10 +143,43 @@ function ProfileSection() {
   );
 }
 
+const APP_THEMES: { id: AppTheme; label: string; hint: string }[] = [
+  { id: "dark", label: "Dunkel", hint: "Ruhig bei wenig Licht" },
+  { id: "light", label: "Hell", hint: "Klar und hell" },
+];
+
 const THEMES: { id: EditorTheme; label: string; hint: string }[] = [
-  { id: "dark", label: "Dunkel", hint: "Wie die übrige App" },
+  { id: "dark", label: "Dunkel", hint: "Dunkle Schreibfläche" },
   { id: "light", label: "Hell", hint: "Wie Papier, gut für lange Texte" },
 ];
+
+/** Kleines Fenster der App im jeweiligen Schema: Leiste, Titel, zwei Karten. Nutzt die echten Farbwerte des Schemas. */
+function AppPreview({ theme }: { theme: AppTheme }) {
+  return (
+    <span className="st-theme-app" data-editor-theme={theme} aria-hidden="true">
+      <span className="st-app-side">
+        <i className="on" />
+        <i />
+        <i />
+        <i />
+      </span>
+      <span className="st-app-main">
+        <i className="st-pv-title" />
+        <span className="st-app-cards">
+          <span>
+            <i />
+            <i />
+          </span>
+          <span>
+            <i />
+            <i />
+          </span>
+        </span>
+        <i className="st-pv-line" />
+      </span>
+    </span>
+  );
+}
 
 /** Kleine Seite im jeweiligen Schema: Überschrift, Text, Tabelle. Nutzt die echten Farbwerte des Schemas. */
 function ThemePreview({ theme }: { theme: EditorTheme }) {
@@ -166,9 +200,30 @@ function ThemePreview({ theme }: { theme: EditorTheme }) {
 }
 
 function AppearanceSection() {
-  const { theme, setTheme } = useEditorTheme();
+  const { theme, setTheme, custom, followApp } = useEditorTheme();
+  const app = useAppTheme();
   return (
     <>
+      <Group title="App">
+        <div className="st-pad st-theme-block">
+          <div className="st-row-text">
+            <span className="st-what">Farbschema der App</span>
+          </div>
+          <div className="st-themes" role="radiogroup" aria-label="Farbschema der App">
+            {APP_THEMES.map((t) => (
+              <button key={t.id} type="button" role="radio" aria-checked={app.theme === t.id} className={`st-theme${app.theme === t.id ? " active" : ""}`} onClick={() => app.setTheme(t.id)}>
+                <AppPreview theme={t.id} />
+                <span className="st-theme-label">
+                  <span className="st-theme-radio" aria-hidden="true" />
+                  <strong>{t.label}</strong>
+                  <small>{t.hint}</small>
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      </Group>
+
       <Group title="Editor">
         <div className="st-pad st-theme-block">
           <div className="st-row-text">
@@ -186,6 +241,14 @@ function AppearanceSection() {
               </button>
             ))}
           </div>
+          <p className="st-theme-note">
+            {custom ? "Die Schreibfläche hat ein eigenes Schema." : "Die Schreibfläche folgt dem Schema der App."}
+            {custom && (
+              <button type="button" className="st-link" onClick={followApp}>
+                Wie die App
+              </button>
+            )}
+          </p>
         </div>
       </Group>
     </>

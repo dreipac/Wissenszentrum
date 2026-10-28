@@ -24,9 +24,9 @@
 }
 
 .kind-option.active {
-  border-color: #ffffff;
+  border-color: var(--ink);
   background-color: var(--bg-card);
-  color: #ffffff;
+  color: var(--ink);
 }
 
 .node-text {

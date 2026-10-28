@@ -126,8 +126,8 @@
 }
 
 .ob-progress li.current .ob-dot {
-  border-color: #ffffff;
-  background-color: #ffffff;
+  border-color: var(--btn-primary-bg);
+  background-color: var(--btn-primary-bg);
   color: var(--btn-primary-text);
 }
 

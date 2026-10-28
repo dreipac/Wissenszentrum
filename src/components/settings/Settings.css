@@ -410,3 +410,117 @@
     flex: none;
   }
 }
+
+/* Vorschau der App im jeweiligen Schema */
+.st-theme-app {
+  display: flex;
+  height: 118px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background-color: var(--bg-app);
+}
+
+.st-app-side {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  width: 26%;
+  padding: 0.7rem 0.55rem;
+  border-right: 1px solid var(--border);
+  background-color: var(--bg-sidebar);
+}
+
+.st-app-side i {
+  display: block;
+  height: 5px;
+  border-radius: 3px;
+  background-color: var(--text-faint);
+  opacity: 0.55;
+}
+
+.st-app-side i.on {
+  background-color: var(--text);
+  opacity: 0.9;
+}
+
+.st-app-main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.45rem;
+  min-width: 0;
+  padding: 0.75rem 0.8rem;
+}
+
+.st-app-main > i {
+  display: block;
+  height: 5px;
+  border-radius: 3px;
+  background-color: var(--text-faint);
+  opacity: 0.55;
+}
+
+.st-app-main > .st-pv-title {
+  width: 42%;
+  height: 8px;
+  background-color: var(--text);
+  opacity: 0.9;
+}
+
+.st-app-main > .st-pv-line {
+  width: 70%;
+}
+
+.st-app-cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.4rem;
+}
+
+.st-app-cards > span {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 0.45rem 0.5rem;
+  border: 1px solid var(--border-soft);
+  border-radius: 5px;
+  background-color: var(--bg-card);
+}
+
+.st-app-cards i {
+  display: block;
+  height: 4px;
+  border-radius: 2px;
+  background-color: var(--text-faint);
+  opacity: 0.5;
+}
+
+.st-app-cards i:first-child {
+  width: 60%;
+  background-color: var(--text);
+  opacity: 0.8;
+}
+
+.st-theme-note {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--text-faint);
+}
+
+.st-link {
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.st-link:hover {
+  color: var(--text);
+}

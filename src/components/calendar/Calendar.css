@@ -170,7 +170,7 @@
 }
 
 .month-cell.today .month-day {
-  background-color: #ffffff;
+  background-color: var(--btn-primary-bg);
   color: var(--btn-primary-text);
   font-weight: 700;
 }
@@ -282,7 +282,7 @@
 }
 
 .tg-head-day.today .tg-head-num {
-  background-color: #ffffff;
+  background-color: var(--btn-primary-bg);
   color: var(--btn-primary-text);
   font-weight: 700;
 }
@@ -342,7 +342,7 @@
 }
 
 .tg-col.today {
-  background-color: rgba(255, 255, 255, 0.018);
+  background-color: rgba(var(--wash), 0.018);
 }
 
 .tg-event {
@@ -398,7 +398,7 @@
   padding: 0.2rem 0.3rem 0.2rem 0.45rem;
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm);
-  background-color: rgba(255, 255, 255, 0.05);
+  background-color: rgba(var(--wash), 0.05);
   font-size: 0.68rem;
   line-height: 18px;
   color: var(--text-muted);
@@ -426,13 +426,13 @@
 }
 
 .tg-add:hover {
-  background-color: rgba(255, 255, 255, 0.1);
+  background-color: rgba(var(--wash), 0.1);
   color: var(--text);
 }
 
 .tg-allday-cell.selected {
   position: relative;
-  background-color: rgba(255, 255, 255, 0.05);
+  background-color: rgba(var(--wash), 0.05);
   box-shadow: inset 0 0 0 1px var(--border-strong);
 }
 
@@ -533,7 +533,7 @@
 }
 
 .mini-day.selected {
-  background-color: #ffffff;
+  background-color: var(--btn-primary-bg);
   color: var(--btn-primary-text);
   font-weight: 700;
 }
