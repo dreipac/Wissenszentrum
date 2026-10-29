@@ -199,7 +199,7 @@ export function TasksView() {
         {error && <p className="field-error">Aufgaben konnten nicht geladen werden: {error}</p>}
         {tab === "today" && <TodayView />}
         {loaded && empty && (tab === "board" || tab === "list") && <EmptyState />}
-        {loaded && !empty && tab === "board" && <Board columns={columns} buckets={buckets} />}
+        {loaded && !empty && tab === "board" && <Board columns={columns} />}
         {loaded && !empty && tab === "list" && <ListView tasks={filtered} buckets={buckets} />}
         {loaded && tab === "timeline" && <Timeline />}
       </div>

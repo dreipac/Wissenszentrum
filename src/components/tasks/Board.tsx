@@ -24,7 +24,7 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { ArrowRight, Plus, Settings2 } from "lucide-react";
+import { Plus, Settings2 } from "lucide-react";
 import { moveTask, reorderBuckets } from "../../lib/api/tasks";
 import { useDialogs } from "../../lib/dialogs";
 import { bucketAccent, priorityLabel, type Bucket, type Task } from "../../lib/tasks";
@@ -119,11 +119,10 @@ interface ColumnViewProps {
   column: Column;
   ids: string[];
   taskById: Map<string, Task>;
-  bucketName: (id: number | null) => string | undefined;
   suppressClick: React.RefObject<boolean>;
 }
 
-function ColumnView({ column, ids, taskById, bucketName, suppressClick }: ColumnViewProps) {
+function ColumnView({ column, ids, taskById, suppressClick }: ColumnViewProps) {
   const { openNewTask, openEditBucket } = useDialogs();
   const { bucket, name } = column;
 
@@ -175,14 +174,6 @@ function ColumnView({ column, ids, taskById, bucketName, suppressClick }: Column
         </div>
       </header>
 
-      {bucket?.onCompleteBucketId != null && (
-        <p className="bucket-rule" title="Automatik: Beim Abhaken wird die Aufgabe in diesen Bucket verschoben">
-          Abhaken
-          <ArrowRight size={11} />
-          {bucketName(bucket.onCompleteBucketId)}
-        </p>
-      )}
-
       <div ref={drop.setNodeRef} className={`bucket-body${drop.isOver ? " over" : ""}`}>
         <SortableContext items={ids} strategy={verticalListSortingStrategy}>
           {visibleTasks.length === 0 && <p className="bucket-empty">Keine Aufgaben</p>}
@@ -203,9 +194,8 @@ function ColumnView({ column, ids, taskById, bucketName, suppressClick }: Column
 // Board
 // ---------------------------------------------------------------------------
 
-export function Board({ columns, buckets }: { columns: Column[]; buckets: Bucket[] }) {
+export function Board({ columns }: { columns: Column[] }) {
   const { openNewBucket } = useDialogs();
-  const bucketName = (id: number | null) => buckets.find((b) => b.id === id)?.name;
 
   // Lokaler Zustand, damit sich Karten und Spalten beim Ziehen sofort bewegen.
   // Wird nach dem Speichern durch die Daten aus der Datenbank ersetzt (columns ändert sich).
@@ -376,7 +366,6 @@ export function Board({ columns, buckets }: { columns: Column[]; buckets: Bucket
               column={unassigned}
               ids={items["c:none"] ?? []}
               taskById={taskById}
-              bucketName={bucketName}
               suppressClick={suppressClick}
             />
           )}
@@ -387,7 +376,6 @@ export function Board({ columns, buckets }: { columns: Column[]; buckets: Bucket
                 column={column}
                 ids={items[containerKey(column.bucket)] ?? []}
                 taskById={taskById}
-                bucketName={bucketName}
                 suppressClick={suppressClick}
               />
             ))}

@@ -292,17 +292,6 @@
   cursor: pointer;
 }
 
-/* Hinweis auf die Bucket-Automatik */
-.bucket-rule {
-  display: flex;
-  align-items: center;
-  gap: 0.3rem;
-  margin: 0;
-  padding: 0 1rem 0.35rem;
-  font-size: 0.72rem;
-  color: var(--text-faint);
-}
-
 /* Drag & Drop */
 .board.is-dragging {
   user-select: none;
