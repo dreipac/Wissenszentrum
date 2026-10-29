@@ -323,6 +323,34 @@
   word-break: break-all;
 }
 
+/* ---------- Wahl auf dem Abschlussbild (Updates) ---------- */
+.ob-choice {
+  margin: 0 0 1.75rem;
+  padding: 0.7rem 0.9rem 0.8rem;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  background-color: var(--bg-sidebar);
+}
+
+.ob-choice-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.ob-choice-title {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.ob-choice p {
+  margin: 0.55rem 0 0;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
 /* ---------- Aktionen ---------- */
 .ob-actions {
   display: flex;

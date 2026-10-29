@@ -1,0 +1,12 @@
+/* Hinweis auf eine neue Version: gleiche Pille wie die Meldungen zum Abgleich, aber unten, damit beide sich nicht stören */
+.update-banners {
+  position: fixed;
+  bottom: 1rem;
+  left: 50%;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  transform: translateX(-50%);
+  pointer-events: none;
+}

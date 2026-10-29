@@ -24,6 +24,10 @@ serde_json = "1"
 tauri-plugin-dialog = "2.8.3"
 # API-Key des Assistenten: Windows-Anmeldeinformationsspeicher statt Datenbank (so landet er nicht im Abgleich)
 keyring = { version = "3", features = ["windows-native"] }
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
+tauri-plugin-log = "2"
+log = "0.4"
 
 [profile.release]
 codegen-units = 1

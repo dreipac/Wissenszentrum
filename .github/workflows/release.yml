@@ -1,0 +1,93 @@
+name: Release
+
+# Ein Tag wie v1.4.0 baut den Installer, signiert das Update und legt ein Release als Entwurf an.
+# Ablauf und nötige Secrets: docs/RELEASE.md
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Signierschlüssel für Updates vorhanden?
+        shell: pwsh
+        env:
+          KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          if (-not $env:KEY) {
+            Write-Error "Das Secret TAURI_SIGNING_PRIVATE_KEY fehlt. Ohne es lassen sich keine Updates signieren (siehe docs/RELEASE.md)."
+            exit 1
+          }
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Version und Tag vergleichen
+        run: node scripts/version.mjs --tag ${{ github.ref_name }}
+
+      - name: Abhängigkeiten installieren
+        run: npm ci
+
+      - name: Backend testen
+        run: cargo test --manifest-path src-tauri/Cargo.toml --lib
+
+      # Optional: ohne Zertifikat entsteht ein unsignierter Installer (Windows SmartScreen warnt dann)
+      - name: Windows-Zertifikat einrichten
+        id: signing
+        shell: pwsh
+        env:
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+        run: |
+          if (-not $env:WINDOWS_CERTIFICATE) {
+            Write-Warning "Kein Windows-Zertifikat hinterlegt: der Installer wird nicht signiert."
+            "args=" >> $env:GITHUB_OUTPUT
+            exit 0
+          }
+          $pfx = Join-Path $env:RUNNER_TEMP "certificate.pfx"
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE))
+          $password = ConvertTo-SecureString $env:WINDOWS_CERTIFICATE_PASSWORD -AsPlainText -Force
+          $cert = Import-PfxCertificate -FilePath $pfx -CertStoreLocation Cert:\CurrentUser\My -Password $password
+          Remove-Item $pfx
+          $config = @{
+            bundle = @{
+              windows = @{
+                certificateThumbprint = $cert.Thumbprint
+                digestAlgorithm       = "sha256"
+                timestampUrl          = "http://timestamp.digicert.com"
+              }
+            }
+          } | ConvertTo-Json -Depth 5
+          $path = Join-Path $env:RUNNER_TEMP "signing.conf.json"
+          Set-Content -Path $path -Value $config
+          "args=--config $($path -replace '\\', '/')" >> $env:GITHUB_OUTPUT
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: Wissenszentrum ${{ github.ref_name }}
+          releaseBody: Änderungen siehe CHANGELOG.md. Der Installer aktualisiert eine vorhandene Installation.
+          # Als Entwurf anlegen: erst nach einem Test der Installer-Datei veröffentlichen.
+          # Der Updater findet latest.json erst, wenn das Release veröffentlicht ist.
+          releaseDraft: true
+          prerelease: false
+          args: ${{ steps.signing.outputs.args }}

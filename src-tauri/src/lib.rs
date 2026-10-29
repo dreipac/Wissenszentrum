@@ -313,6 +313,92 @@ fn sync_disable(db: State<Db>, info: State<AppInfo>) -> Result<SyncStatus, Strin
     Ok(make_status(&info, &guard, None, None))
 }
 
+// --- Protokoll ----------------------------------------------------------------
+
+/// Öffnet den Ordner mit den Protokolldateien im Explorer.
+#[tauri::command]
+fn open_log_folder(app: AppHandle) -> Result<(), String> {
+    let dir = app.path().app_log_dir().map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(&dir).map_err(|e| format!("Der Protokollordner konnte nicht angelegt werden: {e}"))?;
+    std::process::Command::new("explorer")
+        .arg(&dir)
+        .spawn()
+        .map_err(|e| format!("Der Ordner konnte nicht geöffnet werden: {e}"))?;
+    Ok(())
+}
+
+/// Seite mit den Installern, für Rechner ohne automatische Updates. Fest eingebaut, damit der Aufruf nichts anderes öffnen kann.
+const DOWNLOAD_PAGE: &str = "https://github.com/dreipac/Wissenszentrum/releases/latest";
+
+/// Öffnet die Download-Seite im Standardbrowser. Die App selbst baut dabei keine Verbindung auf.
+#[tauri::command]
+fn open_download_page() -> Result<(), String> {
+    std::process::Command::new("explorer")
+        .arg(DOWNLOAD_PAGE)
+        .spawn()
+        .map_err(|e| format!("Der Browser konnte nicht geöffnet werden: {e}"))?;
+    Ok(())
+}
+
+/// Schreibt einen unerwarteten Fehler samt Ort ins Protokoll, bevor das Programm endet (im Release bricht ein Panic ab).
+fn install_panic_hook() {
+    let previous = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        log::error!("Unerwarteter Fehler: {info}\n{}", std::backtrace::Backtrace::force_capture());
+        log::logger().flush();
+        previous(info);
+    }));
+}
+
+// --- Sicherung ----------------------------------------------------------------
+
+/// Weder Export noch Wiederherstellung dürfen die geöffnete Datenbankdatei selbst anfassen.
+fn check_not_live(info: &State<AppInfo>, path: &Path) -> Result<(), String> {
+    let live = info.db_file.lock().map_err(|_| "Zustand ist gesperrt.".to_string())?.clone();
+    let Some(live) = live else { return Err("Es ist noch keine Datenbank geöffnet.".into()) };
+    let same = match (path.canonicalize(), live.canonicalize()) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => false,
+    };
+    if same {
+        return Err("Das ist die Datenbank, mit der die App gerade arbeitet. Bitte wähle eine andere Datei.".into());
+    }
+    Ok(())
+}
+
+/// Schreibt eine Sicherungskopie der Datenbank an den gewählten Ort (ohne den API-Key dieses Rechners).
+#[tauri::command]
+fn export_backup(db: State<Db>, info: State<AppInfo>, path: String) -> Result<(), String> {
+    if path.trim().is_empty() {
+        return Err("Es wurde kein Ziel gewählt.".into());
+    }
+    let target = PathBuf::from(path.trim());
+    check_not_live(&info, &target)?;
+    let conn = lock(&db)?;
+    sync::export_snapshot(&conn, &target)
+}
+
+/// Ersetzt die Daten durch eine Sicherungsdatei. Der bisherige Stand wird vorher im Datenordner der App gesichert.
+#[tauri::command]
+fn restore_backup(db: State<Db>, info: State<AppInfo>, path: String) -> Result<(), String> {
+    let source = PathBuf::from(path.trim());
+    if path.trim().is_empty() || !source.is_file() {
+        return Err("Die Datei wurde nicht gefunden.".into());
+    }
+    check_not_live(&info, &source)?;
+    std::fs::create_dir_all(&info.backup_dir).map_err(|e| format!("Der Sicherungsordner konnte nicht angelegt werden: {e}"))?;
+    // Mit einer Kopie arbeiten, damit neben der gewählten Datei nichts entsteht
+    let tmp = info.backup_dir.join("wiederherstellen.tmp.db");
+    let _ = std::fs::remove_file(&tmp);
+    std::fs::copy(&source, &tmp).map_err(|e| format!("Die Datei konnte nicht gelesen werden: {e}"))?;
+    let result = {
+        let mut guard = lock(&db)?;
+        sync::load_snapshot(&mut guard, &info.backup_dir, &tmp, "Die Datei", "sicherung-vor-wiederherstellen-")
+    };
+    let _ = std::fs::remove_file(&tmp);
+    result
+}
+
 /// Beim Schließen: ausstehende Änderungen noch in den Ordner schreiben.
 fn push_on_exit(app: &AppHandle) {
     let (Some(db), Some(info)) = (app.try_state::<Db>(), app.try_state::<AppInfo>()) else { return };
@@ -933,8 +1019,22 @@ async fn asset_profile(db: State<'_, Db>, symbol: String) -> Result<finnhub::Ass
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    install_panic_hook();
     tauri::Builder::default()
+        .plugin(
+            tauri_plugin_log::Builder::new()
+                .targets([
+                    tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::LogDir { file_name: Some("wissenszentrum".into()) }),
+                    tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stdout),
+                ])
+                .level(log::LevelFilter::Info)
+                .max_file_size(1_000_000)
+                .rotation_strategy(tauri_plugin_log::RotationStrategy::KeepSome(3))
+                .build(),
+        )
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .on_window_event(|window, event| {
             // Mit eingeschaltetem Abgleich erst die letzten Änderungen in den Ordner schreiben, dann schließen
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
@@ -955,6 +1055,7 @@ pub fn run() {
         })
         .setup(|app| {
             // Windows: %APPDATA%\com.armin.wissenszentrum\config.json merkt sich den Speicherort der Datenbank
+            log::info!("Wissenszentrum {} startet", app.package_info().version);
             let data_dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&data_dir)?;
             let config_file = data_dir.join("config.json");
@@ -979,6 +1080,9 @@ pub fn run() {
                         Err(e) => problem = Some(format!("Die Datenbank unter „{}“ konnte nicht geöffnet werden. {e}", file.display())),
                     }
                 }
+            }
+            if let Some(message) = &problem {
+                log::error!("Start ohne Datenbank: {message}");
             }
             // Beim Start: unterwegs hochgeladene Änderungen anderer Rechner laden, solange hier nichts geändert wurde
             let backup_dir = data_dir.join("sicherungen");
@@ -1028,6 +1132,10 @@ pub fn run() {
             sync_tick,
             sync_resolve,
             sync_disable,
+            export_backup,
+            restore_backup,
+            open_log_folder,
+            open_download_page,
             inspect_location,
             inspect_database_file,
             open_existing_database,

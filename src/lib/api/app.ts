@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { open } from "@tauri-apps/plugin-dialog";
+import { open, save } from "@tauri-apps/plugin-dialog";
 import { dbFileIn, type AppState, type LocationInfo, type Profile } from "../profile";
 import { inTauri } from "./runtime";
 
@@ -120,3 +120,35 @@ export async function updateProfile(firstName: string, lastName: string): Promis
   }
   return { firstName: first, lastName: last };
 }
+
+const BACKUP_FILTER = [{ name: "Datenbank", extensions: ["db"] }];
+
+/** Datum für den Dateinamen einer Sicherung: YYYY-MM-DD in Ortszeit. */
+const today = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
+
+/** Fragt nach dem Ziel und schreibt dort eine Sicherungskopie der Datenbank. Liefert den Ort oder null bei Abbruch. */
+export async function exportBackup(): Promise<string | null> {
+  if (!inTauri) throw "Sicherungen gibt es nur in der installierten App.";
+  const path = await save({ defaultPath: `Wissenszentrum-Sicherung-${today()}.db`, title: "Sicherung speichern", filters: BACKUP_FILTER });
+  if (!path) return null;
+  await invoke("export_backup", { path });
+  return path;
+}
+
+/** Fragt nach einer Sicherungsdatei; null bei Abbruch. */
+export async function pickBackupFile(): Promise<string | null> {
+  if (!inTauri) throw "Sicherungen gibt es nur in der installierten App.";
+  const result = await open({
+    directory: false,
+    multiple: false,
+    title: "Sicherung auswählen",
+    filters: [...BACKUP_FILTER, { name: "Alle Dateien", extensions: ["*"] }],
+  });
+  return typeof result === "string" ? result : null;
+}
+
+/** Ersetzt alle Daten durch die Sicherungsdatei. Der bisherige Stand wird vorher im Datenordner der App gesichert. */
+export const restoreBackup = (path: string): Promise<void> => invoke("restore_backup", { path });

@@ -14,8 +14,10 @@ import { DialogsProvider } from "./lib/dialogs";
 import { getAppState } from "./lib/api/app";
 import { ProfileProvider, type AppState } from "./lib/profile";
 import { SyncProvider } from "./lib/useSync";
+import { UpdaterProvider } from "./lib/useUpdater";
 import { EditorThemeProvider } from "./lib/editorTheme";
 import { SyncBanner } from "./components/sync/SyncBanner";
+import { UpdateBanner } from "./components/update/UpdateBanner";
 import { CommandPalette } from "./components/search/CommandPalette";
 import { AssistantPanel } from "./components/assistant/AssistantPanel";
 import "./App.css";
@@ -134,6 +136,7 @@ function Main() {
               onCollapse={leaveAssistantPage}
             />
             <SyncBanner />
+            <UpdateBanner />
           </div>
         </div>
         {searchOpen && <CommandPalette onClose={() => setSearchOpen(false)} onToggleSidebar={toggleSidebar} />}
@@ -156,9 +159,11 @@ function App() {
     return (
       <ProfileProvider profile={state.profile} dbPath={state.dbPath} onChange={(profile) => setState((prev) => (prev ? { ...prev, profile } : prev))}>
         <SyncProvider>
-          <EditorThemeProvider>
-            <Main />
-          </EditorThemeProvider>
+          <UpdaterProvider>
+            <EditorThemeProvider>
+              <Main />
+            </EditorThemeProvider>
+          </UpdaterProvider>
         </SyncProvider>
       </ProfileProvider>
     );

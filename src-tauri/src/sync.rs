@@ -331,40 +331,60 @@ pub fn pull(conn: &mut Connection, cfg: &mut SyncConfig, backup_dir: &Path, remo
 }
 
 fn restore_from(conn: &mut Connection, cfg: &mut SyncConfig, backup_dir: &Path, copy: &Path, remote: &Manifest) -> Result<(), String> {
-    {
-        let src = Connection::open_with_flags(copy, OpenFlags::SQLITE_OPEN_READ_ONLY).map_err(db_err)?;
-        let check: String = src.query_row("PRAGMA quick_check", [], |r| r.get(0)).map_err(|_| "Der Stand im Ordner ist beschädigt.".to_string())?;
-        if check != "ok" {
-            return Err("Der Stand im Ordner ist beschädigt.".into());
-        }
-        let version: i64 = src.query_row("PRAGMA user_version", [], |r| r.get(0)).map_err(db_err)?;
-        if version as usize > db::MIGRATIONS.len() {
-            return Err("Der Stand im Ordner stammt aus einer neueren Version des Wissenszentrums. Bitte aktualisiere zuerst die App.".into());
-        }
-        if version < 1 {
-            return Err("Der Stand im Ordner ist keine Datenbank des Wissenszentrums.".into());
-        }
-
-        // Sicherung des lokalen Stands, bevor er überschrieben wird
-        let backup = backup_dir.join(format!("sicherung-vor-laden-{}.db", stamp(conn)?));
-        vacuum_into(conn, &backup)?;
-        prune_backups(backup_dir, "sicherung-vor-laden-");
-
-        let key = trading::get_setting(conn, KEY_API)?;
-        {
-            let backup = Backup::new(&src, conn).map_err(db_err)?;
-            backup.run_to_completion(128, Duration::from_millis(0), None).map_err(db_err)?;
-        }
-        // Ältere Stände auf das aktuelle Schema bringen und den eigenen API-Key wiederherstellen
-        db::init(conn).map_err(db_err)?;
-        if let Some(key) = key {
-            trading::set_setting(conn, KEY_API, &key)?;
-        }
-    }
+    load_snapshot(conn, backup_dir, copy, "Der Stand im Ordner", "sicherung-vor-laden-")?;
     cfg.base_revision = Some(remote.revision.clone());
     cfg.synced_fingerprint = Some(fingerprint(conn)?);
     cfg.last_synced_at = Some(now_utc(conn)?);
     Ok(())
+}
+
+/// Ersetzt den Inhalt der lokalen Datenbank durch eine Datei. Die Datei wird zuerst geprüft (unbeschädigt, Datenbank
+/// dieser App, nicht neuer als die App), der lokale Stand vorher gesichert und der eigene API-Key behalten.
+/// `what` benennt die Quelle in Fehlermeldungen, `backup_prefix` den Namen der Sicherung des lokalen Stands.
+pub(crate) fn load_snapshot(conn: &mut Connection, backup_dir: &Path, copy: &Path, what: &str, backup_prefix: &str) -> Result<(), String> {
+    let src = Connection::open_with_flags(copy, OpenFlags::SQLITE_OPEN_READ_ONLY).map_err(|_| format!("{what} ist keine Datenbank des Wissenszentrums."))?;
+    let check: String = src.query_row("PRAGMA quick_check", [], |r| r.get(0)).map_err(|_| format!("{what} ist beschädigt."))?;
+    if check != "ok" {
+        return Err(format!("{what} ist beschädigt."));
+    }
+    let version: i64 = src.query_row("PRAGMA user_version", [], |r| r.get(0)).map_err(db_err)?;
+    if version as usize > db::MIGRATIONS.len() {
+        return Err(format!("{what} stammt aus einer neueren Version des Wissenszentrums. Bitte aktualisiere zuerst die App."));
+    }
+    if version < 1 {
+        return Err(format!("{what} ist keine Datenbank des Wissenszentrums."));
+    }
+
+    // Sicherung des lokalen Stands, bevor er überschrieben wird
+    std::fs::create_dir_all(backup_dir).map_err(|e| format!("Der Sicherungsordner konnte nicht angelegt werden: {e}"))?;
+    let backup = backup_dir.join(format!("{backup_prefix}{}.db", stamp(conn)?));
+    vacuum_into(conn, &backup)?;
+    prune_backups(backup_dir, backup_prefix);
+
+    let key = trading::get_setting(conn, KEY_API)?;
+    {
+        let backup = Backup::new(&src, conn).map_err(db_err)?;
+        backup.run_to_completion(128, Duration::from_millis(0), None).map_err(db_err)?;
+    }
+    // Ältere Stände auf das aktuelle Schema bringen und den eigenen API-Key wiederherstellen
+    db::init(conn).map_err(db_err)?;
+    if let Some(key) = key {
+        trading::set_setting(conn, KEY_API, &key)?;
+    }
+    Ok(())
+}
+
+/// Schreibt einen in sich stimmigen Stand der Datenbank nach `target` (ohne den API-Key dieses Rechners).
+/// Eine vorhandene Datei dort wird ersetzt.
+pub(crate) fn export_snapshot(conn: &Connection, target: &Path) -> Result<(), String> {
+    vacuum_into(conn, target)?;
+    let result = Connection::open(target)
+        .and_then(|copy| copy.execute("DELETE FROM settings WHERE key = ?1", [KEY_API]))
+        .map_err(db_err);
+    if result.is_err() {
+        let _ = std::fs::remove_file(target);
+    }
+    result.map(|_| ())
 }
 
 /// Hält fest, dass der Ordner und dieser Rechner denselben Inhalt haben.
@@ -703,5 +723,52 @@ mod tests {
         assert_eq!(left.iter().filter(|n| n.starts_with("sicherung-vor-laden-")).count(), KEEP_BACKUPS);
         assert!(left.contains(&"andere-datei.db".to_string()), "fremde Dateien bleiben");
         assert!(left.contains(&"sicherung-vor-laden-202601013.db".to_string()), "die neuesten bleiben");
+    }
+
+    #[test]
+    fn export_leaves_out_the_api_key_and_restore_keeps_the_local_one() {
+        let tmp = TempDir::new("export");
+        let mut a = device(&tmp.0, "a", &tmp.0);
+        add_bucket(&a, "Alt");
+        trading::set_setting(&a.conn, KEY_API, "geheim-a").unwrap();
+        let file = tmp.0.join("sicherung.db");
+        export_snapshot(&a.conn, &file).unwrap();
+
+        let copy = Connection::open(&file).unwrap();
+        let keys: i64 = copy.query_row("SELECT COUNT(*) FROM settings WHERE key = ?1", [KEY_API], |r| r.get(0)).unwrap();
+        assert_eq!(keys, 0, "der API-Key gehört nicht in die Sicherung");
+        drop(copy);
+
+        // Nach der Sicherung ändert sich etwas, dann wird zurückgespielt
+        add_bucket(&a, "Neu");
+        trading::set_setting(&a.conn, KEY_API, "geheim-neu").unwrap();
+        load_snapshot(&mut a.conn, &a.backups, &file, "Die Datei", "sicherung-vor-wiederherstellen-").unwrap();
+        assert_eq!(buckets(&a), ["Alt"]);
+        assert_eq!(trading::get_setting(&a.conn, KEY_API).unwrap().as_deref(), Some("geheim-neu"), "eigener Key bleibt");
+        let saved: Vec<String> = std::fs::read_dir(&a.backups).unwrap().map(|e| e.unwrap().file_name().to_string_lossy().into_owned()).collect();
+        assert!(saved.iter().any(|n| n.starts_with("sicherung-vor-wiederherstellen-")), "bisheriger Stand wurde gesichert: {saved:?}");
+    }
+
+    #[test]
+    fn restore_rejects_foreign_or_broken_files_without_touching_data() {
+        let tmp = TempDir::new("restore-bad");
+        let mut a = device(&tmp.0, "a", &tmp.0);
+        add_bucket(&a, "Bleibt");
+
+        let text = tmp.0.join("text.db");
+        std::fs::write(&text, "das ist keine Datenbank, nur Text, lang genug für einen Header ......................").unwrap();
+        assert!(load_snapshot(&mut a.conn, &a.backups, &text, "Die Datei", "x-").is_err());
+
+        let foreign = tmp.0.join("fremd.db");
+        Connection::open(&foreign).unwrap().execute_batch("CREATE TABLE t (a INTEGER);").unwrap();
+        let err = load_snapshot(&mut a.conn, &a.backups, &foreign, "Die Datei", "x-").unwrap_err();
+        assert!(err.contains("keine Datenbank"), "{err}");
+
+        let newer = tmp.0.join("neu.db");
+        Connection::open(&newer).unwrap().pragma_update(None, "user_version", (db::MIGRATIONS.len() + 1) as i64).unwrap();
+        let err = load_snapshot(&mut a.conn, &a.backups, &newer, "Die Datei", "x-").unwrap_err();
+        assert!(err.contains("neueren Version"), "{err}");
+
+        assert_eq!(buckets(&a), ["Bleibt"], "lokale Daten sind unverändert");
     }
 }

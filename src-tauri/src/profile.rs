@@ -176,8 +176,22 @@ pub fn inspect_file(path: &str) -> LocationInfo {
     LocationInfo { db_path, exists: true, valid, needs_update: valid && version < latest, newer: version > latest, profile }
 }
 
+/// Version einer vorhandenen Datenbank, die noch migriert werden muss. None bei neuer, leerer, fremder oder aktueller Datei.
+fn outdated_version(file: &Path) -> Option<i64> {
+    if !file.is_file() {
+        return None;
+    }
+    let conn = Connection::open_with_flags(file, OpenFlags::SQLITE_OPEN_READ_ONLY).ok()?;
+    let version = conn.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0)).ok()?;
+    (1..db::MIGRATIONS.len() as i64).contains(&version).then_some(version)
+}
+
 /// Öffnet (oder legt an) die Datenbankdatei und migriert sie auf den aktuellen Stand.
+/// Eine ältere Datenbank wird vorher gesichert, egal ob sie neu übernommen oder nach einem App-Update gestartet wird.
 pub fn open_file(file: &Path) -> Result<Connection, String> {
+    if let Some(version) = outdated_version(file) {
+        backup_before_update(file, version)?;
+    }
     let conn = Connection::open(file).map_err(|e| format!("Die Datenbank konnte nicht geöffnet werden: {e}"))?;
     db::init(&conn).map_err(|e| format!("Die Datenbank konnte nicht eingerichtet werden: {e}"))?;
     Ok(conn)
@@ -196,6 +210,7 @@ fn backup_before_update(file: &Path, version: i64) -> Result<PathBuf, String> {
     // VACUUM INTO schreibt einen in sich stimmigen Stand, auch wenn die Datenbank im WAL-Modus lief
     conn.execute("VACUUM INTO ?1", [target.to_string_lossy().as_ref()])
         .map_err(|e| format!("Die Sicherung vor dem Aktualisieren konnte nicht angelegt werden: {e}"))?;
+    log::info!("Datenbank vor dem Update von Version {version} gesichert: {}", target.display());
     Ok(target)
 }
 
@@ -212,7 +227,7 @@ pub fn onboard(config_file: &Path, dir: &str, first_name: &str, last_name: &str)
 }
 
 /// Übernimmt eine vorhandene Datenbankdatei (beliebiger Name und Ort). Gehört ihr schon ein Profil, genügt das;
-/// sonst müssen Vor- und Nachname angegeben werden. Ältere Datenbanken werden nach einer Sicherung aktualisiert.
+/// sonst müssen Vor- und Nachname angegeben werden. Ältere Datenbanken werden (in `open_file`) nach einer Sicherung aktualisiert.
 pub fn open_existing(config_file: &Path, path: &str, first_name: &str, last_name: &str) -> Result<(Connection, PathBuf, Profile), String> {
     let file = PathBuf::from(path.trim());
     if path.trim().is_empty() || !file.is_file() {
@@ -233,12 +248,6 @@ pub fn open_existing(config_file: &Path, path: &str, first_name: &str, last_name
     };
     if new_profile.is_none() && info.profile.is_none() {
         return Err("In dieser Datenbank ist noch kein Name hinterlegt. Bitte gib deinen Namen ein.".into());
-    }
-    if info.needs_update {
-        let version = Connection::open_with_flags(&file, OpenFlags::SQLITE_OPEN_READ_ONLY)
-            .and_then(|c| c.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0)))
-            .map_err(|e| e.to_string())?;
-        backup_before_update(&file, version)?;
     }
     let conn = open_file(&file)?;
     let profile = match new_profile {
@@ -499,5 +508,32 @@ mod tests {
         assert_eq!(old_version, 5);
         let old_tasks: i64 = old.query_row("SELECT COUNT(*) FROM tasks", [], |r| r.get(0)).unwrap();
         assert_eq!(old_tasks, 1);
+    }
+
+    #[test]
+    fn start_after_app_update_backs_up_before_migrating() {
+        // Der normale Start öffnet die Datei direkt, ohne den Weg über das Onboarding
+        let tmp = TempDir::new("open5");
+        let file = tmp.0.join("alt.db");
+        let c = Connection::open(&file).unwrap();
+        for sql in &db::MIGRATIONS[..5] {
+            c.execute_batch(sql).unwrap();
+        }
+        c.pragma_update(None, "user_version", 5i64).unwrap();
+        c.execute("INSERT INTO tasks (title) VALUES ('Alt')", []).unwrap();
+        drop(c);
+
+        let conn = open_file(&file).unwrap();
+        let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0)).unwrap();
+        assert_eq!(version as usize, db::MIGRATIONS.len());
+        let old = Connection::open(tmp.0.join("alt.vor-update-v5.db")).unwrap();
+        let old_version: i64 = old.query_row("PRAGMA user_version", [], |r| r.get(0)).unwrap();
+        assert_eq!(old_version, 5, "Sicherung hat den Stand vor der Migration");
+        drop(conn);
+
+        // Eine aktuelle Datenbank wird nicht erneut gesichert
+        open_file(&file).unwrap();
+        let backups = std::fs::read_dir(&tmp.0).unwrap().filter(|e| e.as_ref().unwrap().file_name().to_string_lossy().contains("vor-update")).count();
+        assert_eq!(backups, 1);
     }
 }

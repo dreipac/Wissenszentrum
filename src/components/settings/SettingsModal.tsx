@@ -1,9 +1,13 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { Check, Copy, Database, Info, LineChart, Palette, RefreshCw, Sparkles, User, X, type LucideIcon } from "lucide-react";
+import { Check, Copy, Database, Download, Info, LineChart, Palette, RefreshCw, Sparkles, Upload, User, X, type LucideIcon } from "lucide-react";
 import { Button } from "../ui/Button";
+import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { Logo } from "../ui/Logo";
 import { SecondaryButton } from "../ui/SecondaryButton";
+import { exportBackup, pickBackupFile, restoreBackup } from "../../lib/api/app";
+import { appVersion, openDownloadPage, openLogFolder } from "../../lib/api/updater";
+import { useUpdater } from "../../lib/useUpdater";
 import { ASSISTANT_MODELS, assistantStatus, saveAssistantKey, setAssistantModel, type AssistantStatus } from "../../lib/api/assistant";
 import { getApiKey, saveApiKey } from "../../lib/api/trading";
 import { useAppTheme, type AppTheme } from "../../lib/appTheme";
@@ -258,6 +262,9 @@ function AppearanceSection() {
 function DataSection() {
   const profile = useProfile();
   const [flash, setFlash] = useFlash();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [restorePath, setRestorePath] = useState<string | null>(null);
 
   const copy = async () => {
     try {
@@ -265,6 +272,44 @@ function DataSection() {
       setFlash("Pfad kopiert");
     } catch {
       setFlash("Kopieren nicht möglich");
+    }
+  };
+
+  const exportNow = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const path = await exportBackup();
+      if (path) setFlash("Sicherung gespeichert");
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const chooseRestore = async () => {
+    setError(null);
+    try {
+      const path = await pickBackupFile();
+      if (path) setRestorePath(path);
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+
+  const restoreNow = async () => {
+    if (!restorePath) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await restoreBackup(restorePath);
+      // Alle Ansichten halten noch den alten Stand im Speicher: Neuladen ist der sichere Weg
+      window.location.reload();
+    } catch (e) {
+      setError(String(e));
+      setRestorePath(null);
+      setBusy(false);
     }
   };
 
@@ -287,10 +332,33 @@ function DataSection() {
           </div>
         )}
       </Group>
+      <Group title="Sicherung">
+        <Row label="Sicherung speichern" hint="Eine Kopie aller Daten als einzelne Datei, zum Beispiel auf einem USB-Stick oder in der Cloud. Der Finnhub-Key ist nicht enthalten.">
+          <SecondaryButton disabled={busy} onClick={() => void exportNow()}>
+            <Download size={14} /> Speichern …
+          </SecondaryButton>
+        </Row>
+        <Row label="Sicherung wiederherstellen" hint="Ersetzt alle Daten durch den Stand einer Sicherungsdatei. Den jetzigen Stand sichert die App vorher automatisch.">
+          <SecondaryButton disabled={busy} onClick={() => void chooseRestore()}>
+            <Upload size={14} /> Datei wählen …
+          </SecondaryButton>
+        </Row>
+      </Group>
+      {error && <p className="field-error">{error}</p>}
+      {restorePath && (
+        <ConfirmDialog
+          title="Sicherung wiederherstellen?"
+          message={`Alle jetzigen Daten werden durch den Stand aus „${restorePath}“ ersetzt. Den jetzigen Stand legt die App vorher im Ordner „sicherungen“ im Datenordner der App ab. Danach lädt die App neu.`}
+          confirmLabel="Wiederherstellen"
+          busy={busy}
+          onConfirm={() => void restoreNow()}
+          onCancel={() => setRestorePath(null)}
+        />
+      )}
       <Group title="Hinweise">
         <div className="st-note">
           <p>Die Daten liegen nur auf diesem Rechner und sind nicht verschlüsselt. Für denselben Stand auf einem zweiten Rechner nutze den Bereich „Abgleich“.</p>
-          <p>Vor dem Laden eines fremden Stands legt die App automatisch eine Sicherung im Datenordner der App an (AppData, Ordner „sicherungen“).</p>
+          <p>Vor dem Laden eines fremden Stands und vor dem Wiederherstellen legt die App automatisch eine Sicherung im Datenordner der App an (AppData, Ordner „sicherungen“). Vor dem Aktualisieren einer älteren Datenbank entsteht eine Kopie neben der Datenbankdatei („…vor-update-v…“).</p>
         </div>
       </Group>
     </>
@@ -498,16 +566,104 @@ const SHORTCUTS: { keys: string; what: string }[] = [
   { keys: "Esc", what: "Dialog schließen, Ziehen abbrechen" },
 ];
 
+/** Text unter dem Knopf „Nach Updates suchen“ */
+function updateMessage(state: ReturnType<typeof useUpdater>["state"]): string | null {
+  switch (state.kind) {
+    case "checking":
+      return "Suche läuft …";
+    case "current":
+      return "Du hast die neueste Version.";
+    case "available":
+      return `Version ${state.version} ist verfügbar.`;
+    case "downloading":
+      return `Version ${state.version} wird geladen${state.percent !== null ? ` (${state.percent} %)` : " …"}`;
+    default:
+      return null;
+  }
+}
+
 function AboutSection() {
+  const { state, auto, setAuto, check, install } = useUpdater();
+  const [version, setVersion] = useState<string | null>(null);
+  const [logError, setLogError] = useState<string | null>(null);
+
+  useEffect(() => {
+    appVersion()
+      .then(setVersion)
+      .catch(() => setVersion(null));
+  }, []);
+
+  const busy = state.kind === "checking" || state.kind === "downloading";
+  const message = updateMessage(state);
+
   return (
     <>
       <div className="st-identity">
         <Logo size={52} />
         <div>
           <strong>Wissenszentrum</strong>
-          <span>Dokumentation, Aufgaben, Kalender, Notizen und Trading</span>
+          <span>{version ? `Version ${version}` : "Dokumentation, Aufgaben, Kalender, Notizen und Trading"}</span>
         </div>
       </div>
+      <Group title="Updates">
+        <Row
+          label="Suche nach Updates"
+          hint={
+            auto
+              ? "Die App fragt beim Start und danach regelmäßig bei GitHub nach einer neuen Version. Installiert wird erst nach deiner Bestätigung. Übertragen werden keine Daten aus deiner Datenbank."
+              : "Die App baut von sich aus keine Verbindung ins Internet auf. Neue Versionen holst du selbst: mit „Nach Updates suchen“ oder über die Download-Seite."
+          }
+        >
+          <div className="segmented" role="radiogroup" aria-label="Suche nach Updates">
+            <button type="button" role="radio" aria-checked={auto} className={auto ? "active" : ""} onClick={() => setAuto(true)}>
+              Automatisch
+            </button>
+            <button type="button" role="radio" aria-checked={!auto} className={!auto ? "active" : ""} onClick={() => setAuto(false)}>
+              Aus
+            </button>
+          </div>
+        </Row>
+        <Row label="Nach Updates suchen" hint="Fragt jetzt einmal nach, auch wenn die automatische Suche aus ist.">
+          {state.kind === "available" ? (
+            <Button disabled={busy} onClick={() => void install()}>
+              Jetzt aktualisieren
+            </Button>
+          ) : (
+            <SecondaryButton disabled={busy} onClick={() => void check(true)}>
+              <RefreshCw size={14} /> Suchen
+            </SecondaryButton>
+          )}
+        </Row>
+        {message && (
+          <div className="st-row compact">
+            <span className="st-flash">
+              <Check size={14} /> {message}
+            </span>
+          </div>
+        )}
+        <Row label="Von Hand herunterladen" hint="Für Rechner ohne Internet: Installer auf einem anderen Rechner laden, per USB-Stick kopieren und starten. Die Daten bleiben erhalten, eine ältere Datenbank wird vor dem Aktualisieren gesichert.">
+          <SecondaryButton
+            onClick={() => {
+              setLogError(null);
+              openDownloadPage().catch((e) => setLogError(String(e)));
+            }}
+          >
+            Download-Seite öffnen
+          </SecondaryButton>
+        </Row>
+        <Row label="Protokoll" hint="Hier landen Fehlermeldungen der App. Bei einem Problem hilft diese Datei bei der Suche.">
+          <SecondaryButton
+            onClick={() => {
+              setLogError(null);
+              openLogFolder().catch((e) => setLogError(String(e)));
+            }}
+          >
+            Ordner öffnen
+          </SecondaryButton>
+        </Row>
+      </Group>
+      {state.kind === "error" && <p className="field-error">{state.message}</p>}
+      {logError && <p className="field-error">{logError}</p>}
       <Group title="Kurzbefehle">
         {SHORTCUTS.map((s) => (
           <div key={s.keys} className="st-row">

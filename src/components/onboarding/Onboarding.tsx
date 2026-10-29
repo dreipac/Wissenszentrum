@@ -9,6 +9,7 @@ import { Button } from "../ui/Button";
 import { SecondaryButton } from "../ui/SecondaryButton";
 import { completeOnboarding, inspectDatabase, inspectLocation, openExistingDatabase, pickDatabaseFile, pickFolder } from "../../lib/api/app";
 import { dbFileIn, type AppState, type LocationInfo } from "../../lib/profile";
+import { readAutoUpdate, writeAutoUpdate } from "../../lib/useUpdater";
 import "./Onboarding.css";
 
 /** 0 Willkommen, 1 Name, 2 Speicherort, 3 Fertig, 4 vorhandene Datenbank öffnen */
@@ -46,6 +47,13 @@ export function Onboarding({ state, onDone }: OnboardingProps) {
   const [openFirst, setOpenFirst] = useState("");
   const [openLast, setOpenLast] = useState("");
   const [triedOpen, setTriedOpen] = useState(false);
+
+  // Suche nach Updates: wird sofort gemerkt, die Einstellungen zeigen dieselbe Wahl
+  const [autoUpdate, setAutoUpdate] = useState(readAutoUpdate);
+  const chooseAutoUpdate = (on: boolean) => {
+    setAutoUpdate(on);
+    writeAutoUpdate(on);
+  };
 
   const go = (next: Step) => {
     setDirection(next > step ? "forward" : "back");
@@ -435,6 +443,27 @@ export function Onboarding({ state, onDone }: OnboardingProps) {
                     <dd title={result.dbPath ?? ""}>{result.dbPath}</dd>
                   </div>
                 </dl>
+                <div className="ob-choice">
+                  <div className="ob-choice-head">
+                    <span className="ob-choice-title" id="ob-update-label">
+                      Updates
+                    </span>
+                    <div className="segmented" role="radiogroup" aria-labelledby="ob-update-label">
+                      <button type="button" role="radio" aria-checked={autoUpdate} className={autoUpdate ? "active" : ""} onClick={() => chooseAutoUpdate(true)}>
+                        Automatisch
+                      </button>
+                      <button type="button" role="radio" aria-checked={!autoUpdate} className={!autoUpdate ? "active" : ""} onClick={() => chooseAutoUpdate(false)}>
+                        Aus
+                      </button>
+                    </div>
+                  </div>
+                  <p>
+                    {autoUpdate
+                      ? "Die App fragt beim Start und danach regelmäßig bei GitHub nach einer neuen Version. Installiert wird erst nach deiner Bestätigung, und aus deiner Datenbank wird nichts übertragen."
+                      : "Die App baut von sich aus keine Verbindung ins Internet auf. Neue Versionen holst du selbst."}{" "}
+                    Du kannst das jederzeit unter Einstellungen → Info ändern.
+                  </p>
+                </div>
                 <div className="ob-actions single">
                   <Button className="ob-primary" autoFocus onClick={() => onDone(result)}>
                     Wissenszentrum öffnen
