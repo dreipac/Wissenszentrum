@@ -15,3 +15,14 @@ dist-ssr
 # Rust / Tauri
 src-tauri/target
 src-tauri/gen
+
+# Datenbanken (persönliche Daten) und Sicherungen
+*.db
+*.db-shm
+*.db-wal
+*.db-journal
+*.sqlite
+*.sqlite3
+
+# Signierschlüssel des Updaters (nie einchecken)
+*.key
