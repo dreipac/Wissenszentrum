@@ -1,5 +1,10 @@
 # Änderungen
 
+## 1.4.1 (02.11.2026)
+
+- Release Script erstellt
+- Datenbankdateien aus dem Git-Index entfernen
+
 ## 1.4.0 (29.10.2026)
 
 - Updates: Die App kann beim Start und danach regelmäßig nach einer neuen, signierten Version suchen und sie nach Bestätigung installieren (Banner unten). Beim ersten Start fragt das Onboarding, ob die App automatisch suchen soll („Automatisch“ oder „Aus“); die Wahl lässt sich unter Einstellungen → Info ändern. Bei „Aus“ baut die App von sich aus keine Verbindung auf. Von Hand: „Nach Updates suchen“ oder „Download-Seite öffnen“ und den Installer selbst starten (auch per USB-Stick auf Rechnern ohne Internet).

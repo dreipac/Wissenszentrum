@@ -5159,7 +5159,7 @@ dependencies = [
 
 [[package]]
 name = "wissenszentrum"
-version = "1.4.0"
+version = "1.4.1"
 dependencies = [
  "futures-util",
  "keyring",
