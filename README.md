@@ -54,4 +54,4 @@ Wird dabei `createUpdaterArtifacts` ausgewertet, braucht der Build die Umgebungs
 
 ## Releases
 
-Siehe [docs/RELEASE.md](docs/RELEASE.md). Kurz: `npm run version:set <x.y.z>`, committen, Tag `v<x.y.z>` pushen. Der Rest läuft in GitHub Actions; installierte Apps aktualisieren sich danach selbst.
+Siehe [docs/RELEASE.md](docs/RELEASE.md). Kurz: auf `main` `npm run release minor` (oder `patch`, `major`, `1.5.0`). Das Skript prüft, setzt Version, Changelog und Tag und pusht. Der Rest läuft in GitHub Actions; das Release erscheint als Entwurf, nach dem Veröffentlichen aktualisieren sich installierte Apps selbst. Vorher ansehen mit `npm run release -- minor --dry-run`.

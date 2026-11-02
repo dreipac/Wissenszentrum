@@ -38,7 +38,22 @@ Mit einem `.pfx`-Zertifikat zwei weitere Secrets anlegen:
 
 Der Workflow importiert das Zertifikat selbst und signiert Installer und Programm.
 
-## Ein Release veröffentlichen
+## Ein Release mit einem Befehl
+
+Auf `main`, ohne offene Änderungen:
+
+```bash
+npm run release minor          # patch, minor, major oder eine Version wie 1.5.0
+npm run release -- minor --dry-run   # zeigt nur, was passieren würde
+```
+
+Das Skript (`scripts/release.mjs`) prüft zuerst alles: Branch `main`, keine offenen Änderungen, Stand von GitHub, freier Tag. Es zeigt den Plan samt Changelog-Eintrag und fragt nach. Dann baut es das Frontend, testet das Backend, setzt die Version überall, ergänzt den Changelog, committet, setzt den Tag `v<version>` und pusht `main` und den Tag gemeinsam.
+
+Gibt es für die Version noch keinen Changelog-Eintrag, entsteht einer aus den Commit-Titeln seit dem letzten Release. Soll er besser formuliert sein, trage ihn vorher in `CHANGELOG.md` unter `## <version>` ein und committe ihn, dann übernimmt das Skript ihn unverändert.
+
+Optionen: `--dry-run` (nichts verändern), `--yes` (ohne Rückfrage), `--skip-checks` (Build und Tests überspringen, die CI testet vor dem Bauen trotzdem). Danach weiter bei Schritt 4 unten: Der Workflow baut, das Release erscheint als Entwurf, du prüfst und veröffentlichst es.
+
+## Ein Release von Hand veröffentlichen
 
 1. Version erhöhen (setzt `package.json`, `package-lock.json`, `Cargo.toml` und `Cargo.lock` gemeinsam; `tauri.conf.json` liest sie aus `package.json`):
    ```bash
