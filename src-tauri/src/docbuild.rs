@@ -30,6 +30,17 @@ pub enum Block {
     Divider,
     Quote { text: String },
     Code { text: String },
+    /// Eine Datei, die schon als Anhang in der Datenbank liegt. Das Modell nennt nur `file_id`; Name, Größe und Typ
+    /// trägt `resolve_files` aus der Datenbank ein, damit nichts davon erfunden sein kann.
+    File {
+        file_id: i64,
+        #[serde(default)]
+        name: String,
+        #[serde(default)]
+        size: i64,
+        #[serde(default)]
+        mime: String,
+    },
 }
 
 /// Ordner oder Seite im Vorschlag. Ordner dienen nur zum Gliedern, Seiten tragen den Inhalt; beide dürfen Unterseiten haben.
@@ -54,6 +65,7 @@ pub struct Stats {
     pub headings: usize,
     pub tables: usize,
     pub dividers: usize,
+    pub files: usize,
 }
 
 // --- Prüfung -------------------------------------------------------------------------
@@ -110,6 +122,12 @@ pub fn check_block(page: &str, block: &Block, stats: &mut Stats) -> Result<(), S
             stats.tables += 1;
         }
         Block::Divider => stats.dividers += 1,
+        Block::File { file_id, .. } => {
+            if *file_id <= 0 {
+                return Err(format!("Seite „{page}“: Ein Datei-Baustein braucht die file_id einer angehängten Datei."));
+            }
+            stats.files += 1;
+        }
     }
     Ok(())
 }
@@ -296,6 +314,11 @@ pub fn block_html(block: &Block) -> String {
         Block::Divider => "<hr>".to_string(),
         Block::Quote { text } => format!("<blockquote><p>{}</p></blockquote>", inline_html(text)),
         Block::Code { text } => format!("<pre><code>{}</code></pre>", escape(text.trim_matches('\n'))),
+        // Wie die Dateikarte des Editors sie einliest: nur die ID verweist auf die Bytes in der Datenbank
+        Block::File { file_id, name, size, mime } => {
+            let mime = if mime.is_empty() { String::new() } else { format!(" data-mime=\"{}\"", escape(mime)) };
+            format!("<div data-file-id=\"{file_id}\" data-name=\"{}\" data-size=\"{size}\"{mime}>{}</div>", escape(name), escape(name))
+        }
     }
 }
 
@@ -342,6 +365,32 @@ pub fn page_content(blocks: &[Block]) -> (String, String) {
     (html, plain)
 }
 
+// --- Dateien auflösen ----------------------------------------------------------------------
+
+/// Trägt bei Datei-Bausteinen Name, Größe und Typ aus den Anhängen ein. Gibt es eine Datei nicht (mehr), ist das ein Fehler.
+pub fn resolve_files(conn: &Connection, blocks: &mut [Block]) -> Result<(), String> {
+    for block in blocks {
+        if let Block::File { file_id, name, size, mime } = block {
+            let (n, m, s): (String, String, i64) = conn
+                .query_row("SELECT name, mime, size FROM attachments WHERE id = ?1", [*file_id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+                .map_err(|_| format!("Die Datei mit der file_id {file_id} gibt es nicht (mehr). Sie muss in diesem Gespräch angehängt worden sein."))?;
+            *name = n;
+            *mime = m;
+            *size = s;
+        }
+    }
+    Ok(())
+}
+
+/// `resolve_files` für einen ganzen Vorschlag samt Unterseiten.
+pub fn resolve_nodes(conn: &Connection, nodes: &mut [DocNodeSpec]) -> Result<(), String> {
+    for node in nodes {
+        resolve_files(conn, &mut node.blocks)?;
+        resolve_nodes(conn, &mut node.children)?;
+    }
+    Ok(())
+}
+
 // --- Anlegen ----------------------------------------------------------------------------
 
 fn create_node(conn: &Connection, parent: Option<i64>, node: &DocNodeSpec) -> Result<i64, String> {
@@ -358,6 +407,10 @@ fn create_node(conn: &Connection, parent: Option<i64>, node: &DocNodeSpec) -> Re
 
 /// Legt den ganzen Baum unter `parent` an (ganz oder gar nicht) und liefert die Nummern der obersten Einträge.
 pub fn create_tree(conn: &Connection, parent: Option<i64>, nodes: &[DocNodeSpec]) -> Result<Vec<i64>, String> {
+    // Der Vorschlag kommt aus dem Frontend zurück: Dateiangaben werden neu aus der Datenbank gelesen
+    let mut nodes = nodes.to_vec();
+    resolve_nodes(conn, &mut nodes)?;
+    let nodes = nodes.as_slice();
     validate(nodes)?;
     if let Some(p) = parent {
         docs::get_page(conn, p).map_err(|_| "Der Zielordner existiert nicht mehr.".to_string())?;

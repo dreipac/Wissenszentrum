@@ -3,7 +3,7 @@ import { listEvents } from "./events";
 import { listBuckets, listTasks } from "./tasks";
 import { docsStore } from "./docsPreview";
 import type { DocBlock, EditLine } from "../docBlocks";
-import type { AssistantAnswer, ChatTurn } from "./assistant";
+import type { AssistantAnswer, ChatTurn, PlanItem } from "./assistant";
 
 // Nur für den Browser-Preview (npm run dev ohne Tauri-Fenster): feste Beispielantworten statt einer echten KI.
 
@@ -185,7 +185,7 @@ const DOCS = (): AssistantAnswer => ({
     {
       parentId: null,
       parentPath: "Hauptebene",
-      stats: { folders: 1, pages: 2, headings: 5, tables: 1, dividers: 1 },
+      stats: { folders: 1, pages: 2, headings: 5, tables: 1, dividers: 1, files: 0 },
       existing: [],
       nodes: [
         {
@@ -356,4 +356,17 @@ export async function previewAnswer(history: ChatTurn[], onStep: (step: string) 
   }
   await wait(500);
   return answer;
+}
+
+/** Beispiel für einen größeren Auftrag: ein Plan, der Schritt für Schritt abgearbeitet wird. */
+export async function previewPlanned(onStep: (step: string) => void, onPlan: (items: PlanItem[]) => void): Promise<AssistantAnswer> {
+  const titles = ["Dossier und Lernziele lesen", "Gliederung vorschlagen", "Seiten schreiben", "Vorschlag prüfen"];
+  for (let i = 0; i < titles.length; i++) {
+    onPlan(titles.map((title, j) => ({ title, status: j < i ? "done" : j === i ? "in_progress" : "pending" })));
+    if (i === 0) onStep("Seiten gelesen");
+    await wait(900);
+  }
+  const plan: PlanItem[] = titles.map((title) => ({ title, status: "done" }));
+  onPlan(plan);
+  return { ...FALLBACK, text: "Das ist die Vorschau im Browser: So arbeitet der Assistent im Programm größere Aufträge Schritt für Schritt ab.", plan };
 }

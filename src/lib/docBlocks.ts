@@ -8,7 +8,9 @@ export type DocBlock =
   | { type: "paragraph" | "quote" | "code"; text: string }
   | { type: "bullet_list" | "numbered_list"; items: string[] }
   | { type: "table"; headers: string[]; rows: string[][] }
-  | { type: "divider" };
+  | { type: "divider" }
+  /** Datei aus dem Chat: nur `file_id` ist vom Modell, Name, Größe und Typ trägt das Backend aus dem Anhang ein */
+  | { type: "file"; file_id: number; name?: string; size?: number; mime?: string };
 
 /** Ordner oder Seite eines Vorschlags; Ordner gliedern nur, Seiten tragen den Inhalt, beide dürfen Unterseiten haben. */
 export interface DocNodeSpec {
@@ -24,6 +26,7 @@ export interface DocStats {
   headings: number;
   tables: number;
   dividers: number;
+  files: number;
 }
 
 /** Eine Änderung an einer bestehenden Seite; die Nummern beziehen sich auf die Bausteine, wie der Assistent sie gelesen hat. */
@@ -79,6 +82,8 @@ export function blocksToHtml(blocks: DocBlock[]): string {
             .join("")}</tbody></table>`;
         case "divider":
           return "<hr>";
+        case "file":
+          return `<div data-file-id="${b.file_id}" data-name="${esc(b.name ?? "Datei")}" data-size="${b.size ?? 0}"${b.mime ? ` data-mime="${esc(b.mime)}"` : ""}>${esc(b.name ?? "Datei")}</div>`;
       }
     })
     .join("");
@@ -91,6 +96,8 @@ export function blocksToPlain(blocks: DocBlock[]): string {
       switch (b.type) {
         case "divider":
           return "";
+        case "file":
+          return b.name ?? "";
         case "table":
           return [b.headers.join(" | "), ...b.rows.map((r) => r.join(" | "))].join("\n");
         case "bullet_list":

@@ -1,4 +1,5 @@
 mod assistant;
+mod chatfiles;
 mod db;
 mod docbuild;
 mod dochtml;
@@ -1221,7 +1222,11 @@ pub fn run() {
             search_symbols,
             assistant::assistant_status,
             assistant::set_assistant_model,
+            assistant::set_assistant_limits,
             assistant::save_assistant_key,
+            assistant::assistant_usage,
+            assistant::reset_assistant_usage,
+            assistant::assistant_cancel,
             assistant::assistant_ask
         ])
         .run(tauri::generate_context!())

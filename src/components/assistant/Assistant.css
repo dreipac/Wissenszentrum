@@ -431,8 +431,176 @@
 .as-box-foot {
   display: flex;
   align-items: center;
+  gap: 0.35rem;
+  padding: 0.2rem 0.5rem 0.5rem 0.5rem;
+}
+
+.as-box-foot .as-scope {
+  flex: 1;
+  min-width: 0;
+}
+
+.as-attach {
+  flex-shrink: 0;
+}
+
+/* Datei über die Eingabe ziehen */
+.as-box.drop {
+  border-color: var(--accent);
+  background-color: color-mix(in srgb, var(--accent) 6%, var(--bg-app));
+}
+
+/* Angehängte Dateien als Chips über dem Eingabefeld und in der Nachricht */
+.as-files,
+.as-user-files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.as-files {
+  padding: 0 0.15rem 0.5rem;
+}
+
+.as-user-files {
+  margin-top: 0.45rem;
+  white-space: normal;
+}
+
+.as-file {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  max-width: 100%;
+  padding: 0 0.55rem;
+  border: 1px solid var(--border-soft);
+  border-radius: 999px;
+  color: var(--text-muted);
+  font-size: 0.74rem;
+  line-height: 22px;
+}
+
+.as-file:has(.icon-btn) {
+  padding-right: 0.2rem;
+}
+
+.as-file.busy {
+  opacity: 0.7;
+}
+
+.as-file-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.as-file svg {
+  flex-shrink: 0;
+}
+
+.as-file .icon-btn {
+  width: 18px;
+  height: 18px;
+}
+
+.as-file-error {
+  margin: 0;
+  padding: 0 0.15rem 0.5rem;
+  font-size: 0.72rem;
+  line-height: 1.4;
+  color: var(--negative);
+}
+
+/* Arbeitsplan: Aufgabenliste des Assistenten, hakt sich beim Abarbeiten live ab */
+.as-plan {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  background-color: var(--bg-sidebar);
+}
+
+.as-plan-head {
+  display: flex;
+  align-items: center;
   justify-content: space-between;
-  padding: 0.2rem 0.5rem 0.5rem 0.85rem;
+}
+
+.as-plan-count {
+  font-size: 0.7rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-faint);
+}
+
+.as-plan ul {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.as-plan li {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  font-size: 0.82rem;
+  line-height: 1.4;
+  color: var(--text-faint);
+}
+
+.as-plan li svg {
+  flex-shrink: 0;
+  margin-top: 0.18rem;
+}
+
+.as-plan li.done {
+  color: var(--text-muted);
+}
+
+.as-plan li.done svg {
+  color: var(--positive);
+}
+
+.as-plan li.in_progress {
+  color: var(--text);
+}
+
+.as-plan li.in_progress svg {
+  color: var(--accent);
+}
+
+.as-spin {
+  animation: as-spin 1s linear infinite;
+}
+
+@keyframes as-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Stopp statt Senden, solange der Assistent arbeitet */
+.as-send.stop {
+  background-color: var(--bg-selected);
+  color: var(--text);
+}
+
+.as-send.stop:hover {
+  background-color: var(--border-strong);
+}
+
+/* Verbrauch unter einer Antwort */
+.as-usage {
+  margin: 0;
+  font-size: 0.7rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.4;
+  color: var(--text-faint);
 }
 
 .as-scope {

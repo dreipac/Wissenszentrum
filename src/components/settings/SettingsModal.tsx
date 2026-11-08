@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Check, Copy, Database, Download, Info, LineChart, Palette, RefreshCw, Sparkles, Upload, User, X, type LucideIcon } from "lucide-react";
 import { Button } from "../ui/Button";
@@ -8,7 +8,8 @@ import { SecondaryButton } from "../ui/SecondaryButton";
 import { exportBackup, pickBackupFile, restoreBackup } from "../../lib/api/app";
 import { appVersion, openDownloadPage, openLogFolder } from "../../lib/api/updater";
 import { useUpdater } from "../../lib/useUpdater";
-import { ASSISTANT_MODELS, assistantStatus, saveAssistantKey, setAssistantModel, type AssistantStatus } from "../../lib/api/assistant";
+import { ASSISTANT_MODELS, assistantStatus, assistantUsage, resetAssistantUsage, saveAssistantKey, setAssistantLimits, setAssistantModel, type AssistantStatus, type AssistantUsage } from "../../lib/api/assistant";
+import { formatChf } from "../../lib/cost";
 import { getApiKey, saveApiKey } from "../../lib/api/trading";
 import { useAppTheme, type AppTheme } from "../../lib/appTheme";
 import { useEditorTheme, type EditorTheme } from "../../lib/editorTheme";
@@ -383,6 +384,9 @@ function SyncPanel({ onClose }: { onClose: () => void }) {
 
 function AssistantSection() {
   const [status, setStatus] = useState<AssistantStatus | null>(null);
+  const [usage, setUsage] = useState<AssistantUsage | null>(null);
+  const [limit, setLimit] = useState("");
+  const [rate, setRate] = useState("");
   const [key, setKey] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -408,6 +412,41 @@ function AssistantSection() {
       setBusy(false);
     }
   };
+
+  // Die Felder zeigen, was gespeichert ist
+  useEffect(() => {
+    if (!status) return;
+    setLimit(String(status.costLimitChf));
+    setRate(String(status.usdChf));
+  }, [status]);
+
+  const saveLimits = async () => {
+    const limitNumber = Number(limit.replace(",", "."));
+    const rateNumber = Number(rate.replace(",", "."));
+    if (limit.trim() === "" || rate.trim() === "" || !Number.isFinite(limitNumber) || !Number.isFinite(rateNumber)) {
+      setError("Bitte gib Zahlen ein, zum Beispiel 1 und 0.80.");
+      return;
+    }
+    if (status && limitNumber === status.costLimitChf && rateNumber === status.usdChf) return;
+    try {
+      await setAssistantLimits(limitNumber, rateNumber);
+      setStatus((s) => (s ? { ...s, costLimitChf: limitNumber, usdChf: rateNumber } : s));
+      setError(null);
+      setFlash("Gespeichert");
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+
+  const loadUsage = useCallback(() => {
+    assistantUsage()
+      .then(setUsage)
+      .catch(() => setUsage(null));
+  }, []);
+
+  useEffect(() => {
+    loadUsage();
+  }, [loadUsage]);
 
   const chooseModel = async (model: string) => {
     setError(null);
@@ -474,10 +513,82 @@ function AssistantSection() {
         </Row>
       </Group>
 
+      <Group title="Kosten">
+        <Row label="Limit pro Antwort" hint="Ist es erreicht, hält der Assistent an und liefert, was bis dahin entstanden ist. 0 heißt: kein Limit." htmlFor="st-limit">
+          <span className="st-unit-field">
+            <input
+              id="st-limit"
+              className="field-control st-short"
+              inputMode="decimal"
+              value={limit}
+              onChange={(e) => setLimit(e.target.value)}
+              onBlur={() => void saveLimits()}
+              onKeyDown={(e) => e.key === "Enter" && void saveLimits()}
+            />
+            <span className="st-unit">CHF</span>
+          </span>
+        </Row>
+        <Row label="Wechselkurs" hint="Die Preise von Anthropic sind in Dollar. Damit rechnet die App in Franken um. Die Anzeige ist eine Schätzung, kein Rechnungsbetrag." htmlFor="st-rate">
+          <span className="st-unit-field">
+            <input
+              id="st-rate"
+              className="field-control st-short"
+              inputMode="decimal"
+              value={rate}
+              onChange={(e) => setRate(e.target.value)}
+              onBlur={() => void saveLimits()}
+              onKeyDown={(e) => e.key === "Enter" && void saveLimits()}
+            />
+            <span className="st-unit">CHF je USD</span>
+          </span>
+        </Row>
+      </Group>
+
+      <Group title="Verbrauch seit dem Start">
+        <Row label="Anfragen" hint="Eine Frage braucht meist mehrere Anfragen: Der Assistent schlägt nach und antwortet dann.">
+          <span className="st-num">{usage ? usage.requests.toLocaleString("de-CH") : "–"}</span>
+        </Row>
+        <Row label="Aus dem Zwischenspeicher" hint="Der feste Teil jeder Anfrage (Werkzeuge, Anweisungen) wird nur einmal voll berechnet und danach günstig wiedergelesen. Hoch ist gut.">
+          <span className="st-num">{usage?.hitRate != null ? `${Math.round(usage.hitRate * 100)} %` : "–"}</span>
+        </Row>
+        <Row label="Eingabe" hint="Neu = voller Preis. Gelesen = aus dem Zwischenspeicher. Geschrieben = beim ersten Mal in den Zwischenspeicher gelegt.">
+          <span className="st-num">
+            {usage ? `${usage.inputTokens.toLocaleString("de-CH")} neu · ${usage.cacheReadTokens.toLocaleString("de-CH")} gelesen · ${usage.cacheWriteTokens.toLocaleString("de-CH")} geschrieben` : "–"}
+          </span>
+        </Row>
+        <Row label="Ausgabe">
+          <span className="st-num">{usage ? `${usage.outputTokens.toLocaleString("de-CH")} Tokens` : "–"}</span>
+        </Row>
+        <Row label="Geschätzte Kosten" hint="Nach der Preisliste von Anthropic, einschließlich Zwischenspeicher. Keine Rechnung: maßgeblich ist die Anthropic Console.">
+          <span className="st-num">{usage ? formatChf(usage.costUsd, status?.usdChf ?? 0.8) : "–"}</span>
+        </Row>
+        {usage?.cacheOff && (
+          <div className="st-row compact">
+            <span className="st-hint">Dieses Modell nimmt den Zwischenspeicher nicht an: er bleibt aus, jede Anfrage kostet den vollen Preis.</span>
+          </div>
+        )}
+        {usage?.effortOff && (
+          <div className="st-row compact">
+            <span className="st-hint">Dieses Modell nimmt die Aufwandsstufe nicht an: sie bleibt aus.</span>
+          </div>
+        )}
+      </Group>
+      <div className="st-actions">
+        <SecondaryButton onClick={loadUsage}>Aktualisieren</SecondaryButton>
+        <SecondaryButton
+          onClick={() => {
+            void resetAssistantUsage().then(loadUsage);
+          }}
+        >
+          Zurücksetzen
+        </SecondaryButton>
+      </div>
+
       <Group title="Hinweise">
         <div className="st-note">
           <p>Der Assistent liest deine Daten. Aufgaben und Termine anlegen, ändern, abhaken oder löschen kann er nur vorschlagen: es passiert erst, wenn du die Karte im Chat bestätigst. Neue Ordner und Seiten für die Dokumentation legt er ebenfalls erst nach deiner Bestätigung an. Auch Änderungen an bestehenden Seiten zeigt er dir vorab mit hervorgehobenem Neuen und Entfallendem und übernimmt sie erst nach deiner Bestätigung. Notizen ändert er nie, und gelöscht wird nichts.</p>
           <p>Für eine Antwort schickt die App die dazu nötigen Auszüge deiner Aufgaben, Termine, Notizen und Seiten an Anthropic. Trading und Strategien bleiben ausgeschlossen.</p>
+          <p>Dateien kannst du an eine Nachricht hängen (Büroklammer, Ziehen oder Einfügen). Bilder, PDF, Text- und Word-Dateien liest der Assistent, dafür geht ihr Inhalt an Anthropic; andere Dateien bleiben ungelesen. Ablegen schlägt er als Karte vor: Die Datei liegt dann als Anhang auf der gewählten Seite deiner Dokumentation, in derselben Datenbank wie alles andere (höchstens 25 MB je Datei).</p>
           <p>Auf einem Firmenrechner nutze den Assistenten nur, wenn die IT es für diese Daten erlaubt.</p>
         </div>
       </Group>

@@ -572,6 +572,17 @@ pub fn apply(page_title: &str, fragments: &[Fragment], ops: &[EditOp]) -> Result
 }
 
 /// Setzt die bestätigte Änderung um. Die Seite darf sich seit dem Vorschlag nicht geändert haben.
+/// Trägt bei neuen Datei-Bausteinen der Änderungen Name, Größe und Typ aus den Anhängen ein.
+pub fn resolve_op_files(conn: &Connection, ops: &mut [EditOp]) -> Result<(), String> {
+    for op in ops {
+        match op {
+            EditOp::Replace { blocks, .. } | EditOp::InsertAfter { blocks, .. } | EditOp::Append { blocks } => docbuild::resolve_files(conn, blocks)?,
+            EditOp::Delete { .. } => {}
+        }
+    }
+    Ok(())
+}
+
 pub fn apply_to_page(conn: &Connection, id: i64, base_updated_at: &str, new_title: Option<&str>, ops: &[EditOp]) -> Result<DocPage, String> {
     let page = docs::get_page(conn, id)?;
     if page.kind != "page" {
@@ -585,6 +596,10 @@ pub fn apply_to_page(conn: &Connection, id: i64, base_updated_at: &str, new_titl
         _ => page.title.clone(),
     };
     let fragments = read_fragments(&page.content);
+    // Der Vorschlag kommt aus dem Frontend zurück: Dateiangaben werden neu aus der Datenbank gelesen
+    let mut ops = ops.to_vec();
+    resolve_op_files(conn, &mut ops)?;
+    let ops = ops.as_slice();
     let plan = match apply(&title, &fragments, ops) {
         Ok(p) => p,
         // Nur der Titel ändert sich

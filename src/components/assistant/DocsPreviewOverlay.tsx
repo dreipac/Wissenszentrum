@@ -36,6 +36,7 @@ export function statChips(stats: DocStats): string[] {
     stats.headings > 0 && plural(stats.headings, "Überschrift", "Überschriften"),
     stats.tables > 0 && plural(stats.tables, "Tabelle", "Tabellen"),
     stats.dividers > 0 && plural(stats.dividers, "Trennlinie", "Trennlinien"),
+    stats.files > 0 && plural(stats.files, "Datei", "Dateien"),
   ].filter(Boolean) as string[];
 }
 

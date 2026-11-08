@@ -19,7 +19,7 @@ const MIN_WIDTH = 180;
 type Tone = "red" | "blue" | "green" | "amber" | "purple" | "gray";
 
 /** Symbol und Farbton nach Dateityp (Endung, sonst MIME-Typ). */
-function kindOf(name: string, mime: string): { icon: LucideIcon; tone: Tone; label: string } {
+export function kindOf(name: string, mime: string): { icon: LucideIcon; tone: Tone; label: string } {
   const ext = (name.split(".").length > 1 ? name.split(".").pop() ?? "" : "").toLowerCase();
   if (ext === "pdf" || mime === "application/pdf") return { icon: FileText, tone: "red", label: "PDF" };
   if (["doc", "docx", "odt", "rtf"].includes(ext)) return { icon: FileText, tone: "blue", label: ext.toUpperCase() };

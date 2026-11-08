@@ -1,5 +1,7 @@
 import type { DocBlock } from "../../lib/docBlocks";
+import { formatBytes, kindOf } from "../files/FileAttachment";
 import { inline } from "./Markdown";
+import "../files/FileAttachment.css";
 
 /**
  * Inhalt einer Seite so, wie der Editor ihn zeigt: dieselben Elemente (Überschriften, Absätze, Listen mit Absatz im
@@ -69,6 +71,22 @@ export function DocPageBlocks({ blocks }: { blocks: DocBlock[] }) {
             );
           case "divider":
             return <hr key={i} />;
+          case "file": {
+            // Dieselbe Karte wie im Editor, nur ohne Aktionen: hier gibt es nichts zu öffnen, die Datei liegt schon als Anhang bereit
+            const name = b.name ?? "Datei";
+            const { icon: Icon, tone } = kindOf(name, b.mime ?? "");
+            return (
+              <div key={i} className="file-card">
+                <div className="file-card-row">
+                  <div className="file-card-main">
+                    <Icon size={17} className={`file-card-icon ${tone}`} />
+                    <span className="file-card-name">{name}</span>
+                    {b.size ? <span className="file-card-size">{formatBytes(b.size)}</span> : null}
+                  </div>
+                </div>
+              </div>
+            );
+          }
         }
       })}
     </>

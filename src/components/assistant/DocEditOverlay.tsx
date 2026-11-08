@@ -35,6 +35,8 @@ function summarize(shown: ShownBlock | null, blocks?: DocBlock[]): string {
       return `Tabelle (${b.headers.length} × ${b.rows.length + 1})${more}`;
     case "divider":
       return `Trennlinie${more}`;
+    case "file":
+      return `Datei „${cut(b.name ?? "")}“${more}`;
   }
 }
 

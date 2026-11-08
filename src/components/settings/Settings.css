@@ -257,6 +257,30 @@
   gap: 0.5rem;
 }
 
+.st-unit-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.st-short {
+  width: 5.5rem;
+  text-align: right;
+}
+
+.st-unit {
+  min-width: 2rem;
+  font-size: 0.78rem;
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+
+.st-num {
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
 .st-flash {
   display: inline-flex;
   align-items: center;

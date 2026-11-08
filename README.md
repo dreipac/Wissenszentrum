@@ -49,7 +49,7 @@ Wird dabei `createUpdaterArtifacts` ausgewertet, braucht der Build die Umgebungs
 - Der Anthropic-API-Key des Assistenten liegt im Windows-Schlüsselspeicher, nicht in der Datenbank. Der Finnhub-Key steht in der Datenbank, wird aber nie abgeglichen oder in Sicherungen geschrieben.
 - Sicherungen entstehen automatisch vor dem Laden eines fremden Standes, vor dem Wiederherstellen und vor dem Aktualisieren einer älteren Datenbank. Manuell: *Einstellungen → Daten*.
 - Die Datenbankdatei gehört nicht ins Repository (`*.db` steht in `.gitignore`).
-- Der Assistent schickt Auszüge der Daten an Anthropic, die Kursabfrage Symbole an Finnhub. Beides nur, wenn ein Key eingetragen ist.
+- Der Assistent schickt Auszüge der Daten an Anthropic, die Kursabfrage Symbole an Finnhub. Beides nur, wenn ein Key eingetragen ist. Dateien im Chat werden nur gelesen (und ihr Inhalt gesendet), wenn die Person sie an eine Nachricht hängt.
 - Die App läuft vollständig ohne Internet. Die Suche nach Updates ist standardmäßig an und lässt sich unter *Einstellungen → Info* auf „Aus“ stellen (die Frage kommt auch im Onboarding); sie überträgt keine Daten aus der Datenbank. Wer offline arbeitet, lädt den Installer von der Release-Seite auf einem anderen Rechner und startet ihn von Hand (die Daten bleiben erhalten).
 
 ## Releases

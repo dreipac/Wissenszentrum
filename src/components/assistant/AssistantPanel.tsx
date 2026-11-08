@@ -1,8 +1,12 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { AlertTriangle, ArrowUp, BookOpen, CalendarDays, CalendarPlus, Check, CheckSquare, FolderKanban, ListPlus, Maximize2, PanelRight, PenLine, KeyRound, NotebookText, RotateCcw, ShieldCheck, SquarePen, Sparkles, X, type LucideIcon } from "lucide-react";
+import { AlertTriangle, ArrowUp, BookOpen, Paperclip, Square, CalendarDays, CalendarPlus, Check, CheckSquare, FolderKanban, ListPlus, Maximize2, PanelRight, PenLine, KeyRound, NotebookText, RotateCcw, ShieldCheck, SquarePen, Sparkles, X, type LucideIcon } from "lucide-react";
 import { Button } from "../ui/Button";
 import { EventModal } from "../calendar/EventModal";
-import { ASSISTANT_CHANGED_EVENT, askAssistant, assistantStatus, modelLabel, type AssistantSource, type AssistantStatus, type EventProposal } from "../../lib/api/assistant";
+import { ASSISTANT_CHANGED_EVENT, MAX_CHAT_FILES, askAssistant, assistantStatus, cancelAssistant, modelLabel, type AssistantSource, type AssistantStatus, type ChatFile, type EventProposal, type PlanItem, type TokenUsage } from "../../lib/api/assistant";
+import { addAttachment } from "../../lib/api/attachments";
+import { formatBytes, kindOf } from "../files/FileAttachment";
+import { PlanList } from "./PlanList";
+import { UsageLine } from "./UsageLine";
 import { createEvent, deleteEvent, updateEvent } from "../../lib/api/events";
 import { createTask, deleteTask, setTaskDone, updateTask } from "../../lib/api/tasks";
 import { applyDocEdit, createDocTree } from "../../lib/api/docs";
@@ -36,6 +40,14 @@ interface Message {
   id: number;
   role: "user" | "assistant";
   text: string;
+  /** Dateien, die die Person angehängt hat */
+  files?: ChatFile[];
+  /** Verbrauch der Antwort in Token */
+  usage?: TokenUsage;
+  /** Das Modell, das geantwortet hat */
+  model?: string;
+  /** Arbeitsplan, den der Assistent bei einem größeren Auftrag abgearbeitet hat */
+  plan?: PlanItem[];
   steps?: string[];
   sources?: AssistantSource[];
   /** Vorgeschlagene Termine mit ihrem Stand */
@@ -188,8 +200,16 @@ export function AssistantPanel({ open, onClose, mode = "panel", onExpand, onColl
     setChats((all) => ({ ...all, [chatKey]: typeof next === "function" ? next(all[chatKey] ?? NO_MESSAGES) : next }));
   const contextPath = project ? docPath(pages, project.docId) : "";
   const [draft, setDraft] = useState("");
+  /** Dateien für die nächste Nachricht: gespeichert sind sie schon, verschickt wird erst mit der Nachricht */
+  const [files, setFiles] = useState<ChatFile[]>([]);
+  const [uploading, setUploading] = useState(0);
+  const [fileError, setFileError] = useState<string | null>(null);
+  const [dropping, setDropping] = useState(false);
+  const fileInput = useRef<HTMLInputElement>(null);
   const [pending, setPending] = useState(false);
   const [liveSteps, setLiveSteps] = useState<string[]>([]);
+  /** Plan, an dem der Assistent gerade arbeitet */
+  const [livePlan, setLivePlan] = useState<PlanItem[]>([]);
   const nextId = useRef(1);
   /** Vorschlag, den die Person gerade im Termin-Dialog bearbeitet */
   const [editing, setEditing] = useState<{ messageId: number; key: number } | null>(null);
@@ -209,7 +229,7 @@ export function AssistantPanel({ open, onClose, mode = "panel", onExpand, onColl
   const loadStatus = useCallback(() => {
     assistantStatus()
       .then(setStatus)
-      .catch(() => setStatus({ hasKey: false, model: "" }));
+      .catch(() => setStatus({ hasKey: false, model: "", usdChf: 0.8, costLimitChf: 1 }));
   }, []);
 
   // Zustand beim Öffnen und nach Änderungen in den Einstellungen neu laden
@@ -253,11 +273,21 @@ export function AssistantPanel({ open, onClose, mode = "panel", onExpand, onColl
     const mine = ++request.current;
     setPending(true);
     setLiveSteps([]);
+    setLivePlan([]);
     try {
-      const turns = history.filter((m) => !m.error).map((m) => ({ role: m.role, text: m.text + proposalNote(m.proposals, m.deletions, m.tasks, m.actions, m.docs, m.docEdits) }));
-      const answer = await askAssistant(turns, project?.id ?? null, (step) => {
-        if (mine === request.current) setLiveSteps((s) => (s.includes(step) ? s : [...s, step]));
-      });
+      const turns = history
+        .filter((m) => !m.error)
+        .map((m) => ({ role: m.role, text: m.text + proposalNote(m.proposals, m.deletions, m.tasks, m.actions, m.docs, m.docEdits), files: m.files, model: m.model }));
+      const answer = await askAssistant(
+        turns,
+        project?.id ?? null,
+        (step) => {
+          if (mine === request.current) setLiveSteps((s) => (s.includes(step) ? s : [...s, step]));
+        },
+        (items) => {
+          if (mine === request.current) setLivePlan(items);
+        },
+      );
       if (mine !== request.current) return;
       const proposals = (answer.proposals ?? []).map<ProposalItem>((data) => ({ key: nextId.current++, data, status: "open" }));
       const deletions = (answer.deletions ?? []).map<DeletionItem>((data) => ({ key: nextId.current++, data, status: "open" }));
@@ -275,7 +305,7 @@ export function AssistantPanel({ open, onClose, mode = "panel", onExpand, onColl
             ? { ...msg, docEdits: msg.docEdits.map((e) => (e.status === "open" && replaced.has(e.data.pageId) ? { ...e, status: "dismissed" as const } : e)) }
             : msg,
         ),
-        { id: messageId, role: "assistant", text: answer.text, steps: answer.steps, sources: answer.sources, proposals, deletions, tasks, choices, actions, docs, docEdits },
+        { id: messageId, role: "assistant", text: answer.text, steps: answer.steps, sources: answer.sources, proposals, deletions, tasks, choices, actions, docs, docEdits, usage: answer.usage, plan: answer.plan, model: answer.model },
       ]);
       if (docEdits.length > 0) setEditPreview({ messageId, key: docEdits[0].key });
       // Seiteninhalte sind für den schmalen Chat zu groß: die Vorschau öffnet sich gleich in der Mitte des Fensters
@@ -287,16 +317,42 @@ export function AssistantPanel({ open, onClose, mode = "panel", onExpand, onColl
       if (mine === request.current) {
         setPending(false);
         setLiveSteps([]);
+        setLivePlan([]);
       }
     }
   };
 
+  /** Speichert die Dateien als Anhänge und merkt sie für die nächste Nachricht vor. */
+  const addFiles = async (list: File[]) => {
+    if (list.length === 0 || !ready) return;
+    setFileError(null);
+    const room = MAX_CHAT_FILES - files.length;
+    if (list.length > room) setFileError(`Eine Nachricht trägt höchstens ${MAX_CHAT_FILES} Dateien.`);
+    setUploading((n) => n + 1);
+    try {
+      for (const file of list.slice(0, Math.max(room, 0))) {
+        try {
+          const info = await addAttachment(file);
+          setFiles((all) => [...all, info]);
+        } catch (e) {
+          setFileError(`${file.name}: ${String(e)}`);
+        }
+      }
+    } finally {
+      setUploading((n) => n - 1);
+    }
+  };
+
   const send = (raw: string) => {
-    const text = raw.trim();
-    if (!text || pending || !ready) return;
-    const history = [...messages.filter((m) => !m.error), { id: nextId.current++, role: "user" as const, text }];
+    const typed = raw.trim();
+    if ((!typed && files.length === 0) || pending || uploading > 0 || !ready) return;
+    // Nur Dateien, ohne Text: der Assistent soll sie ansehen und fragen, was damit geschehen soll
+    const text = typed || (files.length === 1 ? "Ich habe eine Datei angehängt." : "Ich habe Dateien angehängt.");
+    const history = [...messages.filter((m) => !m.error), { id: nextId.current++, role: "user" as const, text, files: files.length ? files : undefined }];
     setMessages(history);
     setDraft("");
+    setFiles([]);
+    setFileError(null);
     void run(history);
   };
 
@@ -458,8 +514,13 @@ export function AssistantPanel({ open, onClose, mode = "panel", onExpand, onColl
     setMessages([]);
     setChosen({});
     setDraft("");
+    setFiles([]);
+    setFileError(null);
     setPending(false);
     setLiveSteps([]);
+    setLivePlan([]);
+    // Läuft noch eine Arbeit im Hintergrund, soll sie aufhören: sonst läuft sie weiter und kostet
+    void cancelAssistant();
     inputRef.current?.focus();
   };
 
@@ -580,6 +641,19 @@ export function AssistantPanel({ open, onClose, mode = "panel", onExpand, onColl
                 m.role === "user" ? (
                   <div key={m.id} className="as-user">
                     {m.text}
+                    {m.files && m.files.length > 0 && (
+                      <div className="as-user-files">
+                        {m.files.map((f) => {
+                          const { icon: Icon, tone } = kindOf(f.name, f.mime);
+                          return (
+                            <span key={f.id} className="as-file" title={`${f.name} (${formatBytes(f.size)})`}>
+                              <Icon size={13} className={`file-card-icon ${tone}`} />
+                              <span className="as-file-name">{f.name}</span>
+                            </span>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                 ) : m.error ? (
                   <div key={m.id} className="as-error" role="alert">
@@ -597,6 +671,7 @@ export function AssistantPanel({ open, onClose, mode = "panel", onExpand, onColl
                 ) : (
                   <div key={m.id} className="as-reply">
                     {m.steps && m.steps.length > 0 && <Steps steps={m.steps} />}
+                    {m.plan && m.plan.length > 0 && <PlanList items={m.plan} />}
                     <Markdown text={m.text} />
                     {m.proposals && m.proposals.length > 0 && (
                       <div className="as-proposals">
@@ -704,6 +779,7 @@ export function AssistantPanel({ open, onClose, mode = "panel", onExpand, onColl
                         </div>
                       </div>
                     )}
+                    {m.usage && <UsageLine usage={m.usage} model={m.model} usdChf={status?.usdChf ?? 0.8} />}
                   </div>
                 ),
               )}
@@ -715,8 +791,9 @@ export function AssistantPanel({ open, onClose, mode = "panel", onExpand, onColl
                       <i />
                       <i />
                     </span>
-                    <span>{liveSteps.length ? "Denkt nach …" : "Liest deinen Stand …"}</span>
+                    <span>{livePlan.length ? "Arbeitet am Plan …" : liveSteps.length ? "Denkt nach …" : "Liest deinen Stand …"}</span>
                   </div>
+                  {livePlan.length > 0 && <PlanList items={livePlan} />}
                   {liveSteps.length > 0 && <Steps steps={liveSteps} />}
                 </div>
               )}
@@ -725,7 +802,45 @@ export function AssistantPanel({ open, onClose, mode = "panel", onExpand, onColl
         </div>
 
         <div className="as-composer">
-          <div className="as-box">
+          {(files.length > 0 || uploading > 0) && (
+            <div className="as-files">
+              {files.map((f) => {
+                const { icon: Icon, tone } = kindOf(f.name, f.mime);
+                return (
+                  <span key={f.id} className="as-file" title={`${f.name} (${formatBytes(f.size)})`}>
+                    <Icon size={13} className={`file-card-icon ${tone}`} />
+                    <span className="as-file-name">{f.name}</span>
+                    <button type="button" className="icon-btn" aria-label={`„${f.name}“ entfernen`} title="Entfernen" onClick={() => setFiles((all) => all.filter((x) => x.id !== f.id))}>
+                      <X size={12} />
+                    </button>
+                  </span>
+                );
+              })}
+              {uploading > 0 && <span className="as-file busy">Wird gespeichert …</span>}
+            </div>
+          )}
+          {fileError && (
+            <p className="as-file-error" role="alert">
+              {fileError}
+            </p>
+          )}
+          <div
+            className={`as-box${dropping ? " drop" : ""}`}
+            onDragOver={(e) => {
+              if (!ready || !e.dataTransfer.types.includes("Files")) return;
+              e.preventDefault();
+              setDropping(true);
+            }}
+            onDragLeave={(e) => {
+              if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDropping(false);
+            }}
+            onDrop={(e) => {
+              setDropping(false);
+              if (e.dataTransfer.files.length === 0) return;
+              e.preventDefault();
+              void addFiles([...e.dataTransfer.files]);
+            }}
+          >
             <textarea
               ref={inputRef}
               rows={1}
@@ -736,15 +851,47 @@ export function AssistantPanel({ open, onClose, mode = "panel", onExpand, onColl
               spellCheck={false}
               onChange={(e) => setDraft(e.target.value)}
               onKeyDown={onKey}
+              onPaste={(e) => {
+                // Eingefügte Dateien (nicht nur Text) werden zu Anhängen
+                if (e.clipboardData.files.length === 0) return;
+                e.preventDefault();
+                void addFiles([...e.clipboardData.files]);
+              }}
+            />
+            <input
+              ref={fileInput}
+              type="file"
+              multiple
+              hidden
+              onChange={(e) => {
+                void addFiles([...(e.target.files ?? [])]);
+                e.target.value = "";
+              }}
             />
             <div className="as-box-foot">
+              <button
+                type="button"
+                className="icon-btn as-attach"
+                aria-label="Datei anhängen"
+                title="Datei anhängen (oder hierher ziehen)"
+                disabled={!ready || pending || files.length >= MAX_CHAT_FILES}
+                onClick={() => fileInput.current?.click()}
+              >
+                <Paperclip size={15} />
+              </button>
               <span className="as-scope" title="Der Assistent liest nur. Alles, was er anlegen, ändern oder löschen möchte (Aufgaben, Termine, neue Seiten), schlägt er vor; es passiert erst, wenn du bestätigst.">
                 <ShieldCheck size={13} />
                 Ändert nichts ohne dein OK
               </span>
-              <button type="button" className="as-send" aria-label="Senden" disabled={!draft.trim() || pending || !ready} onClick={() => send(draft)}>
-                <ArrowUp size={15} strokeWidth={2.25} />
-              </button>
+              {pending ? (
+                <button type="button" className="as-send stop" aria-label="Stopp" title="Arbeit abbrechen: es bleibt, was bis jetzt entstanden ist" onClick={() => void cancelAssistant()}>
+                  <Square size={11} fill="currentColor" />
+                </button>
+              ) : (
+                <button type="button" className="as-send" aria-label="Senden" disabled={(!draft.trim() && files.length === 0) || uploading > 0 || !ready} onClick={() => send(draft)}>
+                  <ArrowUp size={15} strokeWidth={2.25} />
+                </button>
+              )}
             </div>
           </div>
         </div>
