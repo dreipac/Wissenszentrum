@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
   DndContext,
   DragOverlay,
@@ -24,7 +24,7 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Plus, Settings2 } from "lucide-react";
+import { ChevronDown, Plus, Settings2 } from "lucide-react";
 import { moveTask, reorderBuckets } from "../../lib/api/tasks";
 import { useDialogs } from "../../lib/dialogs";
 import { bucketAccent, priorityLabel, type Bucket, type Task } from "../../lib/tasks";
@@ -46,6 +46,21 @@ const bucketKey = (id: number) => `b:${id}`;
 const numberOf = (key: string) => Number(key.slice(2));
 
 type Items = Record<string, string[]>;
+
+const FOLD_EASING = "cubic-bezier(0.22, 1, 0.36, 1)";
+
+// Zugeklappte Spalten merkt sich die App pro Gerät, damit sie nach einem Neustart so bleiben
+const COLLAPSED_KEY = "wz.tasks.collapsedBuckets";
+
+function loadCollapsed(): Set<string> {
+  try {
+    const raw = localStorage.getItem(COLLAPSED_KEY);
+    const parsed: unknown = raw ? JSON.parse(raw) : [];
+    return new Set(Array.isArray(parsed) ? parsed.filter((k): k is string => typeof k === "string") : []);
+  } catch {
+    return new Set();
+  }
+}
 
 const buildItems = (columns: Column[]): Items =>
   Object.fromEntries(columns.map((c) => [containerKey(c.bucket), c.tasks.map((t) => taskKey(t.id))]));
@@ -120,9 +135,13 @@ interface ColumnViewProps {
   ids: string[];
   taskById: Map<string, Task>;
   suppressClick: React.RefObject<boolean>;
+  collapsed: boolean;
+  onToggleCollapsed: () => void;
+  /** Gerade wird eine Aufgabe gezogen: eine zugeklappte Spalte zeigt dann eine Fläche zum Ablegen */
+  taskDragging: boolean;
 }
 
-function ColumnView({ column, ids, taskById, suppressClick }: ColumnViewProps) {
+function ColumnView({ column, ids, taskById, suppressClick, collapsed, onToggleCollapsed, taskDragging }: ColumnViewProps) {
   const { openNewTask, openEditBucket } = useDialogs();
   const { bucket, name } = column;
 
@@ -137,10 +156,54 @@ function ColumnView({ column, ids, taskById, suppressClick }: ColumnViewProps) {
   const accent = bucketAccent(bucket);
   const visibleTasks = ids.map((id) => taskById.get(id)).filter((t): t is Task => t !== undefined);
 
+  // Auf- und Zuklappen: Der Inhalt bleibt während der Bewegung eingehängt und verschwindet erst danach ganz. Zugeklappt
+  // ist er nicht im DOM, damit unsichtbare Karten beim Ziehen nicht als Ziel gelten.
+  const foldRef = useRef<HTMLDivElement>(null);
+  const [closing, setClosing] = useState(false);
+  const wasCollapsed = useRef(collapsed);
+  const bodyShown = !collapsed || closing;
+
+  const toggle = () => {
+    setClosing(!collapsed);
+    onToggleCollapsed();
+  };
+
+  useLayoutEffect(() => {
+    if (wasCollapsed.current === collapsed) return;
+    wasCollapsed.current = collapsed;
+    const fold = foldRef.current;
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (!fold || reduced) {
+      setClosing(false);
+      return;
+    }
+    fold.getAnimations().forEach((a) => a.cancel());
+    const height = fold.getBoundingClientRect().height;
+    const cards = Array.from(fold.querySelectorAll<HTMLElement>(".task-card"));
+    fold.style.overflow = "hidden";
+
+    if (collapsed) {
+      // Aufgaben blenden schnell aus, während die Spalte zusammenfährt
+      cards.forEach((card) => card.animate([{ opacity: 1 }, { opacity: 0, transform: "translateY(-4px)" }], { duration: 120, easing: "ease-out", fill: "forwards" }));
+      const anim = fold.animate([{ height: `${height}px` }, { height: "0px" }], { duration: 200, easing: FOLD_EASING, fill: "forwards" });
+      anim.onfinish = () => setClosing(false);
+    } else {
+      // Spalte fährt auf, die Aufgaben folgen leicht versetzt von oben nach unten
+      const anim = fold.animate([{ height: "0px" }, { height }], { duration: 240, easing: FOLD_EASING });
+      anim.onfinish = anim.oncancel = () => {
+        fold.style.overflow = "";
+      };
+      cards.slice(0, 10).forEach((card, i) =>
+        card.animate([{ opacity: 0, transform: "translateY(-8px)" }, { opacity: 1, transform: "none" }], { duration: 240, delay: 30 + i * 28, easing: FOLD_EASING, fill: "backwards" }),
+      );
+    }
+  }, [collapsed]);
+
   return (
     <section
       ref={sortable.setNodeRef}
       data-bucket-id={bucket ? bucket.id : "none"}
+      data-collapsed={collapsed}
       className={`bucket${sortable.isDragging ? " dragging" : ""}${accent ? " colored" : ""}`}
       style={{ transform: CSS.Translate.toString(sortable.transform), transition: sortable.transition, ...(accent ? { "--bucket-accent": accent } : {}) } as CSSProperties}
     >
@@ -148,6 +211,16 @@ function ColumnView({ column, ids, taskById, suppressClick }: ColumnViewProps) {
         className={`bucket-head${bucket ? " grabbable" : ""}`}
         {...(bucket ? { ...sortable.attributes, ...sortable.listeners } : {})}
       >
+        <button
+          type="button"
+          className="icon-btn bucket-toggle"
+          aria-expanded={!collapsed}
+          aria-label={collapsed ? `„${name}“ aufklappen` : `„${name}“ zuklappen`}
+          title={collapsed ? "Aufklappen" : "Zuklappen"}
+          onClick={toggle}
+        >
+          <ChevronDown size={15} className="bucket-chevron" />
+        </button>
         {accent && <span className="bucket-dot" aria-hidden />}
         <h2 className="bucket-name">{name}</h2>
         <span className="bucket-count">{visibleTasks.length}</span>
@@ -174,18 +247,28 @@ function ColumnView({ column, ids, taskById, suppressClick }: ColumnViewProps) {
         </div>
       </header>
 
-      <div ref={drop.setNodeRef} className={`bucket-body${drop.isOver ? " over" : ""}`}>
-        <SortableContext items={ids} strategy={verticalListSortingStrategy}>
-          {visibleTasks.length === 0 && <p className="bucket-empty">Keine Aufgaben</p>}
-          {visibleTasks.map((task) => (
-            <SortableTask key={task.id} task={task} group={containerKey(bucket)} moves={bucket?.onCompleteBucketId != null} suppressClick={suppressClick} />
-          ))}
-        </SortableContext>
-        <button type="button" className="bucket-add" onClick={() => openNewTask(bucket?.id ?? null)}>
-          <Plus size={14} />
-          Aufgabe hinzufügen
-        </button>
-      </div>
+      {bodyShown && (
+        <div ref={foldRef} className="bucket-fold">
+          <div ref={drop.setNodeRef} className={`bucket-body${drop.isOver ? " over" : ""}`}>
+            <SortableContext items={ids} strategy={verticalListSortingStrategy}>
+              {visibleTasks.length === 0 && <p className="bucket-empty">Keine Aufgaben</p>}
+              {visibleTasks.map((task) => (
+                <SortableTask key={task.id} task={task} group={containerKey(bucket)} moves={bucket?.onCompleteBucketId != null} suppressClick={suppressClick} />
+              ))}
+            </SortableContext>
+            <button type="button" className="bucket-add" onClick={() => openNewTask(bucket?.id ?? null)}>
+              <Plus size={14} />
+              Aufgabe hinzufügen
+            </button>
+          </div>
+        </div>
+      )}
+      {/* Zugeklappt: Beim Ziehen einer Aufgabe erscheint hier eine Fläche zum Ablegen, sonst bliebe die Spalte unerreichbar */}
+      {!bodyShown && taskDragging && (
+        <div ref={drop.setNodeRef} className={`bucket-body bucket-drop${drop.isOver ? " over" : ""}`}>
+          Hier ablegen
+        </div>
+      )}
     </section>
   );
 }
@@ -203,6 +286,7 @@ export function Board({ columns }: { columns: Column[] }) {
   const [order, setOrder] = useState<string[]>(() => buildOrder(columns));
   const [active, setActive] = useState<{ type: "task" | "bucket"; id: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [collapsed, setCollapsed] = useState<Set<string>>(loadCollapsed);
   const dragging = useRef(false);
   const suppressClick = useRef(false);
   const boardRef = useRef<HTMLDivElement>(null);
@@ -226,6 +310,19 @@ export function Board({ columns }: { columns: Column[] }) {
   const bucketColumns = order
     .map((key) => columns.find((c) => c.bucket && bucketKey(c.bucket.id) === key))
     .filter((c): c is Column => c !== undefined);
+
+  const toggleCollapsed = (key: string) => {
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (!next.delete(key)) next.add(key);
+      try {
+        localStorage.setItem(COLLAPSED_KEY, JSON.stringify([...next]));
+      } catch {
+        // Nicht speichern zu können ist unkritisch: die Spalte bleibt bis zum Schließen zu
+      }
+      return next;
+    });
+  };
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
 
@@ -367,6 +464,9 @@ export function Board({ columns }: { columns: Column[] }) {
               ids={items["c:none"] ?? []}
               taskById={taskById}
               suppressClick={suppressClick}
+              collapsed={collapsed.has("none")}
+              onToggleCollapsed={() => toggleCollapsed("none")}
+              taskDragging={active?.type === "task"}
             />
           )}
           <SortableContext items={order} strategy={horizontalListSortingStrategy}>
@@ -377,6 +477,9 @@ export function Board({ columns }: { columns: Column[] }) {
                 ids={items[containerKey(column.bucket)] ?? []}
                 taskById={taskById}
                 suppressClick={suppressClick}
+                collapsed={collapsed.has(String(column.bucket!.id))}
+                onToggleCollapsed={() => toggleCollapsed(String(column.bucket!.id))}
+                taskDragging={active?.type === "task"}
               />
             ))}
           </SortableContext>

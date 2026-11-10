@@ -1,0 +1,45 @@
+{
+  "expo": {
+    "name": "Wissenszentrum",
+    "slug": "wissenszentrum-mobile",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "scheme": "wissenszentrum",
+    "userInterfaceStyle": "automatic",
+    "backgroundColor": "#1a1a1a",
+    "ios": {
+      "bundleIdentifier": "com.armin.wissenszentrum.mobile",
+      "supportsTablet": false
+    },
+    "android": {
+      "package": "com.armin.wissenszentrum.mobile",
+      "adaptiveIcon": {
+        "backgroundColor": "#1a1a1a",
+        "foregroundImage": "./assets/images/android-icon-foreground.png",
+        "backgroundImage": "./assets/images/android-icon-background.png",
+        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "output": "single",
+      "favicon": "./assets/images/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#1a1a1a",
+          "image": "./assets/images/splash-icon.png",
+          "imageWidth": 120
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true,
+      "reactCompiler": true
+    }
+  }
+}

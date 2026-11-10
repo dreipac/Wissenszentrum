@@ -44,6 +44,18 @@ const MODES: { id: Mode; label: string }[] = [
   { id: "month", label: "Monat" },
 ];
 
+// Die zuletzt gewählte Ansicht merkt sich die App, damit der Kalender beim nächsten Öffnen so aussieht wie zuletzt
+const MODE_KEY = "wz.calendar.mode";
+
+function loadMode(): Mode {
+  try {
+    const saved = localStorage.getItem(MODE_KEY);
+    return MODES.find((m) => m.id === saved)?.id ?? "month";
+  } catch {
+    return "month";
+  }
+}
+
 function shift(date: Date, mode: Mode, direction: 1 | -1): Date {
   if (mode === "month") return addMonths(date, direction);
   return addDays(date, direction * (mode === "day" ? 1 : 7));
@@ -75,7 +87,7 @@ function draftFromSelection(sel: Selection): EventDraft {
 
 export function CalendarView() {
   const today = useMemo(() => new Date(), []);
-  const [mode, setMode] = useState<Mode>("month");
+  const [mode, setMode] = useState<Mode>(loadMode);
   // Datum plus Blätterrichtung (für die Animation) zusammen, damit beides atomar wechselt
   const [nav, setNav] = useState<{ date: Date; dir: "next" | "prev" | "fade" }>(() => ({
     date: startOfDay(new Date()),
@@ -93,6 +105,15 @@ export function CalendarView() {
   const changeMode = (m: Mode) => {
     setMode(m);
     setNav((prev) => ({ ...prev, dir: "fade" }));
+  };
+  /** Wahl über die Umschalter oben: Sie bleibt auch nach dem Schließen erhalten. Ein Sprung in die Tagesansicht per Doppelklick nicht. */
+  const pickMode = (m: Mode) => {
+    changeMode(m);
+    try {
+      localStorage.setItem(MODE_KEY, m);
+    } catch {
+      // Nicht speichern zu können ist unkritisch: die Ansicht gilt bis zum Schließen
+    }
   };
   const [draft, setDraft] = useState<EventDraft | null>(null);
   const [selection, setSelection] = useState<Selection | null>(null);
@@ -236,7 +257,7 @@ export function CalendarView() {
           <div className="page-actions">
             <div className="segmented">
               {MODES.map((m) => (
-                <button key={m.id} type="button" className={mode === m.id ? "active" : ""} onClick={() => changeMode(m.id)}>
+                <button key={m.id} type="button" className={mode === m.id ? "active" : ""} onClick={() => pickMode(m.id)}>
                   {m.label}
                 </button>
               ))}

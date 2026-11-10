@@ -61,6 +61,60 @@
   margin-left: auto;
 }
 
+/* Pfeil zum Zu- und Aufklappen, links vor dem Namen; er dreht sich mit */
+.bucket-toggle {
+  margin-left: -0.4rem;
+  color: var(--text-muted);
+}
+
+.bucket-chevron {
+  transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.bucket[data-collapsed="true"] .bucket-chevron {
+  transform: rotate(-90deg);
+}
+
+/* Zugeklappt bleibt nur die Kopfzeile; ohne Inhalt braucht sie unten etwas mehr Rand */
+.bucket-head {
+  transition: padding-bottom 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.bucket[data-collapsed="true"] .bucket-head {
+  padding-bottom: 0.7rem;
+}
+
+/* Hülle um den Inhalt: Sie fährt beim Auf- und Zuklappen in der Höhe */
+.bucket-fold {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bucket-chevron,
+  .bucket-head {
+    transition: none;
+  }
+}
+
+/* Fläche zum Ablegen in einer zugeklappten Spalte, nur beim Ziehen einer Aufgabe sichtbar */
+.bucket-drop {
+  align-items: center;
+  margin: 0 0.6rem 0.6rem;
+  padding: 0.9rem 0.5rem;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-md);
+  font-size: 0.8rem;
+  color: var(--text-faint);
+}
+
+.bucket-drop.over {
+  border-color: var(--text-muted);
+  color: var(--text);
+}
+
 .bucket-body {
   display: flex;
   flex-direction: column;

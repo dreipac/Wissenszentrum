@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { useEditorState, type Editor } from "@tiptap/react";
-import { CellSelection, TableMap, selectionCell } from "@tiptap/pm/tables";
+import { Plugin, PluginKey } from "@tiptap/pm/state";
+import { CellSelection, TableMap, deleteCellSelection, selectionCell } from "@tiptap/pm/tables";
 import {
   ArrowDownToLine,
   ArrowLeftToLine,
@@ -67,6 +68,40 @@ function selectCells(editor: Editor, mode: SelectMode) {
   view.focus();
 }
 
+const DELETE_KEY = new PluginKey("tableDeleteSelection");
+
+/** Was gerade markiert ist und beim Löschen wegfällt. `null`: nichts markiert, der Cursor steht nur in einer Zelle. */
+type DeleteKind = "row" | "column" | "table" | "cells";
+
+function deleteKind(editor: Editor): DeleteKind | null {
+  const selection = editor.state.selection;
+  if (!(selection instanceof CellSelection)) return null;
+  const rows = selection.isRowSelection();
+  const cols = selection.isColSelection();
+  // Ganze Zeilen und ganze Spalten zugleich markiert heißt: die ganze Tabelle
+  return rows && cols ? "table" : rows ? "row" : cols ? "column" : "cells";
+}
+
+const DELETE_LABEL: Record<DeleteKind, string> = {
+  row: "Markierte Zeilen löschen",
+  column: "Markierte Spalten löschen",
+  table: "Tabelle löschen",
+  cells: "Inhalt der markierten Zellen löschen",
+};
+
+/** Löscht das Markierte: ganze Zeilen, ganze Spalten, die ganze Tabelle, sonst den Inhalt der Zellen. */
+function deleteSelected(editor: Editor): boolean {
+  const kind = deleteKind(editor);
+  if (!kind) return false;
+  if (kind === "cells") {
+    const done = deleteCellSelection(editor.state, (tr) => editor.view.dispatch(tr));
+    editor.view.focus();
+    return done;
+  }
+  const chain = editor.chain().focus();
+  return kind === "table" ? chain.deleteTable().run() : kind === "row" ? chain.deleteRow().run() : chain.deleteColumn().run();
+}
+
 interface TableBarProps {
   editor: Editor | null;
   /** Element des Editors; daran wird der scrollende Bereich gefunden, in dem die Leiste schwebt */
@@ -91,8 +126,33 @@ export function TableBar({ editor, anchor, hidden }: TableBarProps) {
   const s = useEditorState({
     editor,
     selector: ({ editor: e }) =>
-      e ? { header: e.isActive("tableHeader"), canMerge: e.can().mergeCells(), canSplit: e.can().splitCell() } : null,
+      e
+        ? { header: e.isActive("tableHeader"), canMerge: e.can().mergeCells(), canSplit: e.can().splitCell(), del: deleteKind(e) }
+        : null,
   });
+
+  // Entf oder Rücktaste löscht markierte Zeilen, Spalten oder die ganze Tabelle. Bei einzelnen Zellen bleibt es beim
+  // Standard des Editors (Inhalt leeren), im Text einer Zelle ebenfalls.
+  useEffect(() => {
+    if (!editor || editor.isDestroyed) return;
+    const plugin = new Plugin({
+      key: DELETE_KEY,
+      props: {
+        handleKeyDown: (_view, e) => {
+          if (!editor.isEditable || (e.key !== "Delete" && e.key !== "Backspace")) return false;
+          const kind = deleteKind(editor);
+          if (!kind || kind === "cells") return false;
+          e.preventDefault();
+          return deleteSelected(editor);
+        },
+      },
+    });
+    // Ganz vorn einreihen, sonst käme die Tastenbehandlung der Tabellen zuerst und würde nur den Inhalt leeren
+    editor.registerPlugin(plugin, (added, existing) => [added, ...existing]);
+    return () => {
+      if (!editor.isDestroyed) editor.unregisterPlugin(DELETE_KEY);
+    };
+  }, [editor]);
 
   /** Setzt die Leiste in Fensterkoordinaten: über die Tabelle, am oberen Rand des scrollenden Bereichs festgehalten. */
   const position = useCallback(() => {
@@ -158,11 +218,9 @@ export function TableBar({ editor, anchor, hidden }: TableBarProps) {
       <span className="table-bar-sep" />
       <BarButton icon={ArrowUpToLine} label="Zeile darüber einfügen" onClick={() => c().addRowBefore().run()} />
       <BarButton icon={ArrowDownToLine} label="Zeile darunter einfügen" onClick={() => c().addRowAfter().run()} />
-      <BarButton icon={Trash2} label="Zeile löschen" onClick={() => c().deleteRow().run()} />
       <span className="table-bar-sep" />
       <BarButton icon={ArrowLeftToLine} label="Spalte links einfügen" onClick={() => c().addColumnBefore().run()} />
       <BarButton icon={ArrowRightToLine} label="Spalte rechts einfügen" onClick={() => c().addColumnAfter().run()} />
-      <BarButton icon={Trash2} label="Spalte löschen" onClick={() => c().deleteColumn().run()} />
       <span className="table-bar-sep" />
       <BarButton icon={Merge} label="Zellen verbinden" disabled={!s?.canMerge} onClick={() => c().mergeCells().run()} />
       <BarButton icon={Split} label="Zelle teilen" disabled={!s?.canSplit} onClick={() => c().splitCell().run()} />
@@ -170,7 +228,13 @@ export function TableBar({ editor, anchor, hidden }: TableBarProps) {
       <BarButton icon={PanelTop} label="Kopfzeile ein/aus" active={s?.header} onClick={() => c().toggleHeaderRow().run()} />
       <BarButton icon={PanelLeft} label="Kopfspalte ein/aus" onClick={() => c().toggleHeaderColumn().run()} />
       <span className="table-bar-sep" />
-      <BarButton icon={Trash2} label="Tabelle entfernen" danger onClick={() => c().deleteTable().run()} />
+      <BarButton
+        icon={Trash2}
+        label={s?.del ? DELETE_LABEL[s.del] : "Zum Löschen zuerst Zeilen, Spalten oder Zellen markieren"}
+        danger
+        disabled={!s?.del}
+        onClick={() => deleteSelected(editor)}
+      />
     </div>
   );
 }
