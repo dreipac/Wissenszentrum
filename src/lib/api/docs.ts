@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { notifyChange } from "../changes";
 import type { DocNodeSpec, EditOp } from "../docBlocks";
-import type { DocInput, DocKind, DocPage } from "../docs";
+import type { DocInput, DocKind, DocLayout, DocPage } from "../docs";
 import { docsStore } from "./docsPreview";
 import { inTauri } from "./runtime";
 
@@ -30,6 +30,10 @@ export const updateDocPage = (id: number, input: DocInput): Promise<DocPage> =>
 
 export const setDocFavorite = (id: number, favorite: boolean): Promise<void> =>
   changed(inTauri ? invoke("set_doc_favorite", { id, favorite }) : docsStore.setFavorite(id, favorite));
+
+/** Breite des Inhalts einer Seite. Zählt nicht als Bearbeitung der Seite. */
+export const setDocLayout = (id: number, layout: DocLayout): Promise<void> =>
+  changed(inTauri ? invoke("set_doc_layout", { id, layout }) : docsStore.setLayout(id, layout));
 
 export const moveDocPage = (id: number, parentId: number | null): Promise<void> =>
   changed(inTauri ? invoke("move_doc_page", { id, parentId }) : docsStore.move(id, parentId));

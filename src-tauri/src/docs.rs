@@ -26,6 +26,8 @@ pub struct DocPage {
     pub updated_at: String,
     /// `page` oder `folder`
     pub kind: String,
+    /// Breite des Inhalts: `normal` (schmale Spalte in der Mitte) oder `wide` (volle Breite ab dem linken Rand)
+    pub layout: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -39,8 +41,9 @@ pub struct DocInput {
     pub plain: String,
 }
 
-const COLUMNS: &str = "id, parent_id, title, content, plain, position, favorite, created_at, updated_at, kind";
+const COLUMNS: &str = "id, parent_id, title, content, plain, position, favorite, created_at, updated_at, kind, layout";
 const KINDS: [&str; 2] = ["page", "folder"];
+const LAYOUTS: [&str; 2] = ["normal", "wide"];
 
 fn row_to_page(row: &Row) -> rusqlite::Result<DocPage> {
     Ok(DocPage {
@@ -54,6 +57,7 @@ fn row_to_page(row: &Row) -> rusqlite::Result<DocPage> {
         created_at: row.get(7)?,
         updated_at: row.get(8)?,
         kind: row.get(9)?,
+        layout: row.get(10)?,
     })
 }
 
@@ -162,6 +166,18 @@ pub fn set_favorite(conn: &Connection, id: i64, favorite: bool) -> Result<(), St
     let changed = conn
         .execute("UPDATE doc_pages SET favorite = ?1 WHERE id = ?2", params![favorite as i64, id])
         .map_err(db_err)?;
+    if changed == 0 {
+        return Err("Seite nicht gefunden.".into());
+    }
+    Ok(())
+}
+
+/// Breite des Inhalts einer Seite (`normal` oder `wide`). Wie der Favorit ändert das nicht den Zeitpunkt der letzten Bearbeitung.
+pub fn set_layout(conn: &Connection, id: i64, layout: &str) -> Result<(), String> {
+    if !LAYOUTS.contains(&layout) {
+        return Err("Unbekannte Breite. Erlaubt: normal oder wide.".into());
+    }
+    let changed = conn.execute("UPDATE doc_pages SET layout = ?1 WHERE id = ?2", params![layout, id]).map_err(db_err)?;
     if changed == 0 {
         return Err("Seite nicht gefunden.".into());
     }
@@ -389,6 +405,26 @@ mod tests {
         set_favorite(&c, p.id, false).unwrap();
         assert!(!get_page(&c, p.id).unwrap().favorite);
         assert!(set_favorite(&c, 999, true).is_err());
+    }
+
+    #[test]
+    fn the_width_is_set_per_page_and_starts_normal() {
+        let c = conn();
+        let a = create_page(&c, None, "A", "page").unwrap();
+        let b = create_page(&c, None, "B", "page").unwrap();
+        assert_eq!(a.layout, "normal", "neue Seiten starten in der normalen Breite");
+        c.execute("UPDATE doc_pages SET updated_at = '2020-01-01 00:00:00' WHERE id = ?1", params![a.id]).unwrap();
+
+        set_layout(&c, a.id, "wide").unwrap();
+        let got = get_page(&c, a.id).unwrap();
+        assert_eq!(got.layout, "wide");
+        assert_eq!(got.updated_at, "2020-01-01 00:00:00", "die Breite zählt nicht als Bearbeitung");
+        assert_eq!(get_page(&c, b.id).unwrap().layout, "normal", "andere Seiten bleiben, wie sie sind");
+
+        set_layout(&c, a.id, "normal").unwrap();
+        assert_eq!(get_page(&c, a.id).unwrap().layout, "normal");
+        assert!(set_layout(&c, a.id, "riesig").is_err(), "unbekannte Breite wird abgelehnt");
+        assert!(set_layout(&c, 999, "wide").is_err());
     }
 
     #[test]

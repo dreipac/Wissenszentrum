@@ -49,20 +49,28 @@ export function DocPageBlocks({ blocks }: { blocks: DocBlock[] }) {
               <div key={i} className="tableWrapper">
                 <table>
                   <tbody>
-                    <tr>
-                      {b.headers.map((h, j) => (
-                        <th key={j}>
-                          <p>{inline(h)}</p>
-                        </th>
-                      ))}
-                    </tr>
+                    {b.headers.length > 0 && (
+                      <tr>
+                        {b.headers.map((h, j) => (
+                          <th key={j}>
+                            <p>{inline(h)}</p>
+                          </th>
+                        ))}
+                      </tr>
+                    )}
                     {b.rows.map((row, r) => (
                       <tr key={r}>
-                        {row.map((cell, c) => (
-                          <td key={c}>
-                            <p>{inline(cell)}</p>
-                          </td>
-                        ))}
+                        {row.map((cell, c) =>
+                          c === 0 && b.header_column ? (
+                            <th key={c}>
+                              <p>{inline(cell)}</p>
+                            </th>
+                          ) : (
+                            <td key={c}>
+                              <p>{inline(cell)}</p>
+                            </td>
+                          ),
+                        )}
                       </tr>
                     ))}
                   </tbody>

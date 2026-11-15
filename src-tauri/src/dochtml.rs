@@ -256,17 +256,38 @@ pub struct Fragment {
     pub text: String,
     /// Die Formatierung (unterstrichen, Farbe …) geht beim Ersetzen verloren
     pub lossy: bool,
+    /// Eine Tabelle mit Zellen voller Inhalt (Checklisten, Listen, mehrere Absätze): ihre Zellen sind lesbar und bleiben
+    /// unberührt, die übrigen Zellen lassen sich einzeln ändern; die ganze Tabelle lässt sich aber nicht ersetzen
+    pub rich: bool,
 }
 
 fn opaque(html: &str, label: &str) -> Fragment {
     let plain = docbuild::plain_of(html);
     let text: String = plain.chars().take(SHOWN_TEXT).collect();
-    Fragment { html: html.to_string(), block: None, label: label.to_string(), text, lossy: false }
+    Fragment { html: html.to_string(), block: None, label: label.to_string(), text, lossy: false, rich: false }
 }
 
 fn parsed(html: &str, block: Block, label: &str, lossy: bool) -> Fragment {
     let text = docbuild::plain_of(html).chars().take(SHOWN_TEXT).collect();
-    Fragment { html: html.to_string(), block: Some(block), label: label.to_string(), text, lossy }
+    Fragment { html: html.to_string(), block: Some(block), label: label.to_string(), text, lossy, rich: false }
+}
+
+/// Der Text einer Zelle mit viel Inhalt zum Lesen: Checklisten als „[x] Text“ und „[ ] Text“, sonst der reine Text.
+fn rich_cell_text(inner: &str) -> String {
+    let mut lines: Vec<String> = Vec::new();
+    for part in split_top_level(inner) {
+        if let Some(tag) = read_tag(&part, 0) {
+            if tag.name == "ul" && attr(&tag.attrs, "data-type").as_deref() == Some("taskList") {
+                for li in split_top_level(inner_of(&part)) {
+                    let checked = read_tag(&li, 0).and_then(|t| attr(&t.attrs, "data-checked")).as_deref() == Some("true");
+                    lines.push(format!("{} {}", if checked { "[x]" } else { "[ ]" }, docbuild::plain_of(&li).replace('\n', " ")));
+                }
+                continue;
+            }
+        }
+        lines.push(docbuild::plain_of(&part));
+    }
+    lines.into_iter().filter(|l| !l.trim().is_empty()).collect::<Vec<_>>().join("\n")
 }
 
 fn parse_list(html: &str) -> Option<(Vec<String>, bool)> {
@@ -283,12 +304,12 @@ fn parse_list(html: &str) -> Option<(Vec<String>, bool)> {
     (!items.is_empty()).then_some((items, lossy))
 }
 
-fn collect_rows(inner: &str, rows: &mut Vec<Vec<(bool, String)>>, lossy: &mut bool) -> Option<()> {
+fn collect_rows(inner: &str, rows: &mut Vec<Vec<(bool, String)>>, lossy: &mut bool, rich: &mut bool) -> Option<()> {
     for part in split_top_level(inner) {
         let tag = read_tag(&part, 0)?;
         match tag.name.as_str() {
             "colgroup" | "!--" => {}
-            "tbody" | "thead" | "tfoot" => collect_rows(inner_of(&part), rows, lossy)?,
+            "tbody" | "thead" | "tfoot" => collect_rows(inner_of(&part), rows, lossy, rich)?,
             "tr" => {
                 let mut cells = Vec::new();
                 for cell in split_top_level(inner_of(&part)) {
@@ -300,8 +321,17 @@ fn collect_rows(inner: &str, rows: &mut Vec<Vec<(bool, String)>>, lossy: &mut bo
                     if span("colspan") || span("rowspan") {
                         return None;
                     }
-                    let (text, l) = simple_text(inner_of(&cell))?;
-                    *lossy |= l;
+                    // Einfacher Text: änderbar. Alles andere (Checkliste, Liste, mehrere Absätze) wird gelesen und bleibt, wie es ist
+                    let text = match simple_text(inner_of(&cell)) {
+                        Some((text, l)) => {
+                            *lossy |= l;
+                            text
+                        }
+                        None => {
+                            *rich = true;
+                            rich_cell_text(inner_of(&cell))
+                        }
+                    };
                     cells.push((ct.name == "th", text));
                 }
                 rows.push(cells);
@@ -312,15 +342,237 @@ fn collect_rows(inner: &str, rows: &mut Vec<Vec<(bool, String)>>, lossy: &mut bo
     Some(())
 }
 
-fn parse_table(html: &str) -> Option<(Block, bool)> {
+/// Eine Tabelle als Baustein, wenn sie einen der beiden üblichen Aufbauten hat: eine Kopfzeile oben (lauter `th`), darunter
+/// Zellen mit oder ohne Kopfspalte, oder gar keine Kopfzeile, aber eine Kopfspalte (erste Zelle jeder Zeile `th`, der Rest `td`),
+/// wie bei „Frage | …“ und „Antwort | …“. Alles andere (verbundene Zellen, gemischte Zellarten) bleibt unberührt.
+fn parse_table(html: &str) -> Option<(Block, bool, bool)> {
     let mut rows = Vec::new();
     let mut lossy = false;
-    collect_rows(inner_of(html), &mut rows, &mut lossy)?;
-    let (head, body) = rows.split_first()?;
-    if head.is_empty() || !head.iter().all(|(th, _)| *th) || body.is_empty() || body.iter().any(|r| r.len() != head.len()) {
+    let mut rich = false;
+    collect_rows(inner_of(html), &mut rows, &mut lossy, &mut rich)?;
+    let first = rows.first()?;
+    let cols = first.len();
+    if cols == 0 || rows.iter().any(|r| r.len() != cols) {
         return None;
     }
-    Some((Block::Table { headers: head.iter().map(|(_, t)| t.clone()).collect(), rows: body.iter().map(|r| r.iter().map(|(_, t)| t.clone()).collect()).collect() }, lossy))
+    let header_row = first.iter().all(|(th, _)| *th);
+    let body = &rows[usize::from(header_row)..];
+    if body.is_empty() {
+        return None;
+    }
+    let header_column = body.iter().all(|r| r[0].0);
+    let others_are_cells = body.iter().all(|r| r[1..].iter().all(|(th, _)| !*th));
+    let first_are_cells = body.iter().all(|r| !r[0].0);
+    if !others_are_cells || !(header_column || first_are_cells) || (!header_row && !header_column) {
+        return None;
+    }
+    let text_of = |r: &Vec<(bool, String)>| r.iter().map(|(_, t)| t.clone()).collect::<Vec<_>>();
+    Some((Block::Table { headers: if header_row { text_of(first) } else { Vec::new() }, rows: body.iter().map(text_of).collect(), header_column }, lossy, rich))
+}
+
+// --- Tabellen Zelle für Zelle ändern -------------------------------------------------------
+
+/// Längster Text einer Zelle (Zeichen), wie bei neuen Tabellen
+const MAX_CELL_TEXT: usize = 500;
+const MAX_TABLE_ROWS: usize = 100;
+
+struct RawCell {
+    /// `td` oder `th`
+    name: String,
+    /// Das Anfangs-Tag samt Attributen (zum Beispiel die Spaltenbreite)
+    open: String,
+    inner: String,
+}
+
+struct RawRow {
+    open: String,
+    cells: Vec<RawCell>,
+}
+
+/// Eine Tabelle, wie sie im HTML steht. Wer nur Text ändert, Zeilen einfügt oder entfernt, lässt alles andere, was die
+/// Tabelle ausmacht (Spaltenbreiten, Attribute, Kopfzellen), unverändert.
+struct RawTable {
+    /// Alles vor der ersten Zeile: `<table …>`, die Spaltenbreiten und `<tbody>`
+    head: String,
+    rows: Vec<RawRow>,
+}
+
+fn open_tag_of(fragment: &str) -> Option<&str> {
+    let tag = read_tag(fragment, 0)?;
+    Some(&fragment[..tag.end])
+}
+
+fn parse_raw_table(html: &str) -> Option<RawTable> {
+    let table = read_tag(html, 0).filter(|t| t.name == "table")?;
+    let mut head = html[..table.end].to_string();
+    let mut rows = Vec::new();
+    let mut body_seen = false;
+    for part in split_top_level(inner_of(html)) {
+        let tag = read_tag(&part, 0)?;
+        match tag.name.as_str() {
+            "colgroup" if !body_seen => head.push_str(&part),
+            "tbody" if !body_seen => {
+                body_seen = true;
+                head.push_str(open_tag_of(&part)?);
+                for tr in split_top_level(inner_of(&part)) {
+                    let row_tag = read_tag(&tr, 0).filter(|t| t.name == "tr")?;
+                    let mut cells = Vec::new();
+                    for cell in split_top_level(inner_of(&tr)) {
+                        let ct = read_tag(&cell, 0)?;
+                        let span = |n: &str| attr(&ct.attrs, n).map(|v| v != "1").unwrap_or(false);
+                        if (ct.name != "td" && ct.name != "th") || span("colspan") || span("rowspan") {
+                            return None;
+                        }
+                        cells.push(RawCell { name: ct.name.clone(), open: cell[..ct.end].to_string(), inner: inner_of(&cell).to_string() });
+                    }
+                    rows.push(RawRow { open: tr[..row_tag.end].to_string(), cells });
+                }
+            }
+            _ => return None,
+        }
+    }
+    (body_seen && !rows.is_empty()).then_some(RawTable { head, rows })
+}
+
+impl RawTable {
+    fn render(&self) -> String {
+        let mut out = self.head.clone();
+        for row in &self.rows {
+            out.push_str(&row.open);
+            for cell in &row.cells {
+                out.push_str(&format!("{}{}</{}>", cell.open, cell.inner, cell.name));
+            }
+            out.push_str("</tr>");
+        }
+        out.push_str("</tbody></table>");
+        out
+    }
+
+    fn cols(&self) -> usize {
+        self.rows[0].cells.len()
+    }
+}
+
+/// Der Inhalt einer Zelle aus dem Text der Anweisung (mit **fett**, *kursiv* …).
+fn cell_inner(text: &str) -> Result<String, String> {
+    if text.chars().count() > MAX_CELL_TEXT {
+        return Err(format!("Ein Zelltext ist zu lang (höchstens {MAX_CELL_TEXT} Zeichen)."));
+    }
+    Ok(format!("<p>{}</p>", docbuild::inline_html(text)))
+}
+
+/// Der Inhalt einer neuen Zelle nach dem Vorbild einer anderen: Wo eine Checkliste steht, entsteht ein unerledigter Eintrag mit
+/// dem Text, sonst ein Absatz.
+fn cell_like(template: &RawCell, text: &str) -> Result<String, String> {
+    let paragraph = cell_inner(text)?;
+    if template.inner.contains("data-type=\"taskList\"") {
+        let item = if text.trim().is_empty() { "<p></p>".to_string() } else { paragraph };
+        return Ok(format!("<ul data-type=\"taskList\"><li data-checked=\"false\" data-type=\"taskItem\"><label><input type=\"checkbox\"><span></span></label><div>{item}</div></li></ul>"));
+    }
+    Ok(paragraph)
+}
+
+/// Eine Zeile mit dem Aufbau von `template` (Anfangs-Tags, Kopfzellen, Breiten) und neuen Texten.
+fn row_like(template: &RawRow, texts: &[String]) -> Result<RawRow, String> {
+    if texts.len() != template.cells.len() {
+        return Err(format!("Eine Zeile hat {} Zellen, die Tabelle aber {} Spalten. Gib für jede Spalte einen Text an.", texts.len(), template.cells.len()));
+    }
+    let mut cells = Vec::new();
+    for (cell, text) in template.cells.iter().zip(texts) {
+        cells.push(RawCell { name: cell.name.clone(), open: cell.open.clone(), inner: cell_like(cell, text)? });
+    }
+    Ok(RawRow { open: template.open.clone(), cells })
+}
+
+/// Wendet Zellen-Änderungen auf eine bestehende Tabelle an. Alle Zeilennummern gelten für die Tabelle, wie sie vorher war.
+/// `row` zählt die Zeilen unter der Kopfzeile ab 0, -1 ist die Kopfzeile selbst.
+fn edit_table(html: &str, header_row: bool, ops: &[&EditOp]) -> Result<String, String> {
+    let mut table = parse_raw_table(html).ok_or("Diese Tabelle lässt sich nicht Zelle für Zelle ändern.")?;
+    let start = usize::from(header_row);
+    let body_len = table.rows.len() - start.min(table.rows.len());
+    let cols = table.cols();
+    let mut deleted = vec![false; body_len];
+    // Neue Zeilen nach der Zeile i (Index i + 1; 0 = vor der ersten)
+    let mut added: Vec<Vec<RawRow>> = (0..=body_len).map(|_| Vec::new()).collect();
+
+    for op in ops {
+        match op {
+            EditOp::SetCell { row, col, text, .. } => {
+                let r = match *row {
+                    -1 if header_row => 0,
+                    -1 => return Err("Die Tabelle hat keine Kopfzeile. Zeilen zählen ab 0.".into()),
+                    r if r >= 0 && (r as usize) < body_len => start + r as usize,
+                    r => return Err(format!("Zeile {r} gibt es nicht. Die Tabelle hat {body_len} Zeilen (0 bis {}).", body_len.saturating_sub(1))),
+                };
+                if *col >= cols {
+                    return Err(format!("Spalte {col} gibt es nicht. Die Tabelle hat {cols} Spalten (0 bis {}).", cols - 1));
+                }
+                if simple_text(&table.rows[r].cells[*col].inner).is_none() {
+                    return Err(format!("Die Zelle in Zeile {row}, Spalte {col} enthält eine Checkliste oder Liste und lässt sich nicht ändern. Die anderen Zellen der Tabelle schon."));
+                }
+                table.rows[r].cells[*col].inner = cell_inner(text)?;
+            }
+            EditOp::DeleteRow { row, .. } => {
+                if *row >= body_len {
+                    return Err(format!("Zeile {row} gibt es nicht. Die Tabelle hat {body_len} Zeilen (0 bis {}).", body_len.saturating_sub(1)));
+                }
+                deleted[*row] = true;
+            }
+            EditOp::AddRow { after, cells, .. } => {
+                if *after < -1 || *after >= body_len as i64 {
+                    return Err(format!("Nach Zeile {after} lässt sich nichts einfügen. Erlaubt ist -1 (vor der ersten) bis {} (nach der letzten).", body_len as i64 - 1));
+                }
+                // Aufbau und Breiten wie die Nachbarzeile
+                let template = &table.rows[start + (*after).max(0) as usize];
+                added[(*after + 1) as usize].push(row_like(template, cells)?);
+            }
+            _ => {}
+        }
+    }
+
+    let mut rows: Vec<RawRow> = Vec::new();
+    let mut old = std::mem::take(&mut table.rows).into_iter();
+    rows.extend(old.by_ref().take(start));
+    rows.extend(added[0].drain(..));
+    for (i, row) in old.enumerate() {
+        if !deleted[i] {
+            rows.push(row);
+        }
+        rows.extend(added[i + 1].drain(..));
+    }
+    if rows.len() <= start {
+        return Err("Die Tabelle braucht mindestens eine Zeile. Zum Entfernen der ganzen Tabelle nimm delete.".into());
+    }
+    if rows.len() > MAX_TABLE_ROWS {
+        return Err(format!("Eine Tabelle darf höchstens {MAX_TABLE_ROWS} Zeilen haben."));
+    }
+    table.rows = rows;
+    Ok(table.render())
+}
+
+/// Eine Kopie der Tabelle mit neuen Texten: Aufbau, Spaltenbreiten und Kopfzellen wie im Vorbild. Hat die Kopie mehr Zeilen
+/// als das Vorbild, gilt für die weiteren die letzte Zeile als Muster.
+fn copy_table(html: &str, header_row: bool, headers: &[String], rows: &[Vec<String>]) -> Result<String, String> {
+    let table = parse_raw_table(html).ok_or("Diese Tabelle lässt sich nicht kopieren.")?;
+    let start = usize::from(header_row);
+    if header_row && headers.len() != table.cols() {
+        return Err(format!("Die Tabelle hat eine Kopfzeile mit {} Zellen: gib headers mit {} Texten an.", table.cols(), table.cols()));
+    }
+    if !header_row && !headers.is_empty() {
+        return Err("Die Tabelle hat keine Kopfzeile: lass headers weg.".into());
+    }
+    if rows.is_empty() || rows.len() > MAX_TABLE_ROWS {
+        return Err(format!("Eine Kopie braucht 1 bis {MAX_TABLE_ROWS} Zeilen."));
+    }
+    let mut out = RawTable { head: table.head.clone(), rows: Vec::new() };
+    if header_row {
+        out.rows.push(row_like(&table.rows[0], headers)?);
+    }
+    let body = &table.rows[start..];
+    for (k, texts) in rows.iter().enumerate() {
+        out.rows.push(row_like(&body[k.min(body.len() - 1)], texts)?);
+    }
+    Ok(out.render())
 }
 
 /// Erkennt, was ein oberstes Element ist.
@@ -355,8 +607,12 @@ fn classify(html: &str) -> Fragment {
             }
         }
         "table" => match parse_table(html) {
-            Some((block, lossy)) => parsed(html, block, "Tabelle", lossy),
-            None => opaque(html, "Tabelle (mit verbundenen Zellen oder ohne Kopfzeile)"),
+            Some((block, lossy, rich)) => {
+                let mut f = parsed(html, block, if rich { "Tabelle (mit Checklisten oder Listen in Zellen)" } else { "Tabelle" }, lossy);
+                f.rich = rich;
+                f
+            }
+            None => opaque(html, "Tabelle (mit verbundenen Zellen oder anderem Aufbau)"),
         },
         "blockquote" => match simple_text(inner()) {
             Some((text, lossy)) if !text.is_empty() => parsed(html, Block::Quote { text }, "Zitat", lossy),
@@ -374,7 +630,8 @@ fn classify(html: &str) -> Fragment {
         "hr" => parsed(html, Block::Divider, "Trennlinie", false),
         "img" => opaque(html, "Bild"),
         "div" if attr(&tag.attrs, "data-file-id").is_some() => {
-            let mut f = opaque(html, "Datei");
+            let id = attr(&tag.attrs, "data-file-id").unwrap_or_default();
+            let mut f = opaque(html, &format!("Datei (file_id {id})"));
             f.text = attr(&tag.attrs, "data-name").unwrap_or(f.text);
             f
         }
@@ -402,6 +659,20 @@ pub enum EditOp {
     Delete { index: usize },
     /// Hängt Bausteine ans Ende der Seite an
     Append { blocks: Vec<Block> },
+    /// Setzt den Text einer Zelle einer bestehenden Tabelle. `row` zählt die Zeilen unter der Kopfzeile ab 0 (-1 = Kopfzeile),
+    /// `col` die Spalten ab 0. Aufbau und Spaltenbreiten der Tabelle bleiben.
+    SetCell { index: usize, row: i64, col: usize, text: String },
+    /// Fügt eine Zeile nach der Zeile `after` ein (-1 = vor der ersten), mit dem Aufbau der Nachbarzeile
+    AddRow { index: usize, after: i64, cells: Vec<String> },
+    /// Entfernt eine Zeile einer bestehenden Tabelle
+    DeleteRow { index: usize, row: usize },
+    /// Fügt hinter der Tabelle eine Kopie mit neuem Text ein (Aufbau und Spaltenbreiten wie im Vorbild)
+    CopyTable {
+        index: usize,
+        #[serde(default)]
+        headers: Vec<String>,
+        rows: Vec<Vec<String>>,
+    },
 }
 
 /// Ein Baustein, wie er angezeigt wird: entweder als Baustein oder, wenn nicht änderbar, als Bezeichnung mit Text.
@@ -451,6 +722,9 @@ pub fn apply(page_title: &str, fragments: &[Fragment], ops: &[EditOp]) -> Result
     let mut after: Vec<Vec<Block>> = vec![Vec::new(); n];
     let mut at_start: Vec<Block> = Vec::new();
     let mut new_count = 0;
+    // Tabellen, deren Zellen sich ändern (Nummer des Bausteins → Anweisungen), und Kopien hinter einer Tabelle
+    let mut table_ops: Vec<Vec<&EditOp>> = vec![Vec::new(); n];
+    let mut copies: Vec<Vec<(String, Block)>> = vec![Vec::new(); n];
 
     let editable = |i: usize| -> Result<(), String> {
         let f = fragments.get(i).ok_or_else(|| format!("Baustein {i} gibt es nicht. Die Seite hat {n} Bausteine (0 bis {}).", n.saturating_sub(1)))?;
@@ -460,10 +734,33 @@ pub fn apply(page_title: &str, fragments: &[Fragment], ops: &[EditOp]) -> Result
         Ok(())
     };
 
+    // Tabellen, die sich Zelle für Zelle ändern lassen: Kopfzeile oder Kopfspalte, keine verbundenen Zellen
+    let table_of = |i: usize| -> Result<bool, String> {
+        let f = fragments.get(i).ok_or_else(|| format!("Baustein {i} gibt es nicht. Die Seite hat {n} Bausteine (0 bis {}).", n.saturating_sub(1)))?;
+        match &f.block {
+            Some(Block::Table { headers, .. }) => Ok(!headers.is_empty()),
+            _ => Err(format!("Baustein {i} ({}) ist keine Tabelle, deren Zellen sich ändern lassen.", f.label)),
+        }
+    };
+
     for op in ops {
         match op {
+            EditOp::SetCell { index, .. } | EditOp::AddRow { index, .. } | EditOp::DeleteRow { index, .. } => {
+                table_of(*index)?;
+                table_ops[*index].push(op);
+            }
+            EditOp::CopyTable { index, headers, rows } => {
+                let header_row = table_of(*index)?;
+                let html = copy_table(&fragments[*index].html, header_row, headers, rows)?;
+                let block = classify(&html).block.ok_or("Die kopierte Tabelle ließ sich nicht lesen.")?;
+                new_count += 1;
+                copies[*index].push((html, block));
+            }
             EditOp::Replace { index, blocks } => {
                 editable(*index)?;
+                if fragments[*index].rich {
+                    return Err(format!("Baustein {index} ist eine Tabelle mit Checklisten oder Listen in Zellen: sie würden beim Ersetzen verloren gehen. Ändere einzelne Zellen mit set_cell, füge Zeilen mit add_row ein."));
+                }
                 if replaced[*index].is_some() || removed[*index] {
                     return Err(format!("Baustein {index} wird mehrfach geändert. Fasse die Änderungen in einem Eintrag zusammen."));
                 }
@@ -506,6 +803,15 @@ pub fn apply(page_title: &str, fragments: &[Fragment], ops: &[EditOp]) -> Result
     if new_count > MAX_NEW_BLOCKS {
         return Err(format!("Eine Änderung darf höchstens {MAX_NEW_BLOCKS} neue Bausteine enthalten. Teile sie auf."));
     }
+    // Zellen-Änderungen: pro Tabelle zusammen angewendet; sie gelten für den Stand, den der Assistent gelesen hat
+    let mut edited: Vec<Option<String>> = vec![None; n];
+    for (i, list) in table_ops.iter().enumerate().filter(|(_, l)| !l.is_empty()) {
+        if replaced[i].is_some() || removed[i] {
+            return Err(format!("Baustein {i} wird mehrfach geändert. Fasse die Änderungen in einem Eintrag zusammen."));
+        }
+        let header_row = table_of(i)?;
+        edited[i] = Some(edit_table(&fragments[i].html, header_row, list)?);
+    }
 
     // Die Seite danach, mit Kennzeichnung, was neu ist
     let mut lines: Vec<Line> = Vec::new();
@@ -531,9 +837,22 @@ pub fn apply(page_title: &str, fragments: &[Fragment], ops: &[EditOp]) -> Result
         } else if removed[i] {
             stats.removed += 1;
             lines.push(Line { kind: "removed".into(), old: Some(f.into()), new: Vec::new() });
+        } else if let Some(raw) = &edited[i] {
+            // Eine Tabelle mit geänderten Zellen: das neue HTML kommt unverändert in die Seite, angezeigt wird sie als Baustein
+            stats.replaced += 1;
+            stats.added += 1;
+            stats.removed += 1;
+            html.push_str(raw);
+            let block = classify(raw).block.unwrap_or(Block::Paragraph { text: "(Tabelle geändert)".into() });
+            lines.push(Line { kind: "replaced".into(), old: Some(f.into()), new: vec![block] });
         } else {
             html.push_str(&f.html);
             lines.push(Line { kind: "same".into(), old: Some(f.into()), new: Vec::new() });
+        }
+        for (raw, block) in &copies[i] {
+            stats.added += 1;
+            html.push_str(raw);
+            lines.push(Line { kind: "added".into(), old: None, new: vec![block.clone()] });
         }
         if !after[i].is_empty() {
             stats.added += after[i].len();
@@ -577,7 +896,7 @@ pub fn resolve_op_files(conn: &Connection, ops: &mut [EditOp]) -> Result<(), Str
     for op in ops {
         match op {
             EditOp::Replace { blocks, .. } | EditOp::InsertAfter { blocks, .. } | EditOp::Append { blocks } => docbuild::resolve_files(conn, blocks)?,
-            EditOp::Delete { .. } => {}
+            EditOp::Delete { .. } | EditOp::SetCell { .. } | EditOp::AddRow { .. } | EditOp::DeleteRow { .. } | EditOp::CopyTable { .. } => {}
         }
     }
     Ok(())
@@ -641,11 +960,11 @@ mod tests {
     fn page_is_split_into_blocks_and_unknown_elements_stay_opaque() {
         let f = read_fragments(PAGE);
         let labels: Vec<&str> = f.iter().map(|x| x.label.as_str()).collect();
-        assert_eq!(labels, ["Überschrift", "Absatz", "Aufzählung", "Tabelle", "Datei", "Trennlinie", "Checkliste", "Leerer Absatz", "Absatz"]);
+        assert_eq!(labels, ["Überschrift", "Absatz", "Aufzählung", "Tabelle", "Datei (file_id 7)", "Trennlinie", "Checkliste", "Leerer Absatz", "Absatz"]);
         assert_eq!(f[0].block, Some(Block::Heading { level: 1, text: "Ziel".into() }));
         assert_eq!(f[1].block, Some(para("Das ist **wichtig** und *kurz* mit [Link](https://example.com).")));
         assert_eq!(f[2].block, Some(Block::BulletList { items: vec!["Eins".into(), "Zwei & drei".into()] }));
-        assert_eq!(f[3].block, Some(Block::Table { headers: vec!["Phase".into(), "Ende".into()], rows: vec![vec!["Plan".into(), "01.11.".into()]] }));
+        assert_eq!(f[3].block, Some(Block::Table { header_column: false, headers: vec!["Phase".into(), "Ende".into()], rows: vec![vec!["Plan".into(), "01.11.".into()]] }));
         assert!(f[4].block.is_none() && f[4].text == "Vertrag.pdf");
         assert!(f[8].lossy && !f[1].lossy, "Unterstreichung geht beim Ersetzen verloren");
         // Zusammengesetzt ergibt sich wieder dieselbe Seite
@@ -731,5 +1050,194 @@ mod tests {
         assert!(apply_to_page(&c, 999, "x", None, &ops).is_err());
         let folder = docs::create_page(&c, None, "Ordner", "folder").unwrap();
         assert!(apply_to_page(&c, folder.id, &folder.updated_at, None, &ops).unwrap_err().contains("Ordner"));
+    }
+
+    // --- Tabellen Zelle für Zelle ------------------------------------------------------------
+
+    /// Wie die Frage-und-Antwort-Tabellen der Dokumentation: Kopfspalte (th), feste Spaltenbreiten, fetter Text in der Frage
+    const BIZ: &str = concat!(
+        "<table style=\"width: 690px;\"><colgroup><col style=\"width: 125px;\"><col style=\"width: 565px;\"></colgroup><tbody>",
+        "<tr><th colwidth=\"125\"><p><strong>FRAGE</strong></p></th><td colwidth=\"565\"><p><strong>Wie geht es?</strong></p></td></tr>",
+        "<tr><th colwidth=\"125\"><p>ANTWORT</p></th><td colwidth=\"565\"><p>Gut.</p></td></tr>",
+        "</tbody></table>",
+        "<p>Danach</p>",
+    );
+
+    #[test]
+    fn a_table_with_a_header_column_is_a_block_and_keeps_its_shape() {
+        let f = read_fragments(BIZ);
+        assert_eq!(f[0].label, "Tabelle");
+        assert_eq!(
+            f[0].block,
+            Some(Block::Table {
+                headers: vec![],
+                rows: vec![vec!["**FRAGE**".into(), "**Wie geht es?**".into()], vec!["ANTWORT".into(), "Gut.".into()]],
+                header_column: true,
+            })
+        );
+        // Mit Kopfzeile und Kopfspalte zugleich, und nur Kopfzeile wie bisher
+        let both = "<table><tbody><tr><th><p>A</p></th><th><p>B</p></th></tr><tr><th><p>x</p></th><td><p>1</p></td></tr></tbody></table>";
+        assert!(matches!(&read_fragments(both)[0].block, Some(Block::Table { headers, header_column: true, .. }) if headers.len() == 2));
+        assert!(matches!(&read_fragments(PAGE)[3].block, Some(Block::Table { header_column: false, .. })));
+        // Gemischte Zellarten bleiben unberührt
+        let mixed = "<table><tbody><tr><th><p>A</p></th><td><p>B</p></td></tr><tr><td><p>x</p></td><th><p>y</p></th></tr></tbody></table>";
+        assert!(read_fragments(mixed)[0].block.is_none());
+    }
+
+    #[test]
+    fn a_cell_changes_and_everything_else_of_the_table_stays() {
+        let f = read_fragments(BIZ);
+        let plan = apply("S", &f, &[EditOp::SetCell { index: 0, row: 1, col: 1, text: "Sehr **gut** & klar.".into() }]).unwrap();
+        assert!(plan.html.contains("<td colwidth=\"565\"><p>Sehr <strong>gut</strong> &amp; klar.</p></td>"), "{}", plan.html);
+        assert!(plan.html.starts_with("<table style=\"width: 690px;\"><colgroup><col style=\"width: 125px;\"><col style=\"width: 565px;\"></colgroup><tbody>"), "Breiten bleiben");
+        assert!(plan.html.contains("<th colwidth=\"125\"><p><strong>FRAGE</strong></p></th><td colwidth=\"565\"><p><strong>Wie geht es?</strong></p></td>"), "andere Zellen bleiben Zeichen für Zeichen");
+        assert!(plan.html.ends_with("</tbody></table><p>Danach</p>"));
+        assert_eq!(plan.stats, EditStats { added: 1, replaced: 1, removed: 1 });
+        assert_eq!(plan.lines[0].kind, "replaced");
+        assert!(matches!(&plan.lines[0].new[0], Block::Table { rows, .. } if rows[1][1] == "Sehr **gut** & klar."));
+        assert_eq!(plan.lines[1].kind, "same");
+
+        // Zwei Änderungen an derselben Tabelle gehen zusammen, die Kopfzelle der Kopfspalte lässt sich auch ändern
+        let both = apply("S", &f, &[EditOp::SetCell { index: 0, row: 0, col: 1, text: "Neue Frage?".into() }, EditOp::SetCell { index: 0, row: 1, col: 0, text: "ANTWORT (kurz)".into() }]).unwrap();
+        assert!(both.html.contains("<p>Neue Frage?</p>") && both.html.contains("<th colwidth=\"125\"><p>ANTWORT (kurz)</p></th>"), "{}", both.html);
+        assert_eq!(both.stats.replaced, 1, "eine Tabelle, eine Änderung");
+    }
+
+    #[test]
+    fn rows_are_added_and_removed_with_the_shape_of_their_neighbour() {
+        let f = read_fragments(BIZ);
+        let added = apply("S", &f, &[EditOp::AddRow { index: 0, after: 1, cells: vec!["HINWEIS".into(), "Mehr dazu".into()] }]).unwrap();
+        assert!(added.html.contains("</tr><tr><th colwidth=\"125\"><p>HINWEIS</p></th><td colwidth=\"565\"><p>Mehr dazu</p></td></tr></tbody>"), "{}", added.html);
+        let at_start = apply("S", &f, &[EditOp::AddRow { index: 0, after: -1, cells: vec!["A".into(), "B".into()] }]).unwrap();
+        assert!(at_start.html.contains("<tbody><tr><th colwidth=\"125\"><p>A</p></th>"), "{}", at_start.html);
+
+        let removed = apply("S", &f, &[EditOp::DeleteRow { index: 0, row: 0 }]).unwrap();
+        assert!(!removed.html.contains("FRAGE") && removed.html.contains("ANTWORT"));
+        // Löschen und Einfügen in einem Zug beziehen sich auf die Zeilen des Originals
+        let both = apply("S", &f, &[EditOp::DeleteRow { index: 0, row: 0 }, EditOp::AddRow { index: 0, after: 0, cells: vec!["NEU".into(), "Zeile".into()] }]).unwrap();
+        let (neu, antwort) = (both.html.find("NEU").unwrap(), both.html.find("ANTWORT").unwrap());
+        assert!(!both.html.contains("FRAGE") && neu < antwort, "{}", both.html);
+
+        let err = |ops: Vec<EditOp>| apply("S", &f, &ops).unwrap_err();
+        assert!(err(vec![EditOp::DeleteRow { index: 0, row: 0 }, EditOp::DeleteRow { index: 0, row: 1 }]).contains("mindestens eine Zeile"));
+        assert!(err(vec![EditOp::DeleteRow { index: 0, row: 5 }]).contains("gibt es nicht"));
+        assert!(err(vec![EditOp::AddRow { index: 0, after: 7, cells: vec!["a".into(), "b".into()] }]).contains("einfügen"));
+        assert!(err(vec![EditOp::AddRow { index: 0, after: 0, cells: vec!["nur eine".into()] }]).contains("Spalten"));
+    }
+
+    #[test]
+    fn a_table_is_copied_with_new_text_and_the_same_widths() {
+        let f = read_fragments(BIZ);
+        let rows = vec![vec!["FRAGE".to_string(), "Neue Frage?".to_string()], vec!["ANTWORT".to_string(), "Neue Antwort.".to_string()]];
+        let plan = apply("S", &f, &[EditOp::CopyTable { index: 0, headers: vec![], rows }]).unwrap();
+        assert_eq!(plan.html.matches("<colgroup>").count(), 2, "die Kopie hat dieselben Spaltenbreiten");
+        assert_eq!(plan.html.matches("<th colwidth=\"125\">").count(), 4);
+        assert!(plan.html.contains("<p>Neue Frage?</p>") && plan.html.contains("Wie geht es?") && plan.html.ends_with("<p>Danach</p>"));
+        let first = plan.html.find("FRAGE").unwrap();
+        assert!(plan.html.find("Neue Frage?").unwrap() > first, "die Kopie steht hinter dem Vorbild");
+        assert_eq!(plan.stats, EditStats { added: 1, replaced: 0, removed: 0 });
+        assert_eq!(plan.lines.iter().map(|l| l.kind.as_str()).collect::<Vec<_>>(), ["same", "added", "same"]);
+
+        // Mehr Zeilen als das Vorbild: die letzte Zeile ist das Muster
+        let longer = vec![vec!["F".to_string(), "1".to_string()], vec!["A".to_string(), "2".to_string()], vec!["A".to_string(), "3".to_string()]];
+        let plan = apply("S", &f, &[EditOp::CopyTable { index: 0, headers: vec![], rows: longer }]).unwrap();
+        assert_eq!(plan.html.matches("<tr>").count(), 5);
+
+        let err = |ops: Vec<EditOp>| apply("S", &f, &ops).unwrap_err();
+        assert!(err(vec![EditOp::CopyTable { index: 0, headers: vec!["x".into()], rows: vec![vec!["a".into(), "b".into()]] }]).contains("keine Kopfzeile"));
+        assert!(err(vec![EditOp::CopyTable { index: 0, headers: vec![], rows: vec![] }]).contains("1 bis"));
+    }
+
+    #[test]
+    fn a_header_row_table_changes_its_header_cells_too() {
+        let f = read_fragments(PAGE);
+        let plan = apply("S", &f, &[EditOp::SetCell { index: 3, row: -1, col: 1, text: "Fertig".into() }, EditOp::SetCell { index: 3, row: 0, col: 1, text: "02.11.".into() }]).unwrap();
+        assert!(plan.html.contains("<th><p>Fertig</p></th>") && plan.html.contains("<td><p>02.11.</p></td>") && plan.html.contains("<th><p>Phase</p></th>"), "{}", plan.html);
+        let err = |ops: Vec<EditOp>| apply("S", &f, &ops).unwrap_err();
+        assert!(err(vec![EditOp::SetCell { index: 3, row: 0, col: 9, text: "x".into() }]).contains("Spalte 9"));
+        assert!(err(vec![EditOp::SetCell { index: 3, row: 4, col: 0, text: "x".into() }]).contains("Zeile 4"));
+        assert!(err(vec![EditOp::SetCell { index: 1, row: 0, col: 0, text: "x".into() }]).contains("keine Tabelle"), "ein Absatz ist keine Tabelle");
+        assert!(err(vec![EditOp::SetCell { index: 3, row: 0, col: 0, text: "x".into() }, EditOp::Delete { index: 3 }]).contains("mehrfach"));
+        assert!(err(vec![EditOp::SetCell { index: 3, row: 0, col: 0, text: "x".repeat(MAX_CELL_TEXT + 1) }]).contains("zu lang"));
+        let f = read_fragments(BIZ);
+        assert!(apply("S", &f, &[EditOp::SetCell { index: 0, row: -1, col: 0, text: "x".into() }]).unwrap_err().contains("keine Kopfzeile"));
+    }
+
+    #[test]
+    fn the_operations_are_read_from_the_json_the_assistant_sends() {
+        let ops: Vec<EditOp> = serde_json::from_value(serde_json::json!([
+            { "op": "set_cell", "index": 2, "row": 0, "col": 1, "text": "Neu" },
+            { "op": "add_row", "index": 2, "after": -1, "cells": ["a", "b"] },
+            { "op": "delete_row", "index": 2, "row": 3 },
+            { "op": "copy_table", "index": 2, "rows": [["F", "x"]] },
+        ]))
+        .unwrap();
+        assert_eq!(ops.len(), 4);
+        assert!(matches!(&ops[3], EditOp::CopyTable { headers, .. } if headers.is_empty()), "headers sind optional");
+    }
+
+    /// Wie die Grobplanung: Kopfzeile, normale Zellen und eine Spalte mit Checklisten (Kreise zum Abhaken)
+    const GROB: &str = concat!(
+        "<table style=\"width: 757px;\"><colgroup><col style=\"width: 170px;\"><col style=\"width: 108px;\"><col style=\"width: 308px;\"><col style=\"width: 171px;\"></colgroup><tbody>",
+        "<tr><th colwidth=\"170\"><p>Phase</p></th><th colwidth=\"108\"><p>Zeitraum</p></th><th colwidth=\"308\"><p>Inhalt</p></th><th colwidth=\"171\"><p>Ergebnis</p></th></tr>",
+        "<tr><td colwidth=\"170\"><p>Start</p></td><td colwidth=\"108\"><p>KW 40</p></td><td colwidth=\"308\"><p>Thema wählen</p></td><td colwidth=\"171\"><ul data-type=\"taskList\"><li data-checked=\"true\" data-type=\"taskItem\"><label><input type=\"checkbox\" checked=\"checked\"><span></span></label><div><p>Erstellt</p></div></li></ul></td></tr>",
+        "<tr><td colwidth=\"170\"><p><strong>Abgabe</strong></p></td><td colwidth=\"108\"><p><strong>18.01.2026</strong></p></td><td colwidth=\"308\"><p><strong>Abgabe</strong></p></td><td colwidth=\"171\"><ul data-type=\"taskList\"><li data-checked=\"false\" data-type=\"taskItem\"><label><input type=\"checkbox\"><span></span></label><div><p>Abgegeben</p></div></li></ul></td></tr>",
+        "</tbody></table><p>Ende</p>",
+    );
+
+    #[test]
+    fn a_table_with_checklists_in_cells_is_readable_and_stays_locked_against_replacing() {
+        let f = read_fragments(GROB);
+        assert!(f[0].rich && f[0].label.contains("Checklisten"), "{}", f[0].label);
+        match &f[0].block {
+            Some(Block::Table { headers, rows, header_column }) => {
+                assert_eq!(headers, &["Phase", "Zeitraum", "Inhalt", "Ergebnis"]);
+                assert!(!header_column);
+                assert_eq!(rows[0], ["Start", "KW 40", "Thema wählen", "[x] Erstellt"], "die Checkliste ist als Text lesbar");
+                assert_eq!(rows[1], ["**Abgabe**", "**18.01.2026**", "**Abgabe**", "[ ] Abgegeben"]);
+            }
+            other => panic!("keine Tabelle: {other:?}"),
+        }
+        assert!(!read_fragments(PAGE)[3].rich, "eine einfache Tabelle ist nicht reich");
+
+        // Ersetzen würde die Checklisten zerstören
+        let err = apply("S", &f, &[EditOp::Replace { index: 0, blocks: vec![Block::Table { headers: vec!["A".into()], rows: vec![vec!["1".into()]], header_column: false }] }]).unwrap_err();
+        assert!(err.contains("Checklisten") && err.contains("set_cell"), "{err}");
+        // Entfernen der ganzen Tabelle bleibt möglich
+        assert!(apply("S", &f, &[EditOp::Delete { index: 0 }]).is_ok());
+    }
+
+    #[test]
+    fn other_cells_change_while_checklist_cells_stay_exactly_as_they_were() {
+        let f = read_fragments(GROB);
+        let plan = apply("S", &f, &[EditOp::SetCell { index: 0, row: 1, col: 1, text: "**18.01.2027**".into() }]).unwrap();
+        assert!(plan.html.contains("<td colwidth=\"108\"><p><strong>18.01.2027</strong></p></td>"), "{}", plan.html);
+        assert!(!plan.html.contains("18.01.2026"));
+        // Beide Checklisten sind Zeichen für Zeichen dieselben, ebenso Spaltenbreiten und der Rest der Seite
+        for item in ["<ul data-type=\"taskList\"><li data-checked=\"true\" data-type=\"taskItem\"><label><input type=\"checkbox\" checked=\"checked\"><span></span></label><div><p>Erstellt</p></div></li></ul>", "<ul data-type=\"taskList\"><li data-checked=\"false\" data-type=\"taskItem\"><label><input type=\"checkbox\"><span></span></label><div><p>Abgegeben</p></div></li></ul>"] {
+            assert!(plan.html.contains(item), "Checkliste geändert: {item}");
+        }
+        assert!(plan.html.starts_with("<table style=\"width: 757px;\"><colgroup>") && plan.html.ends_with("</tbody></table><p>Ende</p>"));
+
+        // Eine Zelle mit Checkliste selbst lässt sich nicht setzen
+        let err = apply("S", &f, &[EditOp::SetCell { index: 0, row: 0, col: 3, text: "Fertig".into() }]).unwrap_err();
+        assert!(err.contains("Checkliste") && err.contains("Zeile 0, Spalte 3"), "{err}");
+    }
+
+    #[test]
+    fn new_rows_and_copies_get_an_open_checklist_item_in_the_checklist_column() {
+        let f = read_fragments(GROB);
+        let plan = apply("S", &f, &[EditOp::AddRow { index: 0, after: 0, cells: vec!["Nachlese".into(), "KW 5".into(), "Rückblick".into(), "Besprochen".into()] }]).unwrap();
+        assert!(
+            plan.html.contains("<tr><td colwidth=\"170\"><p>Nachlese</p></td><td colwidth=\"108\"><p>KW 5</p></td><td colwidth=\"308\"><p>Rückblick</p></td><td colwidth=\"171\"><ul data-type=\"taskList\"><li data-checked=\"false\" data-type=\"taskItem\"><label><input type=\"checkbox\"><span></span></label><div><p>Besprochen</p></div></li></ul></td></tr>"),
+            "{}",
+            plan.html
+        );
+        let removed = apply("S", &f, &[EditOp::DeleteRow { index: 0, row: 0 }]).unwrap();
+        assert!(!removed.html.contains("Thema wählen") && removed.html.contains("Abgegeben"));
+
+        let copy = apply("S", &f, &[EditOp::CopyTable { index: 0, headers: vec!["Phase".into(), "Zeitraum".into(), "Inhalt".into(), "Ergebnis".into()], rows: vec![vec!["Neu".into(), "KW 9".into(), "Test".into(), "Offen".into()]] }]).unwrap();
+        assert_eq!(copy.html.matches("<colgroup>").count(), 2);
+        assert!(copy.html.matches("data-checked=\"false\"").count() >= 2, "die Kopie hat einen offenen Eintrag");
     }
 }

@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { notifyChange } from "../changes";
-import type { Project, ProjectInput } from "../projects";
+import { MAX_PROJECT_FILES, type Project, type ProjectInput } from "../projects";
+import type { Attachment } from "./attachments";
 import { inTauri } from "./runtime";
 
 // Browser-Preview ohne Tauri: dieselben Regeln wie im Backend, aber nur im Speicher.
@@ -20,7 +21,7 @@ const preview = {
     return previewProjects.map((p) => ({ ...p }));
   },
   async create(input: ProjectInput): Promise<Project> {
-    const project = { id: nextId++, ...checkPreview(input, null) };
+    const project: Project = { id: nextId++, files: [], ...checkPreview(input, null) };
     previewProjects.push(project);
     return { ...project };
   },
@@ -33,6 +34,20 @@ const preview = {
   async remove(id: number): Promise<void> {
     if (!previewProjects.some((p) => p.id === id)) throw "Projekt nicht gefunden.";
     previewProjects = previewProjects.filter((p) => p.id !== id);
+  },
+  async addFile(id: number, file: Attachment): Promise<Project> {
+    const project = previewProjects.find((p) => p.id === id);
+    if (!project) throw "Projekt nicht gefunden.";
+    if (project.files.some((f) => f.fileId === file.id)) return { ...project };
+    if (project.files.length >= MAX_PROJECT_FILES) throw `Ein Projekt kann höchstens ${MAX_PROJECT_FILES} Dateien tragen.`;
+    project.files = [...project.files, { fileId: file.id, name: file.name, mime: file.mime, size: file.size }];
+    return { ...project };
+  },
+  async removeFile(id: number, fileId: number): Promise<Project> {
+    const project = previewProjects.find((p) => p.id === id);
+    if (!project) throw "Projekt nicht gefunden.";
+    project.files = project.files.filter((f) => f.fileId !== fileId);
+    return { ...project };
   },
 };
 
@@ -50,6 +65,13 @@ export const createProject = (input: ProjectInput): Promise<Project> =>
 
 export const updateProject = (id: number, input: ProjectInput): Promise<Project> =>
   changed(inTauri ? invoke("update_assistant_project", { id, input }) : preview.update(id, input));
+
+/** Gibt dem Projekt eine schon gespeicherte Datei als festen Kontext mit. */
+export const addProjectFile = (projectId: number, file: Attachment): Promise<Project> =>
+  changed(inTauri ? invoke("add_project_file", { projectId, fileId: file.id }) : preview.addFile(projectId, file));
+
+export const removeProjectFile = (projectId: number, fileId: number): Promise<Project> =>
+  changed(inTauri ? invoke("remove_project_file", { projectId, fileId }) : preview.removeFile(projectId, fileId));
 
 export const deleteProject = (id: number): Promise<void> =>
   changed(inTauri ? invoke("delete_assistant_project", { id }) : preview.remove(id));

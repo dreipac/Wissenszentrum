@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Check, Copy, Database, Download, Info, LineChart, Palette, RefreshCw, Sparkles, Upload, User, X, type LucideIcon } from "lucide-react";
 import { Button } from "../ui/Button";
@@ -8,8 +8,7 @@ import { SecondaryButton } from "../ui/SecondaryButton";
 import { exportBackup, pickBackupFile, restoreBackup } from "../../lib/api/app";
 import { appVersion, openDownloadPage, openLogFolder } from "../../lib/api/updater";
 import { useUpdater } from "../../lib/useUpdater";
-import { ASSISTANT_MODELS, assistantStatus, assistantUsage, resetAssistantUsage, saveAssistantKey, setAssistantLimits, setAssistantModel, type AssistantStatus, type AssistantUsage } from "../../lib/api/assistant";
-import { formatChf } from "../../lib/cost";
+import { ASSISTANT_MODELS, assistantStatus, checkAssistant, setAssistantCliPath, setAssistantModel, type AssistantCheck, type AssistantStatus } from "../../lib/api/assistant";
 import { getApiKey, saveApiKey } from "../../lib/api/trading";
 import { useAppTheme, type AppTheme } from "../../lib/appTheme";
 import { useEditorTheme, type EditorTheme } from "../../lib/editorTheme";
@@ -384,10 +383,8 @@ function SyncPanel({ onClose }: { onClose: () => void }) {
 
 function AssistantSection() {
   const [status, setStatus] = useState<AssistantStatus | null>(null);
-  const [usage, setUsage] = useState<AssistantUsage | null>(null);
-  const [limit, setLimit] = useState("");
-  const [rate, setRate] = useState("");
-  const [key, setKey] = useState("");
+  const [path, setPath] = useState("");
+  const [checked, setChecked] = useState<AssistantCheck | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [flash, setFlash] = useFlash();
@@ -398,55 +395,36 @@ function AssistantSection() {
       .catch((e) => setError(String(e)));
   }, []);
 
-  const changeKey = async (value: string) => {
-    setBusy(true);
+  // Das Feld zeigt, was gespeichert ist
+  useEffect(() => {
+    if (status) setPath(status.configuredPath);
+  }, [status]);
+
+  const savePath = async () => {
+    if (!status || path.trim() === status.configuredPath) return;
     setError(null);
     try {
-      await saveAssistantKey(value);
-      setKey("");
+      await setAssistantCliPath(path);
       setStatus(await assistantStatus());
-      setFlash(value.trim() ? "Key geprüft und gespeichert" : "Key entfernt");
+      setChecked(null);
+      setFlash(path.trim() ? "Pfad gespeichert" : "Wird automatisch gesucht");
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+
+  const test = async () => {
+    setBusy(true);
+    setError(null);
+    setChecked(null);
+    try {
+      setChecked(await checkAssistant());
     } catch (e) {
       setError(String(e));
     } finally {
       setBusy(false);
     }
   };
-
-  // Die Felder zeigen, was gespeichert ist
-  useEffect(() => {
-    if (!status) return;
-    setLimit(String(status.costLimitChf));
-    setRate(String(status.usdChf));
-  }, [status]);
-
-  const saveLimits = async () => {
-    const limitNumber = Number(limit.replace(",", "."));
-    const rateNumber = Number(rate.replace(",", "."));
-    if (limit.trim() === "" || rate.trim() === "" || !Number.isFinite(limitNumber) || !Number.isFinite(rateNumber)) {
-      setError("Bitte gib Zahlen ein, zum Beispiel 1 und 0.80.");
-      return;
-    }
-    if (status && limitNumber === status.costLimitChf && rateNumber === status.usdChf) return;
-    try {
-      await setAssistantLimits(limitNumber, rateNumber);
-      setStatus((s) => (s ? { ...s, costLimitChf: limitNumber, usdChf: rateNumber } : s));
-      setError(null);
-      setFlash("Gespeichert");
-    } catch (e) {
-      setError(String(e));
-    }
-  };
-
-  const loadUsage = useCallback(() => {
-    assistantUsage()
-      .then(setUsage)
-      .catch(() => setUsage(null));
-  }, []);
-
-  useEffect(() => {
-    loadUsage();
-  }, [loadUsage]);
 
   const chooseModel = async (model: string) => {
     setError(null);
@@ -464,25 +442,35 @@ function AssistantSection() {
   return (
     <>
       <Group title="Anbindung">
-        <Row label="Anthropic API-Key" hint="Aus der Anthropic Console (console.anthropic.com). Die Abrechnung läuft über dein Konto dort, nach Verbrauch." htmlFor="st-anthropic">
+        <Row label="Claude Code" hint="Der Assistent läuft über Claude Code auf diesem Rechner, angemeldet mit deinem Claude-Konto. Es gibt keinen API-Schlüssel und keine Abrechnung über die API: es zählt das Nutzungskontingent deines Kontos. Die Anmeldung der Desktop-App gilt nur dort: melde das Programm einmal selbst mit /login an (der Test sagt dir, wie).">
+          <span className="st-num">{status ? (status.available ? "Gefunden" : "Nicht gefunden") : "–"}</span>
+        </Row>
+        {status?.available && status.cliPath && (
+          <div className="st-row compact">
+            <span className="st-hint">{status.cliPath}</span>
+          </div>
+        )}
+        {!status?.available && status && (
+          <div className="st-row compact">
+            <span className="st-hint">Die App sucht es im Suchpfad, an den üblichen Orten und bei der Claude-Desktop-App. Installiere Claude Code (claude.com/claude-code) oder trage den Pfad unten ein.</span>
+          </div>
+        )}
+        <Row label="Pfad" hint="Nur nötig, wenn die App Claude Code nicht von selbst findet. Leer lassen heißt: automatisch suchen." htmlFor="st-claude-path">
           <input
-            id="st-anthropic"
-            type="password"
+            id="st-claude-path"
             className="field-control"
-            value={key}
-            placeholder={status?.hasKey ? "Key gespeichert, zum Ersetzen neuen einfügen" : "sk-ant-…"}
+            value={path}
+            placeholder="Automatisch suchen"
             autoComplete="off"
             spellCheck={false}
             onChange={(e) => {
-              setKey(e.target.value);
+              setPath(e.target.value);
               setFlash(null);
             }}
-            onKeyDown={(e) => e.key === "Enter" && key.trim() && !busy && void changeKey(key)}
+            onBlur={() => void savePath()}
+            onKeyDown={(e) => e.key === "Enter" && void savePath()}
           />
         </Row>
-        <div className="st-row compact">
-          <span className="st-hint">Der Key liegt verschlüsselt im Windows-Schlüsselspeicher dieses Benutzers, nicht in der Datenbank. Er wird nicht abgeglichen und muss auf jedem Rechner neu eingetragen werden.</span>
-        </div>
       </Group>
       <div className="st-actions">
         {flash && (
@@ -490,13 +478,13 @@ function AssistantSection() {
             <Check size={14} /> {flash}
           </span>
         )}
-        {status?.hasKey && (
-          <SecondaryButton className="danger" disabled={busy} onClick={() => void changeKey("")}>
-            Key entfernen
-          </SecondaryButton>
+        {checked && (
+          <span className="st-flash">
+            <Check size={14} /> Claude Code {checked.version} antwortet
+          </span>
         )}
-        <Button disabled={busy || !key.trim()} onClick={() => void changeKey(key)}>
-          {busy ? "Prüfe …" : "Testen und speichern"}
+        <Button disabled={busy || !status?.available} onClick={() => void test()}>
+          {busy ? "Prüfe …" : "Verbindung testen"}
         </Button>
       </div>
       {error && <p className="field-error">{error}</p>}
@@ -513,81 +501,11 @@ function AssistantSection() {
         </Row>
       </Group>
 
-      <Group title="Kosten">
-        <Row label="Limit pro Antwort" hint="Ist es erreicht, hält der Assistent an und liefert, was bis dahin entstanden ist. 0 heißt: kein Limit." htmlFor="st-limit">
-          <span className="st-unit-field">
-            <input
-              id="st-limit"
-              className="field-control st-short"
-              inputMode="decimal"
-              value={limit}
-              onChange={(e) => setLimit(e.target.value)}
-              onBlur={() => void saveLimits()}
-              onKeyDown={(e) => e.key === "Enter" && void saveLimits()}
-            />
-            <span className="st-unit">CHF</span>
-          </span>
-        </Row>
-        <Row label="Wechselkurs" hint="Die Preise von Anthropic sind in Dollar. Damit rechnet die App in Franken um. Die Anzeige ist eine Schätzung, kein Rechnungsbetrag." htmlFor="st-rate">
-          <span className="st-unit-field">
-            <input
-              id="st-rate"
-              className="field-control st-short"
-              inputMode="decimal"
-              value={rate}
-              onChange={(e) => setRate(e.target.value)}
-              onBlur={() => void saveLimits()}
-              onKeyDown={(e) => e.key === "Enter" && void saveLimits()}
-            />
-            <span className="st-unit">CHF je USD</span>
-          </span>
-        </Row>
-      </Group>
-
-      <Group title="Verbrauch seit dem Start">
-        <Row label="Anfragen" hint="Eine Frage braucht meist mehrere Anfragen: Der Assistent schlägt nach und antwortet dann.">
-          <span className="st-num">{usage ? usage.requests.toLocaleString("de-CH") : "–"}</span>
-        </Row>
-        <Row label="Aus dem Zwischenspeicher" hint="Der feste Teil jeder Anfrage (Werkzeuge, Anweisungen) wird nur einmal voll berechnet und danach günstig wiedergelesen. Hoch ist gut.">
-          <span className="st-num">{usage?.hitRate != null ? `${Math.round(usage.hitRate * 100)} %` : "–"}</span>
-        </Row>
-        <Row label="Eingabe" hint="Neu = voller Preis. Gelesen = aus dem Zwischenspeicher. Geschrieben = beim ersten Mal in den Zwischenspeicher gelegt.">
-          <span className="st-num">
-            {usage ? `${usage.inputTokens.toLocaleString("de-CH")} neu · ${usage.cacheReadTokens.toLocaleString("de-CH")} gelesen · ${usage.cacheWriteTokens.toLocaleString("de-CH")} geschrieben` : "–"}
-          </span>
-        </Row>
-        <Row label="Ausgabe">
-          <span className="st-num">{usage ? `${usage.outputTokens.toLocaleString("de-CH")} Tokens` : "–"}</span>
-        </Row>
-        <Row label="Geschätzte Kosten" hint="Nach der Preisliste von Anthropic, einschließlich Zwischenspeicher. Keine Rechnung: maßgeblich ist die Anthropic Console.">
-          <span className="st-num">{usage ? formatChf(usage.costUsd, status?.usdChf ?? 0.8) : "–"}</span>
-        </Row>
-        {usage?.cacheOff && (
-          <div className="st-row compact">
-            <span className="st-hint">Dieses Modell nimmt den Zwischenspeicher nicht an: er bleibt aus, jede Anfrage kostet den vollen Preis.</span>
-          </div>
-        )}
-        {usage?.effortOff && (
-          <div className="st-row compact">
-            <span className="st-hint">Dieses Modell nimmt die Aufwandsstufe nicht an: sie bleibt aus.</span>
-          </div>
-        )}
-      </Group>
-      <div className="st-actions">
-        <SecondaryButton onClick={loadUsage}>Aktualisieren</SecondaryButton>
-        <SecondaryButton
-          onClick={() => {
-            void resetAssistantUsage().then(loadUsage);
-          }}
-        >
-          Zurücksetzen
-        </SecondaryButton>
-      </div>
-
       <Group title="Hinweise">
         <div className="st-note">
           <p>Der Assistent liest deine Daten. Aufgaben und Termine anlegen, ändern, abhaken oder löschen kann er nur vorschlagen: es passiert erst, wenn du die Karte im Chat bestätigst. Neue Ordner und Seiten für die Dokumentation legt er ebenfalls erst nach deiner Bestätigung an. Auch Änderungen an bestehenden Seiten zeigt er dir vorab mit hervorgehobenem Neuen und Entfallendem und übernimmt sie erst nach deiner Bestätigung. Notizen ändert er nie, und gelöscht wird nichts.</p>
-          <p>Für eine Antwort schickt die App die dazu nötigen Auszüge deiner Aufgaben, Termine, Notizen und Seiten an Anthropic. Trading und Strategien bleiben ausgeschlossen.</p>
+          <p>Die App gibt Claude Code nur die Werkzeuge des Wissenszentrums (über einen lokalen Server, der nur auf diesem Rechner und nur während einer Antwort erreichbar ist). Dateien, Befehle und das Netz sind für den Assistenten gesperrt, ebenso deine Einstellungen und Erweiterungen von Claude Code. Die Antwort wird nicht als Sitzung auf der Platte gespeichert.</p>
+          <p>Für eine Antwort gehen die dazu nötigen Auszüge deiner Aufgaben, Termine, Notizen und Seiten an Anthropic. Trading und Strategien bleiben ausgeschlossen.</p>
           <p>Dateien kannst du an eine Nachricht hängen (Büroklammer, Ziehen oder Einfügen). Bilder, PDF, Text- und Word-Dateien liest der Assistent, dafür geht ihr Inhalt an Anthropic; andere Dateien bleiben ungelesen. Ablegen schlägt er als Karte vor: Die Datei liegt dann als Anhang auf der gewählten Seite deiner Dokumentation, in derselben Datenbank wie alles andere (höchstens 25 MB je Datei).</p>
           <p>Auf einem Firmenrechner nutze den Assistenten nur, wenn die IT es für diese Daten erlaubt.</p>
         </div>

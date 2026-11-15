@@ -271,7 +271,7 @@ export function DocEditor({ page, editing, subpages, onOpen }: DocEditorProps) {
         // Nur ein Klick, der auch auf der freien Fläche begann: Wer im Text markiert und außerhalb loslässt, löst sonst einen Klick auf diese Fläche aus und die Markierung wäre weg
         onClick={(e) => editing && pressedOnBackground.current && e.target === e.currentTarget && editor?.commands.focus("end")}
       >
-        <article ref={articleRef} className="doc-article">
+        <article ref={articleRef} className={`doc-article${page.layout === "wide" ? " wide" : ""}`}>
           <input
             ref={titleRef}
             className="doc-title-input"

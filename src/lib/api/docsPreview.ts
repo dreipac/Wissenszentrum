@@ -1,5 +1,5 @@
 import { blocksToHtml, blocksToPlain, type DocBlock, type DocNodeSpec, type EditLine, type EditOp } from "../docBlocks";
-import { MAX_DEPTH, buildTree, descendantIds, subtreeHeight, type DocInput, type DocKind, type DocNode, type DocPage } from "../docs";
+import { MAX_DEPTH, buildTree, descendantIds, subtreeHeight, type DocInput, type DocKind, type DocLayout, type DocNode, type DocPage } from "../docs";
 
 // Browser-Preview ohne Tauri: dieselben Regeln wie im Backend, aber nur im Speicher.
 
@@ -71,6 +71,7 @@ export const docsStore = {
       plain: "",
       position: siblings(parentId).length,
       favorite: false,
+      layout: "normal",
       createdAt: now,
       updatedAt: now,
     };
@@ -98,6 +99,10 @@ export const docsStore = {
   },
   async setFavorite(id: number, favorite: boolean) {
     find(id).favorite = favorite;
+  },
+  async setLayout(id: number, layout: DocLayout) {
+    if (layout !== "normal" && layout !== "wide") throw "Unbekannte Breite. Erlaubt: normal oder wide.";
+    find(id).layout = layout;
   },
   async move(id: number, parentId: number | null) {
     const page = find(id);

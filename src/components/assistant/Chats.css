@@ -1,0 +1,818 @@
+/* ---------- Leiste „Chats und Projekte“ in der großen Ansicht ---------- */
+.cs-bar {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  width: 280px;
+  min-height: 0;
+  padding: 0.85rem 0.65rem 0.6rem;
+  border-right: 1px solid var(--border-soft);
+  background-color: var(--bg-sidebar);
+}
+
+.cs-new {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  height: 36px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background-color: transparent;
+  color: var(--text);
+  font-size: 0.88rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.12s, border-color 0.12s;
+}
+
+.cs-new:hover:not(:disabled) {
+  background-color: var(--bg-hover);
+  border-color: var(--border-strong-hover);
+}
+
+.cs-new:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.cs-search {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  height: 34px;
+  margin: 0.6rem 0 0.4rem;
+  padding: 0 0.6rem;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  color: var(--text-faint);
+}
+
+.cs-search:focus-within {
+  border-color: var(--border-strong);
+  color: var(--text-muted);
+}
+
+.cs-search input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--text);
+  font-size: 0.84rem;
+}
+
+.cs-clear {
+  display: flex;
+  padding: 2px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-faint);
+  cursor: pointer;
+}
+
+.cs-clear:hover {
+  color: var(--text);
+}
+
+.cs-scroll {
+  flex: 1;
+  min-height: 0;
+  margin: 0 -0.2rem;
+  padding: 0 0.2rem;
+  overflow-y: auto;
+}
+
+.cs-section {
+  margin-top: 0.7rem;
+}
+
+.cs-label {
+  margin: 0 0.5rem 0.25rem;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.cs-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-right: 0.15rem;
+}
+
+.cs-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cs-nested {
+  margin: 1px 0 4px 1.15rem;
+  padding-left: 0.35rem;
+  border-left: 1px solid var(--border-soft);
+}
+
+.cs-hint,
+.cs-none {
+  margin: 0.2rem 0.5rem;
+  font-size: 0.76rem;
+  line-height: 1.5;
+  color: var(--text-faint);
+  list-style: none;
+}
+
+.cs-first {
+  margin-top: 1rem;
+}
+
+/* Eine Zeile mit Chat: Titel, Zeit und beim Darüberfahren das Menü */
+.cs-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  border-radius: var(--radius-md);
+  transition: background-color 0.12s;
+}
+
+.cs-row:hover {
+  background-color: var(--bg-hover);
+}
+
+.cs-row.active {
+  background-color: var(--bg-selected);
+}
+
+.cs-item {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+  padding: 0.42rem 0.55rem;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.86rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.cs-row.active .cs-item,
+.cs-row:hover .cs-item {
+  color: var(--text);
+}
+
+.cs-item:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.cs-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cs-pin {
+  flex-shrink: 0;
+  color: var(--text-faint);
+}
+
+.cs-when {
+  flex-shrink: 0;
+  font-size: 0.7rem;
+  color: var(--text-faint);
+}
+
+/* Beim Darüberfahren ersetzt das Menü die Zeitangabe */
+.cs-more {
+  position: absolute;
+  top: 50%;
+  right: 0.25rem;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  transform: translateY(-50%);
+  border: none;
+  border-radius: var(--radius-sm);
+  background-color: var(--bg-hover);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.cs-row:hover .cs-more,
+.cs-more:focus-visible {
+  display: flex;
+}
+
+.cs-row:hover .cs-when {
+  visibility: hidden;
+}
+
+.cs-more:hover {
+  color: var(--text);
+}
+
+.cs-row.editing {
+  padding: 0.15rem 0.2rem;
+}
+
+.cs-rename {
+  flex: 1;
+  min-width: 0;
+  height: 30px;
+  padding: 0 0.5rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  outline: none;
+  background-color: var(--bg-card);
+  color: var(--text);
+  font-size: 0.86rem;
+}
+
+/* Projekt: Pfeil, Name, beim Darüberfahren „Neuer Chat“ und Bearbeiten */
+.cs-project {
+  position: relative;
+  display: flex;
+  align-items: center;
+  border-radius: var(--radius-md);
+  transition: background-color 0.12s;
+}
+
+.cs-project:hover {
+  background-color: var(--bg-hover);
+}
+
+.cs-project.active {
+  background-color: var(--bg-selected);
+}
+
+.cs-chevron {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 30px;
+  flex-shrink: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-faint);
+  cursor: pointer;
+}
+
+.cs-chevron:hover {
+  color: var(--text);
+}
+
+.cs-project-main {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+  padding: 0.42rem 0.3rem 0.42rem 0;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.86rem;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+}
+
+.cs-project-main > svg {
+  flex-shrink: 0;
+  color: var(--text-faint);
+}
+
+.cs-project:hover .cs-project-main,
+.cs-project.active .cs-project-main {
+  color: var(--text);
+}
+
+.cs-project-main:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.cs-project-actions {
+  display: none;
+  gap: 1px;
+  padding-right: 0.2rem;
+}
+
+.cs-project:hover .cs-project-actions,
+.cs-project:focus-within .cs-project-actions {
+  display: flex;
+}
+
+.cs-project-actions .icon-btn {
+  width: 24px;
+  height: 24px;
+}
+
+/* Treffer der Suche: Titel mit einem Stück Text */
+.cs-hit {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  width: 100%;
+  padding: 0.45rem 0.55rem;
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-muted);
+  text-align: left;
+  cursor: pointer;
+}
+
+.cs-hit:hover:not(:disabled),
+.cs-hit.active {
+  background-color: var(--bg-hover);
+  color: var(--text);
+}
+
+.cs-hit:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.cs-hit .cs-title {
+  font-size: 0.86rem;
+}
+
+.cs-snippet {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  font-size: 0.74rem;
+  line-height: 1.4;
+  color: var(--text-faint);
+}
+
+/* ---------- Verlauf in der schmalen Seitenleiste ---------- */
+.ch-wrap {
+  position: relative;
+}
+
+.ch-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 30;
+  width: 270px;
+  max-height: 340px;
+  padding: 0.4rem;
+  overflow-y: auto;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  background-color: var(--bg-card);
+  box-shadow: var(--shadow-pop);
+}
+
+.ch-title,
+.ch-more {
+  margin: 0.2rem 0.5rem 0.3rem;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.ch-more {
+  margin-top: 0.4rem;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.ch-pop ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ch-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.45rem 0.55rem;
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.84rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ch-item:hover,
+.ch-item.active {
+  background-color: var(--bg-hover);
+  color: var(--text);
+}
+
+/* ---------- Startansicht eines Projekts (wie die Ordneransicht der Dokumentation) ---------- */
+.po {
+  container-type: inline-size;
+  display: flex;
+  flex-direction: column;
+  gap: 1.4rem;
+  width: 100%;
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 0.4rem 0 1rem;
+}
+
+.po-head {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+}
+
+.po-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  background-color: var(--bg-card);
+  color: var(--text-muted);
+}
+
+.po-title {
+  flex: 1;
+  min-width: 0;
+}
+
+.po-title h2 {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 1.4rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.po-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0.15rem 0 0;
+  font-size: 0.78rem;
+  color: var(--text-faint);
+}
+
+.po-dot {
+  opacity: 0.6;
+}
+
+.po-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 1.1rem;
+  align-items: start;
+}
+
+/* Schmal (zum Beispiel in der Seitenleiste): die Karten stehen untereinander. Es zählt die Breite der Ansicht, nicht des Fensters. */
+@container (max-width: 760px) {
+  .po-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Eine Karte wie die Listen der Dokumentation: Kopf, feine Linien zwischen den Zeilen */
+.po-card {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background-color: var(--bg-card);
+}
+
+.po-card-head {
+  display: flex;
+  align-items: center;
+  padding: 0.7rem 1rem;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.po-card-head h3 {
+  margin: 0;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.po-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.po-list li + li {
+  border-top: 1px solid var(--border-soft);
+}
+
+.po-chat {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 0.7rem 1rem;
+  border: none;
+  background: transparent;
+  color: var(--text-faint);
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.12s;
+}
+
+.po-chat:hover {
+  background-color: var(--bg-hover);
+}
+
+.po-chat-main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.po-chat-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.po-chat-preview {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.78rem;
+  color: var(--text-faint);
+}
+
+.po-chat-when {
+  flex-shrink: 0;
+  font-size: 0.74rem;
+  color: var(--text-faint);
+}
+
+.po-empty {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  margin: 0;
+  padding: 1rem;
+  font-size: 0.84rem;
+  line-height: 1.55;
+  color: var(--text-muted);
+}
+
+.po-empty svg {
+  flex-shrink: 0;
+  margin-top: 0.2rem;
+  color: var(--text-faint);
+}
+
+.po-more {
+  margin: 0;
+  padding: 0.6rem 1rem;
+  border-top: 1px solid var(--border-soft);
+  font-size: 0.76rem;
+  color: var(--text-faint);
+}
+
+/* Kontext: beschriftete Zeilen */
+.po-prop {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.8rem 1rem;
+}
+
+.po-prop + .po-prop {
+  border-top: 1px solid var(--border-soft);
+}
+
+.po-label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.po-text {
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 5;
+  font-size: 0.85rem;
+  line-height: 1.55;
+  color: var(--text);
+  white-space: pre-wrap;
+}
+
+.po-muted {
+  font-size: 0.82rem;
+  line-height: 1.5;
+  color: var(--text-faint);
+}
+
+.po-hint {
+  margin: 0;
+  font-size: 0.74rem;
+  line-height: 1.5;
+  color: var(--text-faint);
+}
+
+.po-link {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+  padding: 0.4rem 0.55rem;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text);
+  font-size: 0.84rem;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.12s, border-color 0.12s;
+}
+
+.po-link:hover {
+  border-color: var(--border-strong);
+  background-color: var(--bg-hover);
+}
+
+.po-link > svg:first-child {
+  flex-shrink: 0;
+  color: var(--text-faint);
+}
+
+.po-link span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.po-files {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.po-file {
+  position: relative;
+  display: flex;
+  align-items: center;
+  border-radius: var(--radius-md);
+}
+
+.po-file:hover {
+  background-color: var(--bg-hover);
+}
+
+.po-file-open {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 0.55rem;
+  min-width: 0;
+  padding: 0.4rem 0.45rem;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-size: 0.84rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.po-file-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.po-file-size {
+  flex-shrink: 0;
+  font-size: 0.72rem;
+  color: var(--text-faint);
+}
+
+.po-file-remove {
+  position: absolute;
+  top: 50%;
+  right: 0.2rem;
+  width: 24px;
+  height: 24px;
+  transform: translateY(-50%);
+  background-color: var(--bg-card);
+  opacity: 0;
+}
+
+.po-file:hover .po-file-remove,
+.po-file-remove:focus-visible {
+  opacity: 1;
+}
+
+.po-file:hover .po-file-size {
+  visibility: hidden;
+}
+
+.po-drop {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  cursor: pointer;
+  transition: background-color 0.12s, border-color 0.12s, color 0.12s;
+}
+
+.po-drop:hover:not(:disabled),
+.po-drop.active {
+  border-color: var(--text-muted);
+  background-color: var(--bg-hover);
+  color: var(--text);
+}
+
+.po-drop:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+/* Hinweis, wenn die letzte Frage eines gespeicherten Chats ohne Antwort geblieben ist */
+.cs-unanswered {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.55rem 0.75rem;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  color: var(--text-muted);
+  font-size: 0.82rem;
+}
+
+/* Der Projektname im Kopf eines Chats führt zur Projektübersicht */
+.as-context-link {
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--border-strong);
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.as-context-link:hover:not(:disabled) {
+  color: var(--text);
+  text-decoration-color: var(--text-muted);
+}
+
+.as-context-link:disabled {
+  cursor: default;
+}

@@ -1,0 +1,205 @@
+/* ---------- Anzeige, solange der Assistent arbeitet ---------- */
+.act {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 0.15rem 0 0.35rem;
+}
+
+.act-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.84rem;
+}
+
+/* Drei Punkte in der Akzentfarbe: sie wippen nacheinander und leuchten dabei auf */
+.act-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 14px;
+}
+
+.act-dots i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: var(--accent);
+  animation: act-wave 1.2s ease-in-out infinite;
+}
+
+.act-dots i:nth-child(2) {
+  animation-delay: 0.16s;
+}
+
+.act-dots i:nth-child(3) {
+  animation-delay: 0.32s;
+}
+
+@keyframes act-wave {
+  0%,
+  60%,
+  100% {
+    opacity: 0.35;
+    transform: translateY(0) scale(0.8);
+  }
+  30% {
+    opacity: 1;
+    transform: translateY(-3px) scale(1.15);
+    box-shadow: 0 0 8px color-mix(in srgb, var(--accent) 60%, transparent);
+  }
+}
+
+/* Der Text glänzt in einem Streifen von links nach rechts */
+.act-label {
+  background: linear-gradient(90deg, var(--text-faint) 0%, color-mix(in srgb, var(--accent) 55%, var(--text)) 45%, var(--text-faint) 90%);
+  background-size: 220% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: act-shimmer 2.4s linear infinite;
+}
+
+@keyframes act-shimmer {
+  from {
+    background-position: 120% 0;
+  }
+  to {
+    background-position: -100% 0;
+  }
+}
+
+.act-time {
+  font-size: 0.74rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-faint);
+}
+
+/* Gedanken und Schritte untereinander, links mit einer feinen Linie */
+.act-feed {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin: 0 0 0 0.3rem;
+  padding: 0 0 0 0.85rem;
+  list-style: none;
+  border-left: 1px solid var(--border-soft);
+}
+
+.act-item {
+  display: flex;
+  align-items: baseline;
+  gap: 0.45rem;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  animation: act-in 0.22s ease-out;
+}
+
+.act-item.thought {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.act-item.step {
+  color: var(--text-faint);
+}
+
+.act-item.latest {
+  color: var(--text);
+}
+
+.act-check {
+  flex-shrink: 0;
+  align-self: center;
+  color: var(--positive, #4ade80);
+}
+
+@keyframes act-in {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Die Antwort erscheint beim Schreiben, hinten mit einem blinkenden Strich */
+.act-answer {
+  font-size: 0.92rem;
+}
+
+.act-caret {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  background-color: var(--text-muted);
+  animation: act-blink 1s steps(2, start) infinite;
+}
+
+@keyframes act-blink {
+  to {
+    visibility: hidden;
+  }
+}
+
+/* ---------- Arbeitsverlauf unter einer fertigen Antwort ---------- */
+.act-log {
+  margin-bottom: 0.5rem;
+}
+
+.act-log-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.2rem 0.4rem 0.2rem 0;
+  border: none;
+  background: transparent;
+  color: var(--text-faint);
+  font-size: 0.76rem;
+  cursor: pointer;
+  transition: color 0.12s;
+}
+
+.act-log-toggle:hover {
+  color: var(--text-muted);
+}
+
+.act-log-toggle svg {
+  transition: transform 0.15s ease;
+}
+
+.act-log.open .act-log-toggle svg {
+  transform: rotate(90deg);
+}
+
+.act-log-count {
+  color: var(--text-faint);
+  opacity: 0.8;
+}
+
+.act-log .act-feed {
+  margin-top: 0.35rem;
+}
+
+.act-log .act-item {
+  animation: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .act-dots i,
+  .act-label,
+  .act-caret,
+  .act-item {
+    animation: none;
+  }
+
+  .act-label {
+    color: var(--text-muted);
+    background: none;
+  }
+}

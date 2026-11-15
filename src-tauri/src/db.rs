@@ -238,6 +238,17 @@ pub(crate) const MIGRATIONS: &[&str] = &[
         position     INTEGER NOT NULL DEFAULT 0,
         created_at   TEXT NOT NULL DEFAULT (datetime('now'))
     );",
+    // 21: Breite des Inhalts pro Seite der Dokumentation: normal = schmale Spalte in der Mitte, wide = volle Breite ab dem linken Rand
+    "ALTER TABLE doc_pages ADD COLUMN layout TEXT NOT NULL DEFAULT 'normal' CHECK (layout IN ('normal', 'wide'));",
+    // 22: Dateien als fester Kontext eines Projekts des Assistenten (die Dateien liegen als Anhänge; wird das Projekt oder die
+    // Datei gelöscht, fällt die Verknüpfung weg)
+    "CREATE TABLE assistant_project_files (
+        project_id    INTEGER NOT NULL REFERENCES assistant_projects(id) ON DELETE CASCADE,
+        attachment_id INTEGER NOT NULL REFERENCES attachments(id) ON DELETE CASCADE,
+        position      INTEGER NOT NULL DEFAULT 0,
+        added_at      TEXT NOT NULL DEFAULT (datetime('now')),
+        PRIMARY KEY (project_id, attachment_id)
+    );",
 ];
 
 /// Öffnet die Verbindung vor, setzt Pragmas und führt offene Migrationen aus.

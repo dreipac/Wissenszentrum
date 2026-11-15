@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { AlertTriangle, ArrowUp, BookOpen, Paperclip, Square, CalendarDays, CalendarPlus, Check, CheckSquare, FolderKanban, ListPlus, Maximize2, PanelRight, PenLine, KeyRound, NotebookText, RotateCcw, ShieldCheck, SquarePen, Sparkles, X, type LucideIcon } from "lucide-react";
+import { AlertTriangle, ArrowUp, BookOpen, Paperclip, Square, CalendarDays, CalendarPlus, CheckSquare, FolderKanban, ListPlus, Maximize2, PanelRight, PenLine, Terminal, NotebookText, RotateCcw, ShieldCheck, SquarePen, Sparkles, X, type LucideIcon } from "lucide-react";
 import { Button } from "../ui/Button";
 import { EventModal } from "../calendar/EventModal";
 import { ASSISTANT_CHANGED_EVENT, MAX_CHAT_FILES, askAssistant, assistantStatus, cancelAssistant, modelLabel, type AssistantSource, type AssistantStatus, type ChatFile, type EventProposal, type PlanItem, type TokenUsage } from "../../lib/api/assistant";
 import { addAttachment } from "../../lib/api/attachments";
 import { formatBytes, kindOf } from "../files/FileAttachment";
 import { PlanList } from "./PlanList";
+import { Activity, WorkLog, type FeedItem } from "./Activity";
 import { UsageLine } from "./UsageLine";
 import { createEvent, deleteEvent, updateEvent } from "../../lib/api/events";
 import { createTask, deleteTask, setTaskDone, updateTask } from "../../lib/api/tasks";
@@ -21,8 +22,14 @@ import { requestOpenNote } from "../../lib/notesNav";
 import { requestOpen } from "../../lib/openTarget";
 import { useDocs } from "../../lib/useDocs";
 import { useProjects } from "../../lib/useProjects";
+import { addProjectFile, removeProjectFile } from "../../lib/api/projects";
 import { docPath, type Project } from "../../lib/projects";
-import { ProjectBar } from "./ProjectBar";
+import { ChatSidebar } from "./ChatSidebar";
+import { ChatHistory } from "./ChatHistory";
+import { ProjectOverview } from "./ProjectOverview";
+import { ConfirmDialog } from "../ui/ConfirmDialog";
+import { useChats } from "../../lib/useChats";
+import { createChat, deleteChat, loadChat, moveChat, pinChat, renameChat, saveChatMessage, type ChatInfo } from "../../lib/api/chats";
 import { ProjectModal } from "./ProjectModal";
 import { Markdown } from "./Markdown";
 import { ActionCard, type ActionItem, type ActionStatus } from "./ActionCard";
@@ -49,6 +56,8 @@ interface Message {
   /** Arbeitsplan, den der Assistent bei einem größeren Auftrag abgearbeitet hat */
   plan?: PlanItem[];
   steps?: string[];
+  /** Gedanken und Schritte in der Reihenfolge, wie sie geschahen (der Arbeitsverlauf) */
+  feed?: FeedItem[];
   sources?: AssistantSource[];
   /** Vorgeschlagene Termine mit ihrem Stand */
   proposals?: ProposalItem[];
@@ -157,8 +166,34 @@ const PROJECT_SUGGESTIONS: { icon: LucideIcon; text: string }[] = [
   { icon: CheckSquare, text: "Welche Aufgaben und Termine passen dazu?" },
 ];
 
-const PROJECT_KEY = "assistantProject";
-const NO_MESSAGES: Message[] = [];
+/** Der zuletzt offene Chat: nach dem Start geht es dort weiter */
+const CHAT_KEY = "assistantChat";
+
+/** Dinge, die nur während einer Aktion gelten (wird angelegt, wird gelöscht), gelten nach dem Neuladen als offen. */
+const settle = (m: Message): Message => {
+  const { error: _ignored, ...rest } = m;
+  const open = <T extends { status: string; error?: string }>(items: T[] | undefined, busy: string): T[] | undefined =>
+    items?.map((i) => {
+      const { error: _e, ...item } = i;
+      return (i.status === busy ? { ...item, status: "open" } : item) as T;
+    });
+  return {
+    ...rest,
+    proposals: open(m.proposals, "creating"),
+    deletions: open(m.deletions, "deleting"),
+    tasks: open(m.tasks, "creating"),
+    actions: open(m.actions, "working"),
+    docs: open(m.docs, "creating"),
+    docEdits: open(m.docEdits, "applying"),
+  };
+};
+
+/** Die höchste Nummer in einer Nachricht (ihre eigene und die ihrer Karten), damit neue Nummern nicht doppelt vorkommen. */
+const highestKey = (m: Message): number =>
+  Math.max(
+    m.id,
+    ...[m.proposals, m.deletions, m.tasks, m.actions, m.docs, m.docEdits, m.choices].flatMap((list) => (list ?? []).map((i) => (i as { key: number }).key)),
+  );
 
 interface AssistantPanelProps {
   open: boolean;
@@ -182,22 +217,25 @@ export function AssistantPanel({ open, onClose, mode = "panel", onExpand, onColl
   const { pages } = useDocs();
   const { projects } = useProjects();
   const [status, setStatus] = useState<AssistantStatus | null>(null);
-  // Das aktive Projekt gibt dem Gespräch seinen Kontext; je Projekt bleibt das Gespräch für diese Sitzung erhalten
-  const [activeId, setActiveId] = useState<number | null>(() => {
+  const { chats: chatList, loaded: chatsLoaded } = useChats();
+  /** Der offene Chat; null = ein neuer, noch nicht gespeicherter (er entsteht mit der ersten Nachricht) */
+  const [activeChatId, setActiveChatId] = useState<number | null>(() => {
     try {
-      const saved = localStorage.getItem(PROJECT_KEY);
+      const saved = localStorage.getItem(CHAT_KEY);
       return saved ? Number(saved) : null;
     } catch {
       return null;
     }
   });
+  /** Das Projekt des offenen Chats (oder des neuen): es gibt dem Gespräch seinen Kontext */
+  const [activeId, setActiveId] = useState<number | null>(null);
   const project = projects.find((p) => p.id === activeId) ?? null;
+  const activeChat = chatList.find((c) => c.id === activeChatId) ?? null;
   const [projectModal, setProjectModal] = useState<{ project?: Project } | null>(null);
-  const [chats, setChats] = useState<Record<string, Message[]>>({});
-  const chatKey = project ? String(project.id) : "none";
-  const messages = chats[chatKey] ?? NO_MESSAGES;
-  const setMessages = (next: Message[] | ((m: Message[]) => Message[])) =>
-    setChats((all) => ({ ...all, [chatKey]: typeof next === "function" ? next(all[chatKey] ?? NO_MESSAGES) : next }));
+  const [messages, setMessages] = useState<Message[]>([]);
+  /** Die Nachrichten eines gespeicherten Chats werden geladen */
+  const [chatLoading, setChatLoading] = useState(activeChatId !== null);
+  const [deleting, setDeleting] = useState<ChatInfo | null>(null);
   const contextPath = project ? docPath(pages, project.docId) : "";
   const [draft, setDraft] = useState("");
   /** Dateien für die nächste Nachricht: gespeichert sind sie schon, verschickt wird erst mit der Nachricht */
@@ -207,7 +245,23 @@ export function AssistantPanel({ open, onClose, mode = "panel", onExpand, onColl
   const [dropping, setDropping] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
   const [pending, setPending] = useState(false);
-  const [liveSteps, setLiveSteps] = useState<string[]>([]);
+  /** Gedanken und Schritte, an denen der Assistent gerade arbeitet, in der Reihenfolge, wie sie geschehen */
+  const [liveFeed, setLiveFeed] = useState<FeedItem[]>([]);
+  /** Die Antwort, die gerade geschrieben wird */
+  const [liveText, setLiveText] = useState("");
+  const feedRef = useRef<FeedItem[]>([]);
+  const pushFeed = (item: FeedItem) => {
+    // Derselbe Schritt steht nur einmal im Verlauf
+    if (item.kind === "step" && feedRef.current.some((x) => x.kind === "step" && x.text === item.text)) return;
+    feedRef.current = [...feedRef.current, item];
+    setLiveFeed(feedRef.current);
+  };
+  const resetLive = () => {
+    feedRef.current = [];
+    setLiveFeed([]);
+    setLiveText("");
+    setLivePlan([]);
+  };
   /** Plan, an dem der Assistent gerade arbeitet */
   const [livePlan, setLivePlan] = useState<PlanItem[]>([]);
   const nextId = useRef(1);
@@ -225,11 +279,117 @@ export function AssistantPanel({ open, onClose, mode = "panel", onExpand, onColl
   const request = useRef(0);
   const bodyRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  /** Was zuletzt gespeichert wurde (Chat:Nachricht → JSON): geschrieben wird nur, was sich geändert hat */
+  const saved = useRef<Map<string, string>>(new Map());
+
+  const rememberChat = (id: number | null) => {
+    try {
+      if (id === null) localStorage.removeItem(CHAT_KEY);
+      else localStorage.setItem(CHAT_KEY, String(id));
+    } catch {
+      /* Merken ist nur Komfort */
+    }
+  };
+
+  /** Alles, was nur zum bisherigen Chat gehört: Entwurf, Dateien, offene Vorschauen. */
+  const clearTransient = () => {
+    setChosen({});
+    setDraft("");
+    setFiles([]);
+    setFileError(null);
+    resetLive();
+    setDocsPreview(null);
+    setEditPreview(null);
+    setEditing(null);
+    setEditingTask(null);
+  };
+
+  /** Lädt die gespeicherten Nachrichten eines Chats und macht ihn zum offenen. */
+  const openChat = useCallback(async (info: ChatInfo) => {
+    setChatLoading(true);
+    try {
+      const stored = await loadChat(info.id);
+      const loaded: Message[] = [];
+      saved.current = new Map();
+      for (const item of stored) {
+        try {
+          const m = JSON.parse(item.payload) as Message;
+          if (m && (m.role === "user" || m.role === "assistant")) {
+            loaded.push({ ...m, id: item.seq });
+            saved.current.set(`${info.id}:${item.seq}`, item.payload);
+          }
+        } catch {
+          /* eine unlesbare Nachricht überspringen, der Rest bleibt */
+        }
+      }
+      nextId.current = Math.max(0, ...loaded.map(highestKey)) + 1;
+      setMessages(loaded);
+      setActiveChatId(info.id);
+      setActiveId(info.projectId);
+      rememberChat(info.id);
+    } catch {
+      setMessages([]);
+    } finally {
+      setChatLoading(false);
+    }
+  }, []);
+
+  // Nach dem Start: der zuletzt offene Chat geht weiter, falls es ihn noch gibt
+  const restored = useRef(false);
+  useEffect(() => {
+    if (!chatsLoaded || restored.current) return;
+    restored.current = true;
+    if (activeChatId === null) return;
+    const info = chatList.find((c) => c.id === activeChatId);
+    if (info) void openChat(info);
+    else {
+      setActiveChatId(null);
+      setChatLoading(false);
+      rememberChat(null);
+    }
+  }, [chatsLoaded, chatList, activeChatId, openChat]);
+
+  // Gespeichert wird beim Schreiben, kurz gebündelt: neue Nachrichten und geänderte Karten (bestätigt, verworfen)
+  useEffect(() => {
+    if (activeChatId === null || chatLoading) return;
+    const chatId = activeChatId;
+    const timer = window.setTimeout(() => {
+      for (const m of messages) {
+        if (m.error) continue;
+        const json = JSON.stringify(settle(m));
+        const key = `${chatId}:${m.id}`;
+        if (saved.current.get(key) === json) continue;
+        saved.current.set(key, json);
+        void saveChatMessage(chatId, m.id, m.role, m.text, json).catch(() => saved.current.delete(key));
+      }
+    }, 350);
+    return () => window.clearTimeout(timer);
+  }, [messages, activeChatId, chatLoading]);
+
+  /** Dateien für den festen Kontext des Projekts */
+  const [projectUploading, setProjectUploading] = useState(0);
+  const [projectFileError, setProjectFileError] = useState<string | null>(null);
+  const addProjectFiles = async (list: File[]) => {
+    if (!project || list.length === 0) return;
+    setProjectFileError(null);
+    setProjectUploading((n) => n + 1);
+    try {
+      for (const file of list) {
+        try {
+          await addProjectFile(project.id, await addAttachment(file));
+        } catch (e) {
+          setProjectFileError(`${file.name}: ${String(e)}`);
+        }
+      }
+    } finally {
+      setProjectUploading((n) => n - 1);
+    }
+  };
 
   const loadStatus = useCallback(() => {
     assistantStatus()
       .then(setStatus)
-      .catch(() => setStatus({ hasKey: false, model: "", usdChf: 0.8, costLimitChf: 1 }));
+      .catch(() => setStatus({ model: "", available: false, cliPath: "", configuredPath: "" }));
   }, []);
 
   // Zustand beim Öffnen und nach Änderungen in den Einstellungen neu laden
@@ -257,7 +417,7 @@ export function AssistantPanel({ open, onClose, mode = "panel", onExpand, onColl
     el.style.height = `${Math.min(el.scrollHeight, 140)}px`;
   }, [draft]);
 
-  const ready = status?.hasKey ?? true;
+  const ready = status?.available ?? true;
 
   // Beim Öffnen ins Eingabefeld springen
   useEffect(() => {
@@ -267,13 +427,12 @@ export function AssistantPanel({ open, onClose, mode = "panel", onExpand, onColl
   // Neue Nachrichten sichtbar halten
   useEffect(() => {
     bodyRef.current?.scrollTo({ top: bodyRef.current.scrollHeight, behavior: "smooth" });
-  }, [messages, pending, liveSteps]);
+  }, [messages, pending, liveFeed, liveText]);
 
   const run = async (history: Message[]) => {
     const mine = ++request.current;
     setPending(true);
-    setLiveSteps([]);
-    setLivePlan([]);
+    resetLive();
     try {
       const turns = history
         .filter((m) => !m.error)
@@ -282,10 +441,27 @@ export function AssistantPanel({ open, onClose, mode = "panel", onExpand, onColl
         turns,
         project?.id ?? null,
         (step) => {
-          if (mine === request.current) setLiveSteps((s) => (s.includes(step) ? s : [...s, step]));
+          if (mine === request.current) pushFeed({ kind: "step", text: step });
         },
         (items) => {
           if (mine === request.current) setLivePlan(items);
+        },
+        {
+          onText: (chunk) => {
+            if (mine === request.current) setLiveText((t) => t + chunk);
+          },
+          // Steht nach dem Text ein Werkzeugaufruf, war es eine Arbeitsnotiz: sie wandert in den Verlauf
+          onThought: (text) => {
+            if (mine !== request.current) return;
+            setLiveText("");
+            pushFeed({ kind: "thought", text });
+          },
+          onRestart: () => {
+            if (mine !== request.current) return;
+            setLiveText("");
+            feedRef.current = [];
+            setLiveFeed([]);
+          },
         },
       );
       if (mine !== request.current) return;
@@ -297,6 +473,8 @@ export function AssistantPanel({ open, onClose, mode = "panel", onExpand, onColl
       const docs = (answer.docs ?? []).map<DocsItem>((data) => ({ key: nextId.current++, data, status: "open" }));
       const docEdits = (answer.docEdits ?? []).map<DocEditItem>((data) => ({ key: nextId.current++, data, status: "open" }));
       const messageId = nextId.current++;
+      // Der Verlauf wird jetzt festgehalten: die Anzeige setzt ihn zurück, bevor die Nachricht gebaut ist
+      const feed = feedRef.current.length > 0 ? feedRef.current : undefined;
       // Ein neuer Vorschlag für dieselbe Seite ersetzt den alten, der noch offen ist
       const replaced = new Set(docEdits.map((e) => e.data.pageId));
       setMessages((m) => [
@@ -305,7 +483,7 @@ export function AssistantPanel({ open, onClose, mode = "panel", onExpand, onColl
             ? { ...msg, docEdits: msg.docEdits.map((e) => (e.status === "open" && replaced.has(e.data.pageId) ? { ...e, status: "dismissed" as const } : e)) }
             : msg,
         ),
-        { id: messageId, role: "assistant", text: answer.text, steps: answer.steps, sources: answer.sources, proposals, deletions, tasks, choices, actions, docs, docEdits, usage: answer.usage, plan: answer.plan, model: answer.model },
+        { id: messageId, role: "assistant", text: answer.text, steps: answer.steps, feed, sources: answer.sources, proposals, deletions, tasks, choices, actions, docs, docEdits, usage: answer.usage, plan: answer.plan, model: answer.model },
       ]);
       if (docEdits.length > 0) setEditPreview({ messageId, key: docEdits[0].key });
       // Seiteninhalte sind für den schmalen Chat zu groß: die Vorschau öffnet sich gleich in der Mitte des Fensters
@@ -316,8 +494,7 @@ export function AssistantPanel({ open, onClose, mode = "panel", onExpand, onColl
     } finally {
       if (mine === request.current) {
         setPending(false);
-        setLiveSteps([]);
-        setLivePlan([]);
+        resetLive();
       }
     }
   };
@@ -353,6 +530,15 @@ export function AssistantPanel({ open, onClose, mode = "panel", onExpand, onColl
     setDraft("");
     setFiles([]);
     setFileError(null);
+    // Der erste Satz eines neuen Chats legt ihn an (im Projekt, falls eines gewählt ist)
+    if (activeChatId === null) {
+      void createChat(activeId)
+        .then((info) => {
+          setActiveChatId(info.id);
+          rememberChat(info.id);
+        })
+        .catch((e) => setFileError(`Der Chat konnte nicht gespeichert werden: ${String(e)}`));
+    }
     void run(history);
   };
 
@@ -493,35 +679,40 @@ export function AssistantPanel({ open, onClose, mode = "panel", onExpand, onColl
     navigate("calendar");
   };
 
-  const selectProject = (id: number | null) => {
-    if (pending) return;
-    setActiveId(id);
-    try {
-      localStorage.setItem(PROJECT_KEY, id === null ? "" : String(id));
-    } catch {
-      /* Speichern ist nur Komfort */
-    }
-    // Offene Vorschauen gehören zum Gespräch des bisherigen Projekts
-    setDocsPreview(null);
-    setEditPreview(null);
-    setEditing(null);
-    setEditingTask(null);
+  /** Ein neuer Chat, ohne Projekt oder in einem Projekt. Eine laufende Arbeit wird dabei abgebrochen. */
+  const newChat = (projectId: number | null) => {
+    request.current++;
+    // Läuft noch eine Arbeit im Hintergrund, soll sie aufhören: sonst läuft sie weiter und verbraucht Kontingent
+    if (pending) void cancelAssistant();
+    clearTransient();
+    saved.current = new Map();
+    setMessages([]);
+    setActiveChatId(null);
+    setActiveId(projectId);
+    setChatLoading(false);
+    setPending(false);
+    rememberChat(null);
     window.setTimeout(() => inputRef.current?.focus(), 0);
   };
 
-  const reset = () => {
-    request.current++;
-    setMessages([]);
-    setChosen({});
-    setDraft("");
-    setFiles([]);
-    setFileError(null);
-    setPending(false);
-    setLiveSteps([]);
-    setLivePlan([]);
-    // Läuft noch eine Arbeit im Hintergrund, soll sie aufhören: sonst läuft sie weiter und kostet
-    void cancelAssistant();
-    inputRef.current?.focus();
+  const selectChat = (id: number) => {
+    if (pending) return;
+    const info = chatList.find((c) => c.id === id);
+    if (!info) return;
+    clearTransient();
+    void openChat(info);
+    window.setTimeout(() => inputRef.current?.focus(), 0);
+  };
+
+  const removeChat = async (chat: ChatInfo) => {
+    setDeleting(null);
+    try {
+      await deleteChat(chat.id);
+      saved.current = new Map();
+      if (chat.id === activeChatId) newChat(null);
+    } catch (e) {
+      setFileError(String(e));
+    }
   };
 
   const openSource = (source: AssistantSource) => {
@@ -548,35 +739,56 @@ export function AssistantPanel({ open, onClose, mode = "panel", onExpand, onColl
   return (
     <aside className={`assistant${page ? " page" : ""}${open ? "" : " collapsed"}`} aria-label="Assistent" aria-hidden={!open} inert={!open}>
       {page && (
-        <ProjectBar
+        <ChatSidebar
+          chats={chatList}
           projects={projects}
-          pages={pages}
-          activeId={project?.id ?? null}
+          activeChatId={activeChatId}
+          activeProjectId={activeChatId === null ? activeId : null}
           disabled={pending}
-          onSelect={selectProject}
-          onCreate={() => setProjectModal({})}
-          onEdit={(p) => setProjectModal({ project: p })}
+          onNewChat={newChat}
+          onSelectChat={selectChat}
+          onSelectProject={(id) => newChat(id)}
+          onCreateProject={() => setProjectModal({})}
+          onEditProject={(p) => setProjectModal({ project: p })}
+          onRename={(chat, title) => void renameChat(chat.id, title).catch((e) => setFileError(String(e)))}
+          onPin={(chat, pinned) => void pinChat(chat.id, pinned).catch((e) => setFileError(String(e)))}
+          onMove={(chat, projectId) =>
+            void moveChat(chat.id, projectId)
+              .then(() => chat.id === activeChatId && setActiveId(projectId))
+              .catch((e) => setFileError(String(e)))
+          }
+          onDelete={setDeleting}
         />
       )}
       <div className="as-inner">
         <header className="as-head">
           {page ? (
             <div className="as-page-title">
-              <h1>{project?.name ?? "Assistent"}</h1>
+              <h1>{activeChat?.title || (project && activeChatId === null ? project.name : "Neuer Chat")}</h1>
               <span className="as-context">
-                {project ? contextPath || (project.docId === null ? "Keine Dokumentation zugeordnet" : "Die zugeordnete Seite gibt es nicht mehr") : "Ohne festen Kontext: er sieht alle deine Daten"}
+                {project ? (
+                  <>
+                    <button type="button" className="as-context-link" disabled={pending} title="Projektübersicht mit Chats, Hinweisen und Dateien" onClick={() => newChat(project.id)}>
+                      {project.name}
+                    </button>
+                    {contextPath ? ` › ${contextPath}` : project.docId === null ? " · keine Dokumentation zugeordnet" : " · die zugeordnete Seite gibt es nicht mehr"}
+                  </>
+                ) : (
+                  "Ohne festen Kontext: er sieht alle deine Daten"
+                )}
               </span>
             </div>
           ) : (
             <div className="as-title">
               <Sparkles size={15} />
               <span>Assistent</span>
-              {status?.hasKey && status.model && <span className="tag">{modelLabel(status.model)}</span>}
+              {status?.available && status.model && <span className="tag">{modelLabel(status.model)}</span>}
             </div>
           )}
           <div className="as-head-actions">
-            {page && status?.hasKey && status.model && <span className="tag as-model">{modelLabel(status.model)}</span>}
-            <button type="button" className="icon-btn" aria-label="Neuer Chat" title="Neuer Chat" disabled={empty} onClick={reset}>
+            {page && status?.available && status.model && <span className="tag as-model">{modelLabel(status.model)}</span>}
+            {!page && <ChatHistory chats={chatList} activeChatId={activeChatId} disabled={pending} onSelect={selectChat} />}
+            <button type="button" className="icon-btn" aria-label="Neuer Chat" title="Neuer Chat" disabled={empty} onClick={() => newChat(activeId)}>
               <SquarePen size={15} />
             </button>
             {page ? (
@@ -607,14 +819,33 @@ export function AssistantPanel({ open, onClose, mode = "panel", onExpand, onColl
           {!ready ? (
             <div className="as-empty">
               <span className="as-empty-icon">
-                <KeyRound size={18} />
+                <Terminal size={18} />
               </span>
               <h2>Assistent einrichten</h2>
-              <p>Hinterlege deinen API-Key von Anthropic, dann kannst du Fragen zu deinen Aufgaben, Terminen, Notizen und deiner Dokumentation stellen.</p>
+              <p>Der Assistent läuft über Claude Code. Die App findet es auf diesem Rechner oder bei der Claude-Desktop-App, du musst es aber einmal selbst anmelden (Einstellungen → Assistent → Verbindung testen zeigt, wie). Dann kannst du Fragen zu deinen Aufgaben, Terminen, Notizen und deiner Dokumentation stellen.</p>
               <Button className="as-setup" onClick={() => openSettings("assistant")}>
                 Einstellungen öffnen
               </Button>
             </div>
+          ) : chatLoading ? (
+            <div className="as-empty" aria-busy="true" />
+          ) : empty && project && page ? (
+            <ProjectOverview
+              project={project}
+              contextPath={contextPath}
+              chats={chatList.filter((c) => c.projectId === project.id)}
+              onOpenChat={selectChat}
+              onEdit={() => setProjectModal({ project })}
+              onOpenDocs={() => {
+                if (project.docId === null) return;
+                requestOpenDoc(project.docId);
+                navigate("docs");
+              }}
+              onAddFiles={(list) => void addProjectFiles(list)}
+              onRemoveFile={(fileId) => void removeProjectFile(project.id, fileId).catch((e) => setProjectFileError(String(e)))}
+              uploading={projectUploading}
+              error={projectFileError}
+            />
           ) : empty ? (
             <div className="as-empty">
               <span className="as-empty-icon">
@@ -670,7 +901,7 @@ export function AssistantPanel({ open, onClose, mode = "panel", onExpand, onColl
                   </div>
                 ) : (
                   <div key={m.id} className="as-reply">
-                    {m.steps && m.steps.length > 0 && <Steps steps={m.steps} />}
+                    <WorkLog feed={m.feed} steps={m.steps} />
                     {m.plan && m.plan.length > 0 && <PlanList items={m.plan} />}
                     <Markdown text={m.text} />
                     {m.proposals && m.proposals.length > 0 && (
@@ -779,24 +1010,20 @@ export function AssistantPanel({ open, onClose, mode = "panel", onExpand, onColl
                         </div>
                       </div>
                     )}
-                    {m.usage && <UsageLine usage={m.usage} model={m.model} usdChf={status?.usdChf ?? 0.8} />}
+                    {m.usage && <UsageLine usage={m.usage} model={m.model} />}
                   </div>
                 ),
               )}
-              {pending && (
-                <div className="as-pending" role="status">
-                  <div className="as-pending-row">
-                    <span className="as-dots" aria-hidden>
-                      <i />
-                      <i />
-                      <i />
-                    </span>
-                    <span>{livePlan.length ? "Arbeitet am Plan …" : liveSteps.length ? "Denkt nach …" : "Liest deinen Stand …"}</span>
-                  </div>
-                  {livePlan.length > 0 && <PlanList items={livePlan} />}
-                  {liveSteps.length > 0 && <Steps steps={liveSteps} />}
+              {!pending && !lastIsError && messages.length > 0 && messages[messages.length - 1].role === "user" && (
+                <div className="cs-unanswered" role="status">
+                  <span>Die letzte Frage hat noch keine Antwort.</span>
+                  <button type="button" className="as-retry" onClick={retry}>
+                    <RotateCcw size={12} />
+                    Antwort holen
+                  </button>
                 </div>
               )}
+              {pending && <Activity feed={liveFeed} plan={livePlan} text={liveText} />}
             </>
           )}
         </div>
@@ -846,7 +1073,7 @@ export function AssistantPanel({ open, onClose, mode = "panel", onExpand, onColl
               rows={1}
               value={draft}
               disabled={!ready}
-              placeholder={ready ? (project ? `Frag etwas zu „${project.name}“ …` : "Frag etwas zu deinem Stand …") : "Erst den API-Key hinterlegen …"}
+              placeholder={ready ? (project ? `Frag etwas zu „${project.name}“ …` : "Frag etwas zu deinem Stand …") : "Erst Claude Code einrichten …"}
               aria-label="Nachricht an den Assistenten"
               spellCheck={false}
               onChange={(e) => setDraft(e.target.value)}
@@ -901,9 +1128,9 @@ export function AssistantPanel({ open, onClose, mode = "panel", onExpand, onColl
         <ProjectModal
           project={projectModal.project}
           onClose={() => setProjectModal(null)}
-          // Ein neues oder geändertes Projekt wird gleich das aktive
-          onSaved={(p) => selectProject(p.id)}
-          onDeleted={(id) => id === activeId && selectProject(null)}
+          // Ein neues oder geändertes Projekt öffnet seine Startansicht (neuer Chat im Projekt)
+          onSaved={(p) => newChat(p.id)}
+          onDeleted={(id) => id === activeId && newChat(null)}
         />
       )}
 
@@ -969,19 +1196,14 @@ export function AssistantPanel({ open, onClose, mode = "panel", onExpand, onColl
             />
           );
         })()}
+      {deleting && (
+        <ConfirmDialog
+          title="Chat löschen?"
+          message={`„${deleting.title || "Neuer Chat"}“ wird mit allen Nachrichten gelöscht. Was du darin bestätigt hast (Aufgaben, Termine, Seiten), bleibt bestehen.`}
+          onConfirm={() => void removeChat(deleting)}
+          onCancel={() => setDeleting(null)}
+        />
+      )}
     </aside>
-  );
-}
-
-function Steps({ steps }: { steps: string[] }) {
-  return (
-    <ul className="as-steps">
-      {steps.map((s) => (
-        <li key={s}>
-          <Check size={12} />
-          {s}
-        </li>
-      ))}
-    </ul>
   );
 }

@@ -1,5 +1,10 @@
+// Die Werkzeugliste des Assistenten ist ein großes json!-Makro und braucht mehr Rekursionstiefe als üblich
+#![recursion_limit = "512"]
+
 mod assistant;
 mod chatfiles;
+mod chats;
+mod claude_code;
 mod db;
 mod docbuild;
 mod dochtml;
@@ -8,6 +13,7 @@ mod events;
 mod files;
 mod finnhub;
 mod journal;
+mod mcp;
 mod notes;
 mod profile;
 mod projects;
@@ -707,6 +713,18 @@ fn apply_doc_edit(db: State<Db>, id: i64, base_updated_at: String, new_title: Op
 }
 
 #[tauri::command]
+fn add_project_file(db: State<Db>, project_id: i64, file_id: i64) -> Result<projects::Project, String> {
+    let conn = lock(&db)?;
+    projects::add_file(&conn, project_id, file_id)
+}
+
+#[tauri::command]
+fn remove_project_file(db: State<Db>, project_id: i64, file_id: i64) -> Result<projects::Project, String> {
+    let conn = lock(&db)?;
+    projects::remove_file(&conn, project_id, file_id)
+}
+
+#[tauri::command]
 fn list_assistant_projects(db: State<Db>) -> Result<Vec<projects::Project>, String> {
     let conn = lock(&db)?;
     projects::list(&conn)
@@ -740,6 +758,12 @@ fn update_doc_page(db: State<Db>, id: i64, input: DocInput) -> Result<DocPage, S
 fn set_doc_favorite(db: State<Db>, id: i64, favorite: bool) -> Result<(), String> {
     let conn = lock(&db)?;
     docs::set_favorite(&conn, id, favorite)
+}
+
+#[tauri::command]
+fn set_doc_layout(db: State<Db>, id: i64, layout: String) -> Result<(), String> {
+    let conn = lock(&db)?;
+    docs::set_layout(&conn, id, &layout)
 }
 
 #[tauri::command]
@@ -1108,6 +1132,14 @@ pub fn run() {
                 }
             };
             app.manage(Db(Mutex::new(conn)));
+            // Die Chats des Assistenten bleiben auf diesem Rechner: eigene Datei im lokalen Datenordner, nie im Abgleich
+            let chat_conn = Connection::open(data_dir.join(chats::FILE_NAME)).and_then(|c| chats::init(&c).map(|_| c)).unwrap_or_else(|e| {
+                log::error!("Die Chat-Datenbank konnte nicht geöffnet werden, die Chats gelten nur für diese Sitzung: {e}");
+                let c = Connection::open_in_memory().expect("Speicher-Datenbank");
+                let _ = chats::init(&c);
+                c
+            });
+            app.manage(chats::ChatDb(Mutex::new(chat_conn)));
             app.manage(files::Watches::default());
             // Speichert man einen geöffneten Anhang im Programm, landet der neue Stand nach kurzer Zeit im Anhang
             let handle = app.handle().clone();
@@ -1175,12 +1207,15 @@ pub fn run() {
             create_doc_page,
             create_doc_tree,
             list_assistant_projects,
+            add_project_file,
+            remove_project_file,
             create_assistant_project,
             update_assistant_project,
             delete_assistant_project,
             apply_doc_edit,
             update_doc_page,
             set_doc_favorite,
+            set_doc_layout,
             move_doc_page,
             shift_doc_page,
             place_doc_page,
@@ -1222,12 +1257,20 @@ pub fn run() {
             search_symbols,
             assistant::assistant_status,
             assistant::set_assistant_model,
-            assistant::set_assistant_limits,
-            assistant::save_assistant_key,
-            assistant::assistant_usage,
-            assistant::reset_assistant_usage,
+            assistant::set_assistant_cli_path,
+            assistant::assistant_check,
             assistant::assistant_cancel,
-            assistant::assistant_ask
+            assistant::assistant_ask,
+            chats::list_chats,
+            chats::create_chat,
+            chats::rename_chat,
+            chats::pin_chat,
+            chats::move_chat,
+            chats::delete_chat,
+            chats::load_chat,
+            chats::save_chat_message,
+            chats::delete_chat_messages_from,
+            chats::search_chats
         ])
         .run(tauri::generate_context!())
         .expect("Fehler beim Starten von Wissenszentrum");

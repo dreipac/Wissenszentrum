@@ -12,6 +12,7 @@ import {
   FolderOpen,
   FolderPlus,
   MoreHorizontal,
+  MoveHorizontal,
   Pencil,
   Plus,
   Search,
@@ -26,7 +27,7 @@ import { DocEditor } from "../components/docs/DocEditor";
 import { DocExport } from "../components/docs/DocExport";
 import { FolderView } from "../components/docs/FolderView";
 import { MovePageModal, NewPageModal } from "../components/docs/PageModals";
-import { deleteDocPage, placeDocPage, setDocFavorite, shiftDocPage } from "../lib/api/docs";
+import { deleteDocPage, placeDocPage, setDocFavorite, setDocLayout, shiftDocPage } from "../lib/api/docs";
 import { TreeDragLayer, useTreeDrag } from "../components/docs/useTreeDrag";
 import { ancestors, buildTree, descendantIds, isFolder, pageTitle, searchPages, type DocKind, type DocNode, type DocPage } from "../lib/docs";
 import { useOpenTarget } from "../lib/openTarget";
@@ -388,6 +389,18 @@ export function DocsView() {
                 <span className="current">{pageTitle(active)}</span>
               </nav>
               <div className="page-actions">
+                {!isFolder(active) && (
+                  <button
+                    type="button"
+                    className={`icon-btn${active.layout === "wide" ? " active" : ""}`}
+                    aria-label={active.layout === "wide" ? "Breit: Inhalt beginnt am linken Rand. Zurück zu normal" : "Normal: Inhalt in der Mitte. Auf breit umstellen"}
+                    title={active.layout === "wide" ? "Breit: Inhalt beginnt am linken Rand (klicken für normal)" : "Normal: Inhalt in der Mitte (klicken für breit)"}
+                    aria-pressed={active.layout === "wide"}
+                    onClick={() => void run(() => setDocLayout(active.id, active.layout === "wide" ? "normal" : "wide"))}
+                  >
+                    <MoveHorizontal size={16} />
+                  </button>
+                )}
                 <button
                   type="button"
                   className={`icon-btn${active.favorite ? " active" : ""}`}

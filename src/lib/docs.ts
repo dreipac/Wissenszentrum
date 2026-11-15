@@ -1,5 +1,8 @@
 export type DocKind = "page" | "folder";
 
+/** Breite des Inhalts einer Seite: schmale Spalte in der Mitte oder volle Breite ab dem linken Rand */
+export type DocLayout = "normal" | "wide";
+
 export interface DocPage {
   id: number;
   /** Seite mit Text oder Ordner zum Ordnen */
@@ -12,6 +15,7 @@ export interface DocPage {
   plain: string;
   position: number;
   favorite: boolean;
+  layout: DocLayout;
   /** UTC, `YYYY-MM-DD HH:MM:SS` */
   createdAt: string;
   updatedAt: string;

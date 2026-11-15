@@ -26,7 +26,14 @@ pub enum Block {
     Paragraph { text: String },
     BulletList { items: Vec<String> },
     NumberedList { items: Vec<String> },
-    Table { headers: Vec<String>, rows: Vec<Vec<String>> },
+    /// Eine Tabelle. `headers` ist die Kopfzeile (leer: es gibt keine). Mit `header_column` ist die erste Zelle jeder Zeile eine
+    /// Überschrift, wie bei „Frage | …“ und „Antwort | …“.
+    Table {
+        headers: Vec<String>,
+        rows: Vec<Vec<String>>,
+        #[serde(default)]
+        header_column: bool,
+    },
     Divider,
     Quote { text: String },
     Code { text: String },
@@ -101,8 +108,13 @@ pub fn check_block(page: &str, block: &Block, stats: &mut Stats) -> Result<(), S
                 text_ok(&format!("Ein Listeneintrag auf Seite „{page}“"), item, MAX_CELL)?;
             }
         }
-        Block::Table { headers, rows } => {
-            if headers.is_empty() || headers.len() > MAX_COLS {
+        Block::Table { headers, rows, header_column } => {
+            if headers.is_empty() && !*header_column {
+                return Err(format!("Eine Tabelle auf Seite „{page}“ braucht Spaltenüberschriften (headers) oder eine Kopfspalte (header_column: true)."));
+            }
+            // Ohne Kopfzeile bestimmt die erste Zeile die Zahl der Spalten
+            let cols = if headers.is_empty() { rows.first().map(|r| r.len()).unwrap_or(0) } else { headers.len() };
+            if cols == 0 || cols > MAX_COLS {
                 return Err(format!("Eine Tabelle auf Seite „{page}“ braucht 1 bis {MAX_COLS} Spalten."));
             }
             if rows.is_empty() || rows.len() > MAX_ROWS {
@@ -112,8 +124,8 @@ pub fn check_block(page: &str, block: &Block, stats: &mut Stats) -> Result<(), S
                 text_ok(&format!("Eine Spaltenüberschrift der Tabelle auf Seite „{page}“"), header, MAX_CELL)?;
             }
             for (i, row) in rows.iter().enumerate() {
-                if row.len() != headers.len() {
-                    return Err(format!("Tabelle auf Seite „{page}“: Zeile {} hat {} statt {} Zellen. Jede Zeile braucht so viele Zellen wie Spalten.", i + 1, row.len(), headers.len()));
+                if row.len() != cols {
+                    return Err(format!("Tabelle auf Seite „{page}“: Zeile {} hat {} statt {} Zellen. Jede Zeile braucht so viele Zellen wie Spalten.", i + 1, row.len(), cols));
                 }
                 if row.iter().any(|c| c.chars().count() > MAX_CELL) {
                     return Err(format!("Tabelle auf Seite „{page}“: Eine Zelle ist zu lang (höchstens {MAX_CELL} Zeichen)."));
@@ -306,10 +318,13 @@ pub fn block_html(block: &Block) -> String {
         Block::Paragraph { text } => format!("<p>{}</p>", inline_html(text)),
         Block::BulletList { items } => list("ul", items),
         Block::NumberedList { items } => list("ol", items),
-        Block::Table { headers, rows } => {
-            let head: String = headers.iter().map(|h| cell("th", h)).collect();
-            let body: String = rows.iter().map(|r| format!("<tr>{}</tr>", r.iter().map(|c| cell("td", c)).collect::<String>())).collect();
-            format!("<table><tbody><tr>{head}</tr>{body}</tbody></table>")
+        Block::Table { headers, rows, header_column } => {
+            let head = if headers.is_empty() { String::new() } else { format!("<tr>{}</tr>", headers.iter().map(|h| cell("th", h)).collect::<String>()) };
+            let body: String = rows
+                .iter()
+                .map(|r| format!("<tr>{}</tr>", r.iter().enumerate().map(|(i, c)| cell(if *header_column && i == 0 { "th" } else { "td" }, c)).collect::<String>()))
+                .collect();
+            format!("<table><tbody>{head}{body}</tbody></table>")
         }
         Block::Divider => "<hr>".to_string(),
         Block::Quote { text } => format!("<blockquote><p>{}</p></blockquote>", inline_html(text)),
@@ -353,9 +368,10 @@ pub fn page_content(blocks: &[Block]) -> (String, String) {
     let plain = blocks
         .iter()
         .map(|b| match b {
-            Block::Table { headers, rows } => {
+            Block::Table { headers, rows, .. } => {
                 let line = |cells: &[String]| cells.iter().map(|c| plain_of(&inline_html(c))).collect::<Vec<_>>().join(" | ");
-                std::iter::once(line(headers)).chain(rows.iter().map(|r| line(r))).collect::<Vec<_>>().join("\n")
+                let head = (!headers.is_empty()).then(|| line(headers));
+                head.into_iter().chain(rows.iter().map(|r| line(r))).collect::<Vec<_>>().join("\n")
             }
             other => plain_of(&block_html(other)),
         })
@@ -462,7 +478,7 @@ mod tests {
 
     #[test]
     fn blocks_become_editor_html() {
-        let table = Block::Table { headers: vec!["Name".into(), "Wert".into()], rows: vec![vec!["a".into(), "**1**".into()]] };
+        let table = Block::Table { header_column: false, headers: vec!["Name".into(), "Wert".into()], rows: vec![vec!["a".into(), "**1**".into()]] };
         assert_eq!(block_html(&table), "<table><tbody><tr><th><p>Name</p></th><th><p>Wert</p></th></tr><tr><td><p>a</p></td><td><p><strong>1</strong></p></td></tr></tbody></table>");
         assert_eq!(block_html(&Block::Divider), "<hr>");
         assert_eq!(block_html(&h(2, "Titel & Co")), "<h2>Titel &amp; Co</h2>");
@@ -472,7 +488,7 @@ mod tests {
 
     #[test]
     fn plain_text_covers_everything_for_the_search() {
-        let (html, plain) = page_content(&[h(1, "Ablauf"), Block::Paragraph { text: "Erst **prüfen**".into() }, Block::Divider, Block::Table { headers: vec!["A".into(), "B".into()], rows: vec![vec!["1".into(), "2".into()]] }]);
+        let (html, plain) = page_content(&[h(1, "Ablauf"), Block::Paragraph { text: "Erst **prüfen**".into() }, Block::Divider, Block::Table { header_column: false, headers: vec!["A".into(), "B".into()], rows: vec![vec!["1".into(), "2".into()]] }]);
         assert!(html.starts_with("<h1>Ablauf</h1><p>Erst <strong>prüfen</strong></p><hr><table>"));
         assert_eq!(plain, "Ablauf\nErst prüfen\nA | B\n1 | 2");
     }
@@ -490,9 +506,9 @@ mod tests {
 
     #[test]
     fn tables_need_matching_rows_and_structure_is_checked() {
-        let bad = Block::Table { headers: vec!["A".into(), "B".into()], rows: vec![vec!["1".into()]] };
+        let bad = Block::Table { header_column: false, headers: vec!["A".into(), "B".into()], rows: vec![vec!["1".into()]] };
         assert!(validate(&[page("S", vec![bad])]).unwrap_err().contains("Zeile 1 hat 1 statt 2 Zellen"));
-        let empty = Block::Table { headers: vec!["A".into()], rows: vec![] };
+        let empty = Block::Table { header_column: false, headers: vec!["A".into()], rows: vec![] };
         assert!(validate(&[page("S", vec![empty])]).is_err());
         assert!(validate(&[folder("F", vec![]), page("", vec![])]).is_err(), "Titel fehlt");
         let mut with_text = folder("F", vec![]);
@@ -518,7 +534,7 @@ mod tests {
                 "Projekt Alpha",
                 vec![
                     page("Überblick", vec![h(1, "Ziel"), Block::Paragraph { text: "Kurz und klar.".into() }, Block::Divider, h(1, "Plan")]),
-                    DocNodeSpec { children: vec![page("Detail", vec![])], ..page("Risiken", vec![Block::Table { headers: vec!["Risiko".into(), "Stufe".into()], rows: vec![vec!["Verzug".into(), "hoch".into()]] }]) },
+                    DocNodeSpec { children: vec![page("Detail", vec![])], ..page("Risiken", vec![Block::Table { header_column: false, headers: vec!["Risiko".into(), "Stufe".into()], rows: vec![vec!["Verzug".into(), "hoch".into()]] }]) },
                 ],
             )],
         )
@@ -552,5 +568,28 @@ mod tests {
         assert!(err.contains("Ebenen"), "{err}");
         assert_eq!(docs::list_pages(&c).unwrap().len(), before);
         assert!(create_tree(&c, Some(999), &[page("A", vec![])]).is_err(), "unbekannter Zielordner");
+    }
+
+    #[test]
+    fn a_table_can_have_a_header_column_instead_of_a_header_row() {
+        let qa = Block::Table { headers: vec![], rows: vec![vec!["FRAGE".into(), "**Wie?**".into()], vec!["ANTWORT".into(), "Gut".into()]], header_column: true };
+        assert_eq!(
+            block_html(&qa),
+            "<table><tbody><tr><th><p>FRAGE</p></th><td><p><strong>Wie?</strong></p></td></tr><tr><th><p>ANTWORT</p></th><td><p>Gut</p></td></tr></tbody></table>"
+        );
+        let mut stats = Stats::default();
+        check_block("S", &qa, &mut stats).unwrap();
+        assert_eq!(stats.tables, 1);
+        assert!(page_content(&[qa.clone()]).1.contains("FRAGE | Wie?"));
+
+        // Kopfzeile und Kopfspalte zugleich
+        let both = Block::Table { headers: vec!["".into(), "Wert".into()], rows: vec![vec!["a".into(), "1".into()]], header_column: true };
+        assert!(block_html(&both).contains("<tr><th><p>a</p></th><td><p>1</p></td></tr>"));
+        // Ohne beides ist es keine Tabelle mit Überschriften
+        let neither = Block::Table { headers: vec![], rows: vec![vec!["a".into()]], header_column: false };
+        assert!(check_block("S", &neither, &mut Stats::default()).unwrap_err().contains("Kopfspalte"));
+        // Das Feld ist beim Einlesen optional
+        let parsed: Block = serde_json::from_value(serde_json::json!({ "type": "table", "headers": ["A"], "rows": [["1"]] })).unwrap();
+        assert!(matches!(parsed, Block::Table { header_column: false, .. }));
     }
 }

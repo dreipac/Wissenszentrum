@@ -32,7 +32,7 @@ function summarize(shown: ShownBlock | null, blocks?: DocBlock[]): string {
     case "numbered_list":
       return `Liste (${b.items.length} Einträge)${more}`;
     case "table":
-      return `Tabelle (${b.headers.length} × ${b.rows.length + 1})${more}`;
+      return `Tabelle (${b.headers.length || b.rows[0]?.length || 0} × ${b.rows.length + (b.headers.length > 0 ? 1 : 0)})${more}`;
     case "divider":
       return `Trennlinie${more}`;
     case "file":

@@ -219,7 +219,7 @@ pub fn can_open(name: &str) -> bool {
 }
 
 /// IDs aller Anhänge, auf die ein Text verweist (`data-file-id="7"`).
-fn referenced_ids(content: &str) -> Vec<i64> {
+pub fn referenced_ids(content: &str) -> Vec<i64> {
     const MARK: &str = "data-file-id=\"";
     let mut ids = Vec::new();
     let mut rest = content;
@@ -233,15 +233,22 @@ fn referenced_ids(content: &str) -> Vec<i64> {
     ids
 }
 
-/// Entfernt Anhänge, die keine Seite und keine Notiz mehr verwendet (ein Tag Schonfrist, damit „Rückgängig“ greift).
+/// So lange bleibt ein Anhang ohne Verwendung noch liegen, bevor er aufgeräumt wird: für „Rückgängig“ und für Dateien aus
+/// älteren Chats des Assistenten, die nicht auf einer Seite stehen.
+const GRACE_DAYS: u32 = 30;
+
+/// Entfernt Anhänge, die keine Seite, keine Notiz und kein Projekt des Assistenten mehr verwendet (nach der Schonfrist).
 pub fn gc(conn: &Connection) -> Result<usize, String> {
     let mut used: HashSet<i64> = HashSet::new();
+    // Dateien, die ein Projekt als festen Kontext trägt, bleiben
+    let mut stmt = conn.prepare("SELECT attachment_id FROM assistant_project_files").map_err(db_err)?;
+    used.extend(stmt.query_map([], |r| r.get::<_, i64>(0)).map_err(db_err)?.collect::<Result<Vec<_>, _>>().map_err(db_err)?);
     for table in ["doc_pages", "notes"] {
         let mut stmt = conn.prepare(&format!("SELECT content FROM {table} WHERE content LIKE '%data-file-id%'")).map_err(db_err)?;
         let contents: Vec<String> = stmt.query_map([], |r| r.get(0)).map_err(db_err)?.collect::<Result<_, _>>().map_err(db_err)?;
         used.extend(contents.iter().flat_map(|c| referenced_ids(c)));
     }
-    let mut stmt = conn.prepare("SELECT id FROM attachments WHERE created_at < datetime('now', '-1 day')").map_err(db_err)?;
+    let mut stmt = conn.prepare(&format!("SELECT id FROM attachments WHERE created_at < datetime('now', '-{GRACE_DAYS} day')")).map_err(db_err)?;
     let old: Vec<i64> = stmt.query_map([], |r| r.get(0)).map_err(db_err)?.collect::<Result<_, _>>().map_err(db_err)?;
     let mut removed = 0;
     for id in old.into_iter().filter(|id| !used.contains(id)) {
@@ -305,11 +312,20 @@ mod tests {
         let in_note = add(&c, "b.pdf", "application/pdf", b"b").unwrap().id;
         let unused = add(&c, "c.pdf", "application/pdf", b"c").unwrap().id;
         let fresh = add(&c, "d.pdf", "application/pdf", b"d").unwrap().id;
+        let in_project = add(&c, "e.pdf", "application/pdf", b"e").unwrap().id;
+        let recent = add(&c, "f.pdf", "application/pdf", b"f").unwrap().id;
+        c.execute("INSERT INTO assistant_projects (name) VALUES ('P')", []).unwrap();
+        c.execute("INSERT INTO assistant_project_files (project_id, attachment_id) VALUES (1, ?1)", params![in_project]).unwrap();
         c.execute("INSERT INTO doc_pages (title, content) VALUES ('S', ?1)", params![format!("<div data-file-id=\"{in_page}\" data-name=\"a.pdf\"></div>")]).unwrap();
         c.execute("INSERT INTO notes (title, content) VALUES ('N', ?1)", params![format!("<div data-file-id=\"{in_note}\"></div>")]).unwrap();
-        c.execute("UPDATE attachments SET created_at = datetime('now', '-2 days') WHERE id <> ?1", params![fresh]).unwrap();
+        c.execute("UPDATE attachments SET created_at = datetime('now', '-40 days') WHERE id NOT IN (?1, ?2)", params![fresh, recent]).unwrap();
+        c.execute("UPDATE attachments SET created_at = datetime('now', '-2 days') WHERE id = ?1", params![recent]).unwrap();
         assert_eq!(gc(&c).unwrap(), 1, "nur die alte, unverwendete Datei");
         assert!(get(&c, in_page).is_ok() && get(&c, in_note).is_ok() && get(&c, fresh).is_ok());
+        assert!(get(&c, in_project).is_ok(), "eine Datei eines Projekts bleibt");
+        assert!(get(&c, recent).is_ok(), "innerhalb der Schonfrist bleibt auch Unverwendetes (zum Beispiel Dateien aus Chats)");
+        let links: i64 = c.query_row("SELECT COUNT(*) FROM assistant_project_files", [], |r| r.get(0)).unwrap();
+        assert_eq!(links, 1, "die Verknüpfung zum Projekt geht nicht mit verloren");
         assert!(get(&c, unused).is_err());
     }
 

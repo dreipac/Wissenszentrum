@@ -9,10 +9,10 @@ export const ASSISTANT_MODELS = [
   {
     id: "auto",
     label: "Auto",
-    hint: "Empfohlen. Haiku beantwortet einfache Fragen günstig, Sonnet übernimmt Aufträge wie Lösen, Schreiben und Seiten aufbauen. Kommt Haiku mit den Werkzeugen nicht zurecht, wiederholt die App die Frage selbst mit Sonnet.",
+    hint: "Empfohlen. Haiku beantwortet einfache Fragen schnell, Sonnet übernimmt Aufträge wie Lösen, Schreiben und Seiten aufbauen. Kommt Haiku mit den Werkzeugen nicht zurecht, wiederholt die App die Frage selbst mit Sonnet.",
   },
-  { id: "claude-haiku-5-5", label: "Haiku 5.5", hint: "Immer das günstigste Modell, etwa 20-mal günstiger als Sonnet. Reicht für die meisten Fragen." },
-  { id: "claude-sonnet-5-5", label: "Sonnet 5.5", hint: "Immer Sonnet: genauer bei langen Seiten und Zusammenhängen, dafür deutlich teurer." },
+  { id: "claude-haiku-5-5", label: "Haiku 5.5", hint: "Immer das schnellste Modell. Es verbraucht am wenigsten von deinem Nutzungskontingent und reicht für die meisten Fragen." },
+  { id: "claude-sonnet-5-5", label: "Sonnet 5.5", hint: "Immer Sonnet: genauer bei langen Seiten und Zusammenhängen, braucht dafür mehr von deinem Nutzungskontingent." },
 ] as const;
 
 export const DEFAULT_ASSISTANT_MODEL: string = ASSISTANT_MODELS[0].id;
@@ -20,13 +20,19 @@ export const DEFAULT_ASSISTANT_MODEL: string = ASSISTANT_MODELS[0].id;
 export const modelLabel = (id: string) => ASSISTANT_MODELS.find((m) => m.id === id)?.label ?? id;
 
 export interface AssistantStatus {
-  /** Ein API-Key ist auf diesem Rechner hinterlegt */
-  hasKey: boolean;
-  /** Wechselkurs für die Anzeige in Franken */
-  usdChf: number;
-  /** Kostenlimit je Antwort in Franken, 0 = keines */
-  costLimitChf: number;
   model: string;
+  /** Claude Code ist auf diesem Rechner gefunden worden */
+  available: boolean;
+  /** Wo es liegt (leer, wenn nicht gefunden) */
+  cliPath: string;
+  /** Der Pfad aus den Einstellungen (leer = automatisch suchen) */
+  configuredPath: string;
+}
+
+/** Ergebnis der Prüfung von Claude Code mit einer kleinen Probefrage. */
+export interface AssistantCheck {
+  version: string;
+  answer: string;
 }
 
 export interface AssistantSource {
@@ -144,7 +150,25 @@ export interface PlanItem {
 }
 
 /** Was der Assistent während der Arbeit meldet: einen erledigten Schritt oder den aktuellen Stand seines Plans. */
-type Progress = { kind: "step"; text: string } | { kind: "plan"; items: PlanItem[] };
+type Progress =
+  | { kind: "step"; text: string }
+  | { kind: "plan"; items: PlanItem[] }
+  /** Ein Stück der Antwort, das gerade geschrieben wird */
+  | { kind: "text"; text: string }
+  /** Arbeitsnotiz: was der Assistent vor einem Werkzeugaufruf geschrieben hat */
+  | { kind: "thought"; text: string }
+  /** Die Arbeit beginnt von vorn: bisher gestreamter Text gilt nicht mehr */
+  | { kind: "restart" };
+
+/** Was während der Arbeit live gemeldet wird, außer Schritten und Plan. */
+export interface LiveHandlers {
+  /** Ein Stück Text der Antwort (wächst an) */
+  onText?: (chunk: string) => void;
+  /** Eine Arbeitsnotiz des Assistenten, die den bisherigen Zwischentext ersetzt */
+  onThought?: (text: string) => void;
+  /** Die Arbeit beginnt von vorn */
+  onRestart?: () => void;
+}
 
 export interface AssistantAnswer {
   text: string;
@@ -182,36 +206,17 @@ export interface ChatFile {
   size: number;
 }
 
-/** Verbrauch des Assistenten seit dem Start der App, nach den Angaben der API zu jeder Antwort. */
+/** Verbrauch einer Antwort in Token, so wie Claude Code ihn meldet. Kosten gibt es nicht: Claude Code läuft über dein Konto. */
 export interface TokenUsage {
   requests: number;
-  /** Eingabe ohne Zwischenspeicher (voller Preis) */
+  /** Eingabe ohne Zwischenspeicher */
   inputTokens: number;
-  /** In den Zwischenspeicher geschrieben (etwas teurer) */
+  /** In den Zwischenspeicher geschrieben */
   cacheWriteTokens: number;
-  /** Aus dem Zwischenspeicher gelesen (deutlich günstiger) */
+  /** Aus dem Zwischenspeicher gelesen */
   cacheReadTokens: number;
   outputTokens: number;
-  /** Geschätzte Kosten in US-Dollar nach der Preisliste von Anthropic */
-  costUsd: number;
 }
-
-export interface AssistantUsage extends TokenUsage {
-  /** Anteil der Eingabe aus dem Zwischenspeicher (0 bis 1), null ohne Anfragen */
-  hitRate: number | null;
-  /** Ein Modell hat den Zwischenspeicher abgelehnt */
-  cacheOff: boolean;
-  /** Ein Modell hat die Aufwandsstufe abgelehnt */
-  effortOff: boolean;
-}
-
-const NO_USAGE: AssistantUsage = { requests: 0, inputTokens: 0, cacheWriteTokens: 0, cacheReadTokens: 0, outputTokens: 0, costUsd: 0, hitRate: null, cacheOff: false, effortOff: false };
-
-export const assistantUsage = (): Promise<AssistantUsage> => (inTauri ? invoke("assistant_usage") : Promise.resolve(NO_USAGE));
-
-export const resetAssistantUsage = async (): Promise<void> => {
-  if (inTauri) await invoke("reset_assistant_usage");
-};
 
 export interface ChatTurn {
   role: "user" | "assistant";
@@ -233,19 +238,16 @@ const announce = () => window.dispatchEvent(new Event(ASSISTANT_CHANGED_EVENT));
 let previewModel: string = DEFAULT_ASSISTANT_MODEL;
 
 export const assistantStatus = (): Promise<AssistantStatus> =>
-  inTauri ? invoke("assistant_status") : Promise.resolve({ hasKey: true, model: previewModel, usdChf: 0.8, costLimitChf: 1 });
+  inTauri ? invoke("assistant_status") : Promise.resolve({ model: previewModel, available: true, cliPath: "claude", configuredPath: "" });
 
-/** Prüft den Key mit einer kostenlosen Abfrage und legt ihn im Windows-Schlüsselspeicher ab (leer = entfernen). */
-export async function saveAssistantKey(apiKey: string): Promise<void> {
-  if (inTauri) await invoke("save_assistant_key", { apiKey });
+/** Pfad zu Claude Code, wenn die App es nicht von selbst findet (leer = automatisch suchen). */
+export async function setAssistantCliPath(path: string): Promise<void> {
+  if (inTauri) await invoke("set_assistant_cli_path", { path });
   announce();
 }
 
-/** Kostenlimit je Antwort in Franken (0 = keines) und Wechselkurs für die Anzeige. */
-export async function setAssistantLimits(costLimitChf: number, usdChf: number): Promise<void> {
-  if (inTauri) await invoke("set_assistant_limits", { costLimitChf, usdChf });
-  announce();
-}
+/** Prüft Claude Code mit einer winzigen Frage: Es lässt sich starten, ist angemeldet und antwortet. Verbraucht ein klein wenig vom Nutzungskontingent. */
+export const checkAssistant = (): Promise<AssistantCheck> => (inTauri ? invoke("assistant_check") : Promise.resolve({ version: "Vorschau", answer: "OK" }));
 
 export async function setAssistantModel(model: string): Promise<void> {
   if (inTauri) await invoke("set_assistant_model", { model });
@@ -257,17 +259,35 @@ export async function setAssistantModel(model: string): Promise<void> {
  * Stellt dem Assistenten die Frage (mit dem bisherigen Verlauf). `onStep` meldet laufend, was er gerade nachschlägt.
  * Die Antwort kommt als Ganzes, wenn er fertig ist.
  */
-export function askAssistant(history: ChatTurn[], projectId: number | null, onStep: (step: string) => void, onPlan: (items: PlanItem[]) => void = () => {}): Promise<AssistantAnswer> {
+export function askAssistant(history: ChatTurn[], projectId: number | null, onStep: (step: string) => void, onPlan: (items: PlanItem[]) => void = () => {}, live: LiveHandlers = {}): Promise<AssistantAnswer> {
   // Beispielwerte nur für die Vorschau im Browser
   if (!inTauri) {
     const last = [...history].reverse().find((m) => m.role === "user")?.text ?? "";
     if (/dossier|plan|struktur/i.test(last)) return previewPlanned(onStep, onPlan);
   }
-  if (!inTauri) return previewAnswer(history, onStep).then((answer) => ({ ...answer, model: "claude-haiku-5-5", usage: { requests: 1, inputTokens: 8, cacheWriteTokens: 840, cacheReadTokens: 9329, outputTokens: 142, costUsd: 0.0021 } }));
+  // Vorschau im Browser: vor jedem Schritt eine Arbeitsnotiz, damit der Verlauf zu sehen ist
+  const previewStep = (step: string) => {
+    live.onThought?.(`Ich schaue nach: ${step.charAt(0).toLowerCase()}${step.slice(1)}.`);
+    onStep(step);
+  };
+  if (!inTauri) return previewAnswer(history, previewStep).then((answer) => ({ ...answer, model: "claude-haiku-5-5", usage: { requests: 1, inputTokens: 8, cacheWriteTokens: 840, cacheReadTokens: 9329, outputTokens: 142 } }));
   const now = new Date();
   const stamp = toDateTimeStr(now);
   const channel = new Channel<Progress>();
-  channel.onmessage = (event) => (event.kind === "plan" ? onPlan(event.items) : onStep(event.text));
+  channel.onmessage = (event) => {
+    switch (event.kind) {
+      case "plan":
+        return onPlan(event.items);
+      case "step":
+        return onStep(event.text);
+      case "text":
+        return live.onText?.(event.text);
+      case "thought":
+        return live.onThought?.(event.text);
+      case "restart":
+        return live.onRestart?.();
+    }
+  };
   return invoke("assistant_ask", {
     history,
     today: stamp.slice(0, 10),

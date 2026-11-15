@@ -1,5 +1,13 @@
 import { ancestors, pageTitle, type DocPage } from "./docs";
 
+/** Eine Datei, die ein Projekt als festen Kontext trägt. Sie liegt als Anhang in der Datenbank. */
+export interface ProjectFile {
+  fileId: number;
+  name: string;
+  mime: string;
+  size: number;
+}
+
 /** Projekt des Assistenten: ein fester Kontext aus der Dokumentation für seine Gespräche. */
 export interface Project {
   id: number;
@@ -8,9 +16,15 @@ export interface Project {
   docId: number | null;
   /** Hinweise an den Assistenten für dieses Projekt */
   instructions: string;
+  /** Feste Unterlagen: Dateien, die der Assistent in jedem Chat des Projekts kennt und bei Bedarf liest */
+  files: ProjectFile[];
 }
 
-export type ProjectInput = Omit<Project, "id">;
+/** Angaben zum Anlegen und Ändern; die Dateien werden einzeln hinzugefügt und entfernt. */
+export type ProjectInput = Omit<Project, "id" | "files">;
+
+/** So viele Dateien kann ein Projekt tragen (passt zum Backend). */
+export const MAX_PROJECT_FILES = 20;
 
 /** Pfad einer Seite für die Anzeige, z. B. „Studium › Studienplanung“. */
 export function docPath(pages: DocPage[], id: number | null): string {

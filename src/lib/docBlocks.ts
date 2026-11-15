@@ -7,7 +7,8 @@ export type DocBlock =
   | { type: "heading"; level: 1 | 2 | 3; text: string }
   | { type: "paragraph" | "quote" | "code"; text: string }
   | { type: "bullet_list" | "numbered_list"; items: string[] }
-  | { type: "table"; headers: string[]; rows: string[][] }
+  /** Kopfzeile oben (headers) und/oder Kopfspalte (header_column: die erste Zelle jeder Zeile ist eine Überschrift) */
+  | { type: "table"; headers: string[]; rows: string[][]; header_column?: boolean }
   | { type: "divider" }
   /** Datei aus dem Chat: nur `file_id` ist vom Modell, Name, Größe und Typ trägt das Backend aus dem Anhang ein */
   | { type: "file"; file_id: number; name?: string; size?: number; mime?: string };
@@ -34,7 +35,14 @@ export type EditOp =
   | { op: "replace"; index: number; blocks: DocBlock[] }
   | { op: "insert_after"; index: number; blocks: DocBlock[] }
   | { op: "delete"; index: number }
-  | { op: "append"; blocks: DocBlock[] };
+  | { op: "append"; blocks: DocBlock[] }
+  /** Text einer Zelle einer bestehenden Tabelle; row zählt unter der Kopfzeile ab 0 (-1 = Kopfzeile), col ab 0 */
+  | { op: "set_cell"; index: number; row: number; col: number; text: string }
+  /** Zeile nach der Zeile `after` einfügen (-1 = vor der ersten), mit dem Aufbau der Nachbarzeile */
+  | { op: "add_row"; index: number; after: number; cells: string[] }
+  | { op: "delete_row"; index: number; row: number }
+  /** Kopie der Tabelle hinter ihr, mit neuem Text, im selben Stil und mit denselben Spaltenbreiten */
+  | { op: "copy_table"; index: number; headers?: string[]; rows: string[][] };
 
 /** Ein bestehender Baustein: als Baustein, oder – wenn er sich nicht darstellen lässt (Bild, Datei …) – mit Bezeichnung und Text. */
 export interface ShownBlock {
@@ -76,10 +84,13 @@ export function blocksToHtml(blocks: DocBlock[]): string {
           const tag = b.type === "bullet_list" ? "ul" : "ol";
           return `<${tag}>${b.items.map((i) => `<li><p>${esc(i)}</p></li>`).join("")}</${tag}>`;
         }
-        case "table":
-          return `<table><tbody><tr>${b.headers.map((h) => `<th><p>${esc(h)}</p></th>`).join("")}</tr>${b.rows
-            .map((r) => `<tr>${r.map((c) => `<td><p>${esc(c)}</p></td>`).join("")}</tr>`)
-            .join("")}</tbody></table>`;
+        case "table": {
+          const head = b.headers.length > 0 ? `<tr>${b.headers.map((h) => `<th><p>${esc(h)}</p></th>`).join("")}</tr>` : "";
+          const body = b.rows
+            .map((r) => `<tr>${r.map((c, i) => (i === 0 && b.header_column ? `<th><p>${esc(c)}</p></th>` : `<td><p>${esc(c)}</p></td>`)).join("")}</tr>`)
+            .join("");
+          return `<table><tbody>${head}${body}</tbody></table>`;
+        }
         case "divider":
           return "<hr>";
         case "file":
@@ -99,7 +110,7 @@ export function blocksToPlain(blocks: DocBlock[]): string {
         case "file":
           return b.name ?? "";
         case "table":
-          return [b.headers.join(" | "), ...b.rows.map((r) => r.join(" | "))].join("\n");
+          return [...(b.headers.length > 0 ? [b.headers.join(" | ")] : []), ...b.rows.map((r) => r.join(" | "))].join("\n");
         case "bullet_list":
         case "numbered_list":
           return b.items.join("\n");
