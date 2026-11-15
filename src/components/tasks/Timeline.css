@@ -75,11 +75,9 @@
   padding: 0 0.9rem 0.5rem;
   border-right: 1px solid var(--border);
   background-color: var(--bg-sidebar);
-  font-size: 0.72rem;
-  font-weight: 600;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  color: var(--text-faint);
+  font-size: 0.76rem;
+  font-weight: 500;
+  color: var(--text-muted);
 }
 
 .tl-scale {

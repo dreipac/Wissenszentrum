@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { AlertTriangle, ArrowUp, BookOpen, Paperclip, Square, CalendarDays, CalendarPlus, CheckSquare, FolderKanban, ListPlus, Maximize2, PanelRight, PenLine, Terminal, NotebookText, RotateCcw, ShieldCheck, SquarePen, Sparkles, X, type LucideIcon } from "lucide-react";
+import { AlertTriangle, ArrowUp, BookOpen, Paperclip, Square, CalendarDays, CalendarPlus, CheckSquare, FolderKanban, Maximize2, PanelRight, PenLine, Terminal, NotebookText, RotateCcw, SquarePen, Sparkles, X, type LucideIcon } from "lucide-react";
 import { Button } from "../ui/Button";
 import { EventModal } from "../calendar/EventModal";
-import { ASSISTANT_CHANGED_EVENT, MAX_CHAT_FILES, askAssistant, assistantStatus, cancelAssistant, modelLabel, type AssistantSource, type AssistantStatus, type ChatFile, type EventProposal, type PlanItem, type TokenUsage } from "../../lib/api/assistant";
+import { ASSISTANT_CHANGED_EVENT, MAX_CHAT_FILES, askAssistant, assistantStatus, cancelAssistant, type AssistantSource, type AssistantStatus, type ChatFile, type EventProposal, type PlanItem, type TokenUsage } from "../../lib/api/assistant";
 import { addAttachment } from "../../lib/api/attachments";
 import { formatBytes, kindOf } from "../files/FileAttachment";
 import { PlanList } from "./PlanList";
@@ -79,13 +79,9 @@ interface Message {
 
 const SUGGESTIONS: { icon: LucideIcon; text: string }[] = [
   { icon: CheckSquare, text: "Was steht heute an?" },
-  { icon: CheckSquare, text: "Welche Aufgaben sind überfällig?" },
   { icon: CalendarDays, text: "Welche Termine habe ich diese Woche?" },
   { icon: BookOpen, text: "Gib mir einen Überblick über meine Dokumentation" },
   { icon: CalendarPlus, text: "Trag morgen um 10 Uhr einen Termin „Team-Abstimmung“ ein" },
-  { icon: ListPlus, text: "Leg eine neue Aufgabe „Angebot überarbeiten“ an" },
-  { icon: BookOpen, text: "Leg in der Dokumentation einen Ordner mit Seiten für ein Projekt an" },
-  { icon: PenLine, text: "Überarbeite die Seite „Überblick“ in meiner Dokumentation" },
 ];
 
 /** Was der Assistent beim nächsten Mal über seine Vorschläge wissen muss: wurden sie angelegt oder verworfen? */
@@ -765,28 +761,22 @@ export function AssistantPanel({ open, onClose, mode = "panel", onExpand, onColl
           {page ? (
             <div className="as-page-title">
               <h1>{activeChat?.title || (project && activeChatId === null ? project.name : "Neuer Chat")}</h1>
-              <span className="as-context">
-                {project ? (
-                  <>
-                    <button type="button" className="as-context-link" disabled={pending} title="Projektübersicht mit Chats, Hinweisen und Dateien" onClick={() => newChat(project.id)}>
-                      {project.name}
-                    </button>
-                    {contextPath ? ` › ${contextPath}` : project.docId === null ? " · keine Dokumentation zugeordnet" : " · die zugeordnete Seite gibt es nicht mehr"}
-                  </>
-                ) : (
-                  "Ohne festen Kontext: er sieht alle deine Daten"
-                )}
-              </span>
+              {project && (
+                <span className="as-context">
+                  <button type="button" className="as-context-link" disabled={pending} title="Projektübersicht mit Chats, Hinweisen und Dateien" onClick={() => newChat(project.id)}>
+                    {project.name}
+                  </button>
+                  {contextPath ? ` › ${contextPath}` : project.docId !== null && " · die zugeordnete Seite gibt es nicht mehr"}
+                </span>
+              )}
             </div>
           ) : (
             <div className="as-title">
               <Sparkles size={15} />
               <span>Assistent</span>
-              {status?.available && status.model && <span className="tag">{modelLabel(status.model)}</span>}
             </div>
           )}
           <div className="as-head-actions">
-            {page && status?.available && status.model && <span className="tag as-model">{modelLabel(status.model)}</span>}
             {!page && <ChatHistory chats={chatList} activeChatId={activeChatId} disabled={pending} onSelect={selectChat} />}
             <button type="button" className="icon-btn" aria-label="Neuer Chat" title="Neuer Chat" disabled={empty} onClick={() => newChat(activeId)}>
               <SquarePen size={15} />
@@ -1106,10 +1096,6 @@ export function AssistantPanel({ open, onClose, mode = "panel", onExpand, onColl
               >
                 <Paperclip size={15} />
               </button>
-              <span className="as-scope" title="Der Assistent liest nur. Alles, was er anlegen, ändern oder löschen möchte (Aufgaben, Termine, neue Seiten), schlägt er vor; es passiert erst, wenn du bestätigst.">
-                <ShieldCheck size={13} />
-                Ändert nichts ohne dein OK
-              </span>
               {pending ? (
                 <button type="button" className="as-send stop" aria-label="Stopp" title="Arbeit abbrechen: es bleibt, was bis jetzt entstanden ist" onClick={() => void cancelAssistant()}>
                   <Square size={11} fill="currentColor" />

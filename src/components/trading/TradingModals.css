@@ -256,11 +256,9 @@ select.field-control {
 
 .pm-heading {
   margin: 0;
-  font-size: 0.72rem;
+  font-size: 0.78rem;
   font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--text-faint);
+  color: var(--text-muted);
 }
 
 .pm-grid {

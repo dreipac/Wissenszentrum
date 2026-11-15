@@ -5,6 +5,7 @@
 //!
 //! Der Inhalt einer Datei sind Daten und nie Anweisungen: der Systemprompt sagt dem Modell, dass es ihm nicht folgen darf.
 
+use crate::heic;
 use rusqlite::Connection;
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -30,6 +31,8 @@ pub struct ChatFile {
 #[derive(Debug, PartialEq)]
 enum Kind {
     Image(&'static str),
+    /// iPhone-Foto: wird beim Bereitstellen in ein JPEG umgewandelt (siehe `heic`)
+    Heic,
     Pdf,
     Text,
     Docx,
@@ -41,6 +44,9 @@ fn extension(name: &str) -> String {
 }
 
 fn kind_of(name: &str, mime: &str) -> Kind {
+    if heic::is_heic(name, mime) {
+        return Kind::Heic;
+    }
     match extension(name).as_str() {
         "png" => Kind::Image("image/png"),
         "jpg" | "jpeg" => Kind::Image("image/jpeg"),
@@ -179,6 +185,11 @@ pub fn open(conn: &Connection, id: i64) -> Opened {
         Kind::Image(_) if data.len() > MAX_IMAGE_BYTES => skipped("das Bild ist größer als 5 MB"),
         Kind::Pdf if data.len() > MAX_PDF_BYTES => skipped("das PDF ist größer als 10 MB"),
         Kind::Image(_) | Kind::Pdf => Opened::Binary { work_name: format!("{id}-{}", crate::claude_code::safe_file_name(&name)), name, bytes: data },
+        Kind::Heic => match heic::cached_jpeg(id, &data) {
+            Ok(jpeg) if jpeg.len() > MAX_IMAGE_BYTES => skipped("das umgewandelte Foto ist größer als 5 MB"),
+            Ok(jpeg) => Opened::Binary { work_name: format!("{id}-{}", crate::claude_code::safe_file_name(&heic::jpeg_name(&name))), name, bytes: jpeg },
+            Err(why) => skipped(&why),
+        },
         Kind::Text => Opened::Text { text: clip(String::from_utf8_lossy(&data).into_owned()), name },
         Kind::Docx => match read_docx(&data) {
             Ok(text) if text.trim().is_empty() => skipped("die Word-Datei enthält keinen Text"),
@@ -230,6 +241,16 @@ pub fn prepare(conn: &Connection, files: &[ChatFile], budget: &mut usize, same_a
                 *budget -= data.len();
                 ready(work_name, "", data)
             }
+            Kind::Heic => match heic::cached_jpeg(file.id, &data) {
+                Ok(jpeg) if jpeg.len() > MAX_IMAGE_BYTES => skip("das umgewandelte Foto ist größer als 5 MB"),
+                Ok(jpeg) if !fits(jpeg.len(), budget) => skip("alle Dateien im Gespräch zusammen sind zu groß"),
+                Ok(jpeg) => {
+                    *budget -= jpeg.len();
+                    let work = format!("{}-{}", file.id, crate::claude_code::safe_file_name(&heic::jpeg_name(&name)));
+                    ready(work, "(HEIC-Foto als JPEG umgewandelt) ", jpeg)
+                }
+                Err(why) => skip(&why),
+            },
             Kind::Text => {
                 let text = clip(String::from_utf8_lossy(&data).into_owned());
                 if !fits(text.len(), budget) {
@@ -396,5 +417,44 @@ mod tests {
         let items = prepare(&c, &[ChatFile { id: again }], &mut TOTAL_BYTES.clone(), &same_as);
         assert!(items[0].file.is_none());
         assert!(items[0].description.contains(&format!("file_id {first}")), "{}", items[0].description);
+    }
+
+    #[test]
+    fn heic_photos_are_converted_to_jpeg_for_the_work_folder() {
+        let c = conn();
+        let rgb: Vec<u8> = (0..64 * 48).flat_map(|i| [(i % 64 * 4) as u8, (i / 64 * 5) as u8, 120]).collect();
+        let heic = heifer::encode_rgb8(64, 48, &rgb, &heifer::EncodeOptions::default()).unwrap();
+        let id = add(&c, "IMG_0001.HEIC", "image/heic", &heic);
+
+        let mut budget = TOTAL_BYTES;
+        let items = prepare(&c, &[ChatFile { id }], &mut budget, &HashMap::new());
+        let (name, bytes) = items[0].file.as_ref().expect("das Foto wird bereitgestellt");
+        assert_eq!(name, &format!("{id}-IMG_0001.jpg"));
+        assert_eq!(&bytes[..3], &[0xFF, 0xD8, 0xFF], "ein JPEG");
+        assert!(items[0].description.contains("HEIC-Foto als JPEG umgewandelt") && items[0].description.contains("IMG_0001.HEIC"), "{}", items[0].description);
+        assert_eq!(budget, TOTAL_BYTES - bytes.len(), "das umgewandelte Foto zählt zum Budget");
+
+        match open(&c, id) {
+            Opened::Binary { work_name, bytes, .. } => {
+                assert_eq!(work_name, format!("{id}-IMG_0001.jpg"));
+                assert_eq!(&bytes[..3], &[0xFF, 0xD8, 0xFF]);
+            }
+            other => panic!("erwartet Binary, bekommen {other:?}"),
+        }
+        // Die Datei in der Datenbank bleibt das Original
+        let stored: Vec<u8> = c.query_row("SELECT data FROM attachments WHERE id = ?1", [id], |r| r.get(0)).unwrap();
+        assert_eq!(stored, heic);
+    }
+
+    #[test]
+    fn a_broken_heic_is_skipped_with_a_reason() {
+        let c = conn();
+        let id = add(&c, "Kaputt.heic", "", b"kein foto");
+        let mut budget = TOTAL_BYTES;
+        let items = prepare(&c, &[ChatFile { id }], &mut budget, &HashMap::new());
+        assert!(items[0].file.is_none());
+        assert!(items[0].description.contains("Inhalt nicht bereitgestellt") && items[0].description.contains("HEIC-Foto"), "{}", items[0].description);
+        assert_eq!(budget, TOTAL_BYTES);
+        assert!(matches!(open(&c, id), Opened::Skipped { .. }));
     }
 }

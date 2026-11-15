@@ -221,10 +221,8 @@ button.jr-trade:hover {
 
 .jr-next span {
   margin-right: 0.35rem;
-  font-size: 0.7rem;
+  font-size: 0.74rem;
   font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
   color: var(--jr-color);
 }
 
@@ -258,11 +256,9 @@ button.jr-trade:hover {
 
 .jr-filter-group h3 {
   margin-bottom: 0.15rem;
-  font-size: 0.7rem;
+  font-size: 0.78rem;
   font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--text-faint);
+  color: var(--text-muted);
 }
 
 .jr-filter {
@@ -344,10 +340,9 @@ button.jr-trade:hover {
 }
 
 .jr-review-hint strong {
-  font-size: 0.7rem;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  color: var(--text-faint);
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--text-muted);
 }
 
 .jr-rules {
@@ -398,11 +393,9 @@ button.jr-trade:hover {
   display: flex;
   align-items: center;
   gap: 0.4rem;
-  font-size: 0.7rem;
+  font-size: 0.78rem;
   font-weight: 600;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  color: var(--text-faint);
+  color: var(--text-muted);
 }
 
 .jr-checklist-strategy {

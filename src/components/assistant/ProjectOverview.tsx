@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { BookOpen, ChevronRight, FolderKanban, MessageSquare, Paperclip, Pencil, X } from "lucide-react";
+import { BookOpen, ChevronRight, FolderKanban, Paperclip, Pencil, X } from "lucide-react";
 import { openAttachment } from "../../lib/api/attachments";
 import type { ChatInfo } from "../../lib/api/chats";
 import { shortWhen } from "../../lib/chatGroups";
@@ -64,10 +64,7 @@ export function ProjectOverview({ project, contextPath, chats, onOpenChat, onEdi
             <h3>Chats</h3>
           </div>
           {chats.length === 0 ? (
-            <p className="po-empty">
-              <MessageSquare size={15} />
-              Noch kein Chat in diesem Projekt. Schreib unten die erste Frage: Der Chat entsteht dabei und bleibt hier gespeichert.
-            </p>
+            <p className="po-empty">Noch keine Chats</p>
           ) : (
             <ul className="po-list">
               {chats.slice(0, 8).map((c) => (
@@ -84,7 +81,7 @@ export function ProjectOverview({ project, contextPath, chats, onOpenChat, onEdi
               ))}
             </ul>
           )}
-          {chats.length > 8 && <p className="po-more">Weitere Chats findest du links unter dem Projekt.</p>}
+          {chats.length > 8 && <p className="po-more">{chats.length - 8} weitere in der Seitenleiste</p>}
         </section>
 
         <section className="po-card" aria-label="Kontext">
@@ -101,13 +98,13 @@ export function ProjectOverview({ project, contextPath, chats, onOpenChat, onEdi
                 <ChevronRight size={13} />
               </button>
             ) : (
-              <span className="po-muted">{project.docId === null ? "Keine zugeordnet" : "Die zugeordnete Seite gibt es nicht mehr"}</span>
+              <span className="po-muted">{project.docId === null ? "Keine" : "Die Seite gibt es nicht mehr"}</span>
             )}
           </div>
 
           <div className="po-prop">
             <span className="po-label">Hinweise</span>
-            {instructions ? <p className="po-text">{instructions}</p> : <span className="po-muted">Keine. Lege über „Bearbeiten“ fest, wie der Assistent hier arbeiten soll.</span>}
+            {instructions ? <p className="po-text">{instructions}</p> : <span className="po-muted">Keine</span>}
           </div>
 
           <div className="po-prop">
@@ -150,7 +147,7 @@ export function ProjectOverview({ project, contextPath, chats, onOpenChat, onEdi
               }}
             >
               <Paperclip size={14} />
-              <span>{uploading > 0 ? "Wird gespeichert …" : full ? `Höchstens ${MAX_PROJECT_FILES} Dateien` : "Datei hinzufügen oder hierher ziehen"}</span>
+              <span>{uploading > 0 ? "Wird gespeichert …" : full ? `Höchstens ${MAX_PROJECT_FILES} Dateien` : "Datei hinzufügen"}</span>
             </button>
             <input
               ref={input}
@@ -162,7 +159,6 @@ export function ProjectOverview({ project, contextPath, chats, onOpenChat, onEdi
                 e.target.value = "";
               }}
             />
-            <p className="po-hint">Der Assistent kennt diese Dateien in jedem Chat des Projekts und liest sie, wenn sie zur Frage passen.</p>
             {error && (
               <p className="field-error" role="alert">
                 {error}

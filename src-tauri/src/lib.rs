@@ -12,6 +12,7 @@ mod docs;
 mod events;
 mod files;
 mod finnhub;
+mod heic;
 mod journal;
 mod mcp;
 mod notes;

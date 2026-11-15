@@ -115,11 +115,9 @@
 /* Gruppen: kleine Überschrift, darunter eine Karte mit Zeilen */
 .st-group h3 {
   margin-bottom: 0.5rem;
-  font-size: 0.72rem;
+  font-size: 0.84rem;
   font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--text-faint);
+  color: var(--text-muted);
 }
 
 .st-card {

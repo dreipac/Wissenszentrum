@@ -26,7 +26,7 @@ export function kindOf(name: string, mime: string): { icon: LucideIcon; tone: To
   if (["xls", "xlsx", "ods", "csv"].includes(ext)) return { icon: FileSpreadsheet, tone: "green", label: ext.toUpperCase() };
   if (["ppt", "pptx", "odp", "key"].includes(ext)) return { icon: Presentation, tone: "amber", label: ext.toUpperCase() };
   if (["zip", "rar", "7z", "tar", "gz"].includes(ext)) return { icon: FileArchive, tone: "purple", label: ext.toUpperCase() };
-  if (mime.startsWith("image/") || ["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp"].includes(ext)) return { icon: FileImage, tone: "purple", label: ext.toUpperCase() || "Bild" };
+  if (mime.startsWith("image/") || ["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "heic", "heif"].includes(ext)) return { icon: FileImage, tone: "purple", label: ext.toUpperCase() || "Bild" };
   if (mime.startsWith("audio/") || ["mp3", "wav", "m4a", "flac"].includes(ext)) return { icon: FileAudio, tone: "amber", label: ext.toUpperCase() || "Audio" };
   if (mime.startsWith("video/") || ["mp4", "mov", "mkv", "avi"].includes(ext)) return { icon: FileVideo, tone: "blue", label: ext.toUpperCase() || "Video" };
   if (["txt", "md", "log"].includes(ext) || mime.startsWith("text/")) return { icon: FileText, tone: "gray", label: ext.toUpperCase() || "Text" };

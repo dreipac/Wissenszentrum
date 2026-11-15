@@ -31,10 +31,15 @@ log = "0.4"
 base64 = "0.22"
 zip = { version = "9.4.2", default-features = false, features = ["deflate"] }
 tokio = { version = "1", features = ["time", "process", "io-util", "rt"] }
+heifer = { version = "0.5.1", default-features = false }
+jpeg-encoder = "0.7.1"
 
 [profile.release]
 codegen-units = 1
 lto = true
 opt-level = 3
-panic = "abort"
+panic = "unwind"
 strip = true
+
+[dev-dependencies]
+heifer = "0.5.1"

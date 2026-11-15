@@ -138,10 +138,6 @@
   color: var(--text-muted);
 }
 
-.as-title .tag {
-  font-weight: 400;
-}
-
 .as-head-actions {
   display: flex;
   gap: 0.1rem;
@@ -276,11 +272,9 @@
 }
 
 .as-label {
-  font-size: 0.68rem;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--text-faint);
+  font-size: 0.76rem;
+  font-weight: 500;
+  color: var(--text-muted);
 }
 
 .as-chips {
@@ -359,13 +353,9 @@
 .as-box-foot {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 0.35rem;
   padding: 0.2rem 0.5rem 0.5rem 0.5rem;
-}
-
-.as-box-foot .as-scope {
-  flex: 1;
-  min-width: 0;
 }
 
 .as-attach {
@@ -528,14 +518,6 @@
   font-size: 0.7rem;
   font-variant-numeric: tabular-nums;
   line-height: 1.4;
-  color: var(--text-faint);
-}
-
-.as-scope {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  font-size: 0.72rem;
   color: var(--text-faint);
 }
 
@@ -715,11 +697,9 @@
   display: flex;
   align-items: center;
   gap: 0.4rem;
-  font-size: 0.68rem;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--text-faint);
+  font-size: 0.76rem;
+  font-weight: 500;
+  color: var(--text-muted);
 }
 
 .as-proposal.created .as-prop-head {
@@ -831,11 +811,9 @@
 }
 
 .as-change-label {
-  font-size: 0.66rem;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--text-faint);
+  font-size: 0.74rem;
+  font-weight: 500;
+  color: var(--text-muted);
 }
 
 .as-change-values {

@@ -604,10 +604,8 @@
 .doc-prose th {
   background-color: var(--bg-sidebar);
   border-bottom: 1px solid var(--border);
-  font-size: 0.72rem;
+  font-size: 0.82rem;
   font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
   color: var(--text-muted);
 }
 

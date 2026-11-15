@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { Plus } from "lucide-react";
 import { Modal } from "../ui/Modal";
 import { Button } from "../ui/Button";
 import { SecondaryButton } from "../ui/SecondaryButton";
@@ -18,21 +17,20 @@ interface ProjectModalProps {
 }
 
 /**
- * Projekt anlegen oder bearbeiten: ein Name und der Ordner oder die Seite der Dokumentation, die als Kontext gilt.
- * Mit einem aktiven Projekt weiß der Assistent, wo Neues hingehört und was „die Doku“ ist.
+ * Projekt anlegen oder bearbeiten: Name, der Ordner oder die Seite der Dokumentation, die als Kontext gilt, und Hinweise
+ * für den Assistenten. Die Felder heißen wie in der Projektübersicht.
  */
 export function ProjectModal({ project, onClose, onSaved, onDeleted }: ProjectModalProps) {
   const editing = project !== undefined;
   const [name, setName] = useState(project?.name ?? "");
   const [docId, setDocId] = useState<number | null>(project?.docId ?? null);
   const [instructions, setInstructions] = useState(project?.instructions ?? "");
-  const [showHints, setShowHints] = useState(Boolean(project?.instructions));
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   const save = async () => {
-    if (!name.trim()) return setError("Bitte gib dem Projekt einen Namen.");
+    if (!name.trim()) return setError("Gib dem Projekt einen Namen.");
     setBusy(true);
     setError(null);
     try {
@@ -62,7 +60,7 @@ export function ProjectModal({ project, onClose, onSaved, onDeleted }: ProjectMo
   return (
     <Modal
       title={editing ? "Projekt bearbeiten" : "Neues Projekt"}
-      width={520}
+      width={560}
       onClose={onClose}
       footer={
         <>
@@ -74,14 +72,15 @@ export function ProjectModal({ project, onClose, onSaved, onDeleted }: ProjectMo
           <span className="spacer" />
           <SecondaryButton onClick={onClose}>Abbrechen</SecondaryButton>
           <Button disabled={busy} onClick={() => void save()}>
-            {editing ? "Speichern" : "Projekt erstellen"}
+            {editing ? "Speichern" : "Erstellen"}
           </Button>
         </>
       }
     >
-      <label className="pm-field">
-        <span className="pm-label">Name</span>
+      <div className="field">
+        <label htmlFor="pm-name">Name</label>
         <input
+          id="pm-name"
           className="field-control"
           value={name}
           autoFocus
@@ -90,38 +89,32 @@ export function ProjectModal({ project, onClose, onSaved, onDeleted }: ProjectMo
           onChange={(e) => setName(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && void save()}
         />
-      </label>
+      </div>
 
-      <div className="pm-field">
-        <span className="pm-label">Dokumentation als Kontext</span>
-        <p className="pm-hint">Wähle den Ordner oder die Seite, um die es in diesem Projekt geht. Der Assistent legt dort Neues an und sucht zuerst dort.</p>
+      <div className="field">
+        <span className="field-label">Dokumentation</span>
         <DocPicker value={docId} onChange={setDocId} />
       </div>
 
-      {showHints ? (
-        <label className="pm-field">
-          <span className="pm-label">Hinweise für den Assistenten</span>
-          <textarea
-            className="field-control pm-text"
-            value={instructions}
-            maxLength={2000}
-            placeholder="z. B. Schreib immer in der Du-Form und halte Seiten kurz."
-            onChange={(e) => setInstructions(e.target.value)}
-          />
-        </label>
-      ) : (
-        <button type="button" className="pm-link" onClick={() => setShowHints(true)}>
-          <Plus size={14} />
-          Hinweise für den Assistenten
-        </button>
-      )}
+      <div className="field">
+        <label htmlFor="pm-notes">Hinweise</label>
+        <textarea
+          id="pm-notes"
+          className="field-control pm-text"
+          value={instructions}
+          rows={3}
+          maxLength={2000}
+          placeholder="z. B. Schreib in der Du-Form und halte Seiten kurz."
+          onChange={(e) => setInstructions(e.target.value)}
+        />
+      </div>
 
       {error && <p className="field-error">{error}</p>}
 
       {confirmDelete && editing && (
         <ConfirmDialog
           title="Projekt löschen?"
-          message={`„${project.name}“ wird gelöscht. Die Dokumentation bleibt unverändert.`}
+          message={`„${project.name}“ wird gelöscht. Chats und Dokumentation bleiben erhalten.`}
           busy={busy}
           onConfirm={() => void remove()}
           onCancel={() => setConfirmDelete(false)}

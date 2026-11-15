@@ -145,14 +145,9 @@
 .dp-weekday {
   padding: 0.2rem 0 0.35rem;
   text-align: center;
-  font-size: 0.68rem;
-  font-weight: 600;
-  letter-spacing: 0.04em;
+  font-size: 0.72rem;
+  font-weight: 500;
   color: var(--text-faint);
-}
-
-.dp-kw-head {
-  text-transform: uppercase;
 }
 
 /* Kalenderwoche: leise, durch eine feine Linie von den Tagen abgesetzt */

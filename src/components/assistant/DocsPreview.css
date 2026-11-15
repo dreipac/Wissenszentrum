@@ -128,11 +128,9 @@
 
 .dpv-label {
   margin: 0 0.55rem 0.5rem;
-  font-size: 0.68rem;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--text-faint);
+  font-size: 0.76rem;
+  font-weight: 500;
+  color: var(--text-muted);
 }
 
 .dpv-tree ul {
@@ -385,11 +383,9 @@
   z-index: 1;
   padding: 0 0.4rem;
   border-radius: 999px;
-  font-size: 0.62rem;
-  font-weight: 600;
-  letter-spacing: 0.05em;
+  font-size: 0.7rem;
+  font-weight: 500;
   line-height: 16px;
-  text-transform: uppercase;
   text-decoration: none;
 }
 

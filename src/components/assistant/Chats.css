@@ -91,11 +91,9 @@
 
 .cs-label {
   margin: 0 0.5rem 0.25rem;
-  font-size: 0.68rem;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--text-faint);
+  font-size: 0.76rem;
+  font-weight: 500;
+  color: var(--text-muted);
 }
 
 .cs-label-row {
@@ -386,18 +384,14 @@
 .ch-title,
 .ch-more {
   margin: 0.2rem 0.5rem 0.3rem;
-  font-size: 0.68rem;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--text-faint);
+  font-size: 0.76rem;
+  font-weight: 500;
+  color: var(--text-muted);
 }
 
 .ch-more {
   margin-top: 0.4rem;
   font-weight: 400;
-  letter-spacing: 0;
-  text-transform: none;
 }
 
 .ch-pop ul {
@@ -517,11 +511,9 @@
 
 .po-card-head h3 {
   margin: 0;
-  font-size: 0.78rem;
+  font-size: 0.92rem;
   font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--text-muted);
+  color: var(--text);
 }
 
 .po-list {
@@ -584,19 +576,9 @@
 }
 
 .po-empty {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.6rem;
   margin: 0;
-  padding: 1rem;
+  padding: 0.9rem 1rem;
   font-size: 0.84rem;
-  line-height: 1.55;
-  color: var(--text-muted);
-}
-
-.po-empty svg {
-  flex-shrink: 0;
-  margin-top: 0.2rem;
   color: var(--text-faint);
 }
 
@@ -621,11 +603,9 @@
 }
 
 .po-label {
-  font-size: 0.7rem;
-  font-weight: 600;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  color: var(--text-faint);
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--text-muted);
 }
 
 .po-text {
@@ -642,13 +622,6 @@
 
 .po-muted {
   font-size: 0.82rem;
-  line-height: 1.5;
-  color: var(--text-faint);
-}
-
-.po-hint {
-  margin: 0;
-  font-size: 0.74rem;
   line-height: 1.5;
   color: var(--text-faint);
 }

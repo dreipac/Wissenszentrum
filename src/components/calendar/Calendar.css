@@ -102,10 +102,8 @@
 
 .month-weekdays span {
   padding: 0.5rem 0.75rem;
-  font-size: 0.72rem;
+  font-size: 0.78rem;
   font-weight: 500;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
   color: var(--text-faint);
 }
 
@@ -263,10 +261,8 @@
 }
 
 .tg-head-wd {
-  font-size: 0.72rem;
+  font-size: 0.78rem;
   font-weight: 500;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
 }
 
 .tg-head-num {

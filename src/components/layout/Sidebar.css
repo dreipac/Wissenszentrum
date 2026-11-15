@@ -114,10 +114,8 @@
   align-items: center;
   justify-content: space-between;
   padding: 0 0.25rem 0.35rem 0.75rem;
-  font-size: 0.72rem;
+  font-size: 0.78rem;
   font-weight: 500;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
   color: var(--text-faint);
 }
 

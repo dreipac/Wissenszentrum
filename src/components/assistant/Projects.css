@@ -15,11 +15,9 @@
   align-items: center;
   justify-content: space-between;
   margin: 0 0.4rem 0.55rem 0.55rem;
-  font-size: 0.68rem;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--text-faint);
+  font-size: 0.76rem;
+  font-weight: 500;
+  color: var(--text-muted);
 }
 
 .pj-list {
@@ -140,46 +138,9 @@
   color: var(--text);
 }
 
-/* ---------- Dialog „Projekt“ ---------- */
-.pm-field {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-}
-
-.pm-label {
-  font-size: 0.78rem;
-  font-weight: 600;
-  color: var(--text-muted);
-}
-
-.pm-hint {
-  margin: 0 0 0.15rem;
-  font-size: 0.78rem;
-  line-height: 1.45;
-  color: var(--text-faint);
-}
-
+/* ---------- Dialog „Projekt“: Felder wie in den anderen Dialogen (.field), nur die Hinweise brauchen Höhe ---------- */
 .pm-text {
-  min-height: 90px;
-}
-
-.pm-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  align-self: flex-start;
-  padding: 0.15rem 0;
-  border: none;
-  background: transparent;
-  color: var(--text-muted);
-  font-size: 0.82rem;
-  cursor: pointer;
-  transition: color 0.15s;
-}
-
-.pm-link:hover {
-  color: var(--text);
+  min-height: 76px;
 }
 
 /* ---------- Auswahl der Dokumentation ---------- */
@@ -187,6 +148,32 @@
   display: flex;
   flex-direction: column;
   gap: 0.45rem;
+}
+
+/* Die Wahl mit ihrem Pfad, damit man sie nicht in der Liste suchen muss */
+.dpick-value {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.2rem 0.3rem 0.2rem 0.7rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background-color: var(--bg-card);
+  color: var(--text);
+  font-size: 0.86rem;
+}
+
+.dpick-value > svg {
+  flex-shrink: 0;
+  color: var(--text-faint);
+}
+
+.dpick-value span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .dpick-search {
@@ -270,6 +257,18 @@
   background-color: var(--bg-selected);
   color: var(--text);
   font-weight: 500;
+}
+
+/* Pfad der Seite in den Suchergebnissen, damit gleiche Titel unterscheidbar sind */
+.dp-row .dp-path {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 55%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.72rem;
+  color: var(--text-faint);
 }
 
 .dp-row .dp-check {
