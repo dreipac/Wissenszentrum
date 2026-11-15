@@ -1,0 +1,178 @@
+/* Export als Word-Dokument: links die Vorschau, rechts die Einstellungen */
+.xm-box {
+  display: flex;
+  flex-direction: column;
+  width: min(1180px, 100%);
+  height: min(800px, 100%);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  background-color: var(--bg-app);
+  box-shadow: var(--shadow-pop);
+  animation: modal-pop 0.2s ease;
+}
+
+.xm-box .modal-head {
+  padding-bottom: 0.9rem;
+}
+
+.xm-body {
+  display: grid;
+  flex: 1;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  min-height: 0;
+  border-top: 1px solid var(--border);
+}
+
+/* ---------- Vorschau ---------- */
+.xm-preview {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background-color: var(--bg-sidebar);
+}
+
+.xm-preview-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.6rem 1.1rem;
+  border-bottom: 1px solid var(--border-soft);
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.xm-status {
+  font-weight: 400;
+  color: var(--text-faint);
+}
+
+.xm-status.busy {
+  animation: xm-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes xm-pulse {
+  50% {
+    opacity: 0.4;
+  }
+}
+
+.xm-viewport {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+/* Die Seiten stehen auf dem Grund der App; das Papier bleibt weiß */
+.xm-stage .dxp-wrapper {
+  align-items: center;
+  padding: 20px 0 0;
+  background: transparent;
+}
+
+.xm-stage .dxp-wrapper > section.dxp {
+  margin-bottom: 20px;
+  box-shadow: 0 2px 14px rgba(0, 0, 0, 0.45);
+}
+
+.xm-preview-error {
+  margin: 1rem 1.1rem;
+}
+
+/* ---------- Einstellungen ---------- */
+.xm-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 1.3rem;
+  min-height: 0;
+  padding: 1.1rem 1.25rem 1.4rem;
+  overflow-y: auto;
+  border-left: 1px solid var(--border);
+}
+
+.xm-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.xm-group h3 {
+  margin: 0 0 0.15rem;
+  font-size: 0.84rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.xm-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-height: 30px;
+}
+
+.xm-label {
+  font-size: 0.86rem;
+  color: var(--text);
+}
+
+.xm-row .segmented button {
+  padding: 0.2rem 0.6rem;
+}
+
+.xm-select {
+  width: 160px;
+  padding: 0.28rem 0.6rem;
+  font-size: 0.85rem;
+}
+
+.xm-toggle {
+  font-size: 0.86rem;
+}
+
+.xm-toggle.disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.xm-slider input[type="range"] {
+  flex: 1;
+  min-width: 0;
+  accent-color: var(--btn-primary-bg);
+}
+
+.xm-slider output {
+  min-width: 3rem;
+  font-size: 0.82rem;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  color: var(--text-muted);
+}
+
+/* ---------- Fuß ---------- */
+.xm-reset {
+  padding: 0.3rem 0;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: color 0.15s;
+}
+
+.xm-reset:hover:not(:disabled) {
+  color: var(--text);
+}
+
+.xm-reset:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.xm-error {
+  margin-left: 0.5rem;
+  font-size: 0.8rem;
+}

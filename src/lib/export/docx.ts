@@ -1,4 +1,5 @@
 import type * as Docx from "docx";
+import { CELL_PADDING, DEFAULT_EXPORT_SETTINGS, LINE_TWIPS, pageMetrics, type ExportSettings } from "./settings";
 
 /**
  * Export einer Seite der Dokumentation als Word-Datei (.docx).
@@ -21,30 +22,29 @@ export interface ExportSection {
   level: number;
 }
 
+/** Schon aufbereitete Bilder: die Vorschau baut die Datei oft neu und lädt die Bilder nur einmal. */
+export type ImageCache = Map<number, Prepared | null>;
+
 export interface ExportOptions {
   /** Holt die Bytes eines Bildes der Dokumentation */
   loadImage: (id: number) => Promise<Blob>;
   /** Für den Vermerk „Exportiert am …“ */
   now?: Date;
+  /** Ohne Angabe gilt die Voreinstellung (so sah die Datei vor den Einstellungen aus) */
+  settings?: ExportSettings;
+  imageCache?: ImageCache;
 }
 
-// A4 mit 2,5 cm Rand: 16 cm Satzbreite
-const PAGE_W = 11906;
-const PAGE_H = 16838;
-const MARGIN = 1417;
-const CONTENT_TWIPS = PAGE_W - 2 * MARGIN;
 const TWIPS_PER_PX = 15;
-const CONTENT_PX = Math.round(CONTENT_TWIPS / TWIPS_PER_PX);
 const MAX_IMAGE_H_PX = 800;
 
-const FONT = "Calibri";
 const MONO = "Consolas";
 const INK = "1D1D1B";
 const MUTED = "6A6A64";
 const LINE = "D3D3CC";
 const SURFACE = "F3F3F1";
 
-interface Prepared {
+export interface Prepared {
   data: Uint8Array;
   type: "png" | "jpg" | "gif" | "bmp";
   width: number;
@@ -53,6 +53,9 @@ interface Prepared {
 
 interface Ctx {
   d: D;
+  settings: ExportSettings;
+  /** Breite des Textes zwischen den Rändern in Twips */
+  contentTwips: number;
   images: Map<number, Prepared | null>;
   /** Verschiebt die Überschriften (Unterseiten liegen eine Ebene tiefer) */
   levelOffset: number;
@@ -138,6 +141,9 @@ function fit(image: Prepared, wantedPx: number | null, maxWidthPx: number): { wi
 
 // --- Text ----------------------------------------------------------------------------------
 
+/** Eine Größe der Voreinstellung (in halben Punkt) auf die gewählte Schriftgröße umrechnen. */
+const scaled = (ctx: Pick<Ctx, "settings">, halfPoints: number) => Math.round((halfPoints * ctx.settings.fontPt) / 11);
+
 function textRun(ctx: Ctx, text: string, fmt: Fmt): Docx.TextRun {
   const { d } = ctx;
   return new d.TextRun({
@@ -147,7 +153,7 @@ function textRun(ctx: Ctx, text: string, fmt: Fmt): Docx.TextRun {
     strike: fmt.strike || undefined,
     underline: fmt.underline ? {} : undefined,
     font: fmt.code ? MONO : undefined,
-    size: fmt.code ? 19 : fmt.sizePx ? Math.round((fmt.sizePx * 22) / 15) : undefined,
+    size: fmt.code ? scaled(ctx, 19) : fmt.sizePx ? Math.round((fmt.sizePx * 22) / 15) : undefined,
     color: fmt.color,
     highlight: fmt.highlight ? "yellow" : undefined,
     superScript: fmt.sup || undefined,
@@ -350,12 +356,14 @@ function table(ctx: Ctx, el: HTMLTableElement): Docx.Table | null {
   const known = widths.filter((w): w is number => w !== null);
   const fallback = known.length ? known.reduce((a, b) => a + b, 0) / known.length : 1;
   const raw = widths.map((w) => w ?? fallback);
-  // Die Tabelle füllt die Satzbreite, wie in der App
+  // Die Tabelle nimmt den gewählten Anteil der Satzbreite (voreingestellt: die ganze), die Spalten behalten ihr Verhältnis
+  const tableTwips = Math.round((ctx.contentTwips * ctx.settings.tableWidthPct) / 100);
   const total = raw.reduce((a, b) => a + b, 0) || 1;
-  const twips = raw.map((w) => Math.max(400, Math.round((w / total) * CONTENT_TWIPS)));
-  twips[twips.length - 1] += CONTENT_TWIPS - twips.reduce((a, b) => a + b, 0);
+  const twips = raw.map((w) => Math.max(400, Math.round((w / total) * tableTwips)));
+  twips[twips.length - 1] += tableTwips - twips.reduce((a, b) => a + b, 0);
+  const padding = CELL_PADDING[ctx.settings.tableCellPadding];
 
-  const border = { style: d.BorderStyle.SINGLE, size: 4, color: LINE };
+  const border = ctx.settings.tableBorders ? { style: d.BorderStyle.SINGLE, size: 4, color: LINE } : { style: d.BorderStyle.NONE, size: 0, color: "auto" };
   const firstIsHeader = placed[0]?.length > 0 && placed[0].every((c) => c.el.tagName === "TH");
 
   const tableRows = placed.map((line, r) => {
@@ -363,7 +371,7 @@ function table(ctx: Ctx, el: HTMLTableElement): Docx.Table | null {
     const height = px(trEl.style.height);
     const cells = line.map(({ el: cell, col, colSpan, rowSpan }) => {
       const widthTwips = twips.slice(col, col + colSpan).reduce((a, b) => a + b, 0);
-      const cellCtx: Ctx = { ...ctx, maxWidthPx: Math.max(40, Math.round(widthTwips / TWIPS_PER_PX) - 14), bold: ctx.bold || cell.tagName === "TH" };
+      const cellCtx: Ctx = { ...ctx, maxWidthPx: Math.max(40, Math.round((widthTwips - 2 * padding.h) / TWIPS_PER_PX)), bold: ctx.bold || cell.tagName === "TH" };
       const content = blocks(cellCtx, cell);
       // Eine Zelle endet in Word immer mit einem Absatz
       if (content.length === 0 || !(content[content.length - 1] instanceof d.Paragraph)) content.push(new d.Paragraph({ children: [] }));
@@ -374,7 +382,7 @@ function table(ctx: Ctx, el: HTMLTableElement): Docx.Table | null {
         rowSpan: rowSpan > 1 ? rowSpan : undefined,
         width: { size: widthTwips, type: d.WidthType.DXA },
         shading: background ? { type: d.ShadingType.CLEAR, fill: background, color: "auto" } : undefined,
-        margins: { top: 70, bottom: 70, left: 110, right: 110 },
+        margins: { top: padding.v, bottom: padding.v, left: padding.h, right: padding.h },
       });
     });
     return new d.TableRow({
@@ -387,7 +395,7 @@ function table(ctx: Ctx, el: HTMLTableElement): Docx.Table | null {
 
   return new d.Table({
     rows: tableRows,
-    width: { size: CONTENT_TWIPS, type: d.WidthType.DXA },
+    width: { size: tableTwips, type: d.WidthType.DXA },
     columnWidths: twips,
     layout: d.TableLayoutType.FIXED,
     borders: { top: border, bottom: border, left: border, right: border, insideHorizontal: border, insideVertical: border },
@@ -464,7 +472,7 @@ function blocks(ctx: Ctx, parent: Element): Block[] {
         lines.forEach((line, i) =>
           out.push(
             new d.Paragraph({
-              children: [new d.TextRun({ text: line || " ", font: MONO, size: 19 })],
+              children: [new d.TextRun({ text: line || " ", font: MONO, size: scaled(ctx, 19) })],
               shading: { type: d.ShadingType.CLEAR, fill: SURFACE, color: "auto" },
               spacing: { before: i === 0 ? 100 : 0, after: i === lines.length - 1 ? 140 : 0, line: 252 },
               indent: { left: 120, right: 120 },
@@ -474,6 +482,7 @@ function blocks(ctx: Ctx, parent: Element): Block[] {
         break;
       }
       case "HR":
+        if (!ctx.settings.contentRules) break;
         out.push(new d.Paragraph({ children: [], border: { bottom: { style: d.BorderStyle.SINGLE, size: 6, color: "C8C8C0", space: 1 } }, spacing: { before: 200, after: 200 } }));
         break;
       case "IMG": {
@@ -522,15 +531,16 @@ function blocks(ctx: Ctx, parent: Element): Block[] {
 // --- Dokument ------------------------------------------------------------------------------
 
 /** Alle Bilder aller Abschnitte laden und aufbereiten (je Bild einmal). */
-async function loadImages(sections: ExportSection[], loadImage: ExportOptions["loadImage"]): Promise<Map<number, Prepared | null>> {
+async function loadImages(sections: ExportSection[], loadImage: ExportOptions["loadImage"], map: ImageCache): Promise<ImageCache> {
   const ids = new Set<number>();
   for (const s of sections) {
     const doc = new DOMParser().parseFromString(s.html, "text/html");
     doc.querySelectorAll("img[data-image-id]").forEach((img) => ids.add(Number(img.getAttribute("data-image-id"))));
   }
-  const map = new Map<number, Prepared | null>();
   await Promise.all(
-    [...ids].map(async (id) => {
+    [...ids]
+      .filter((id) => !map.has(id))
+      .map(async (id) => {
       try {
         map.set(id, await prepareImage(await loadImage(id)));
       } catch {
@@ -545,7 +555,9 @@ async function loadImages(sections: ExportSection[], loadImage: ExportOptions["l
 export async function buildDocx(sections: ExportSection[], options: ExportOptions): Promise<Uint8Array> {
   if (sections.length === 0) throw "Es gibt nichts zu exportieren.";
   const d = await import("docx");
-  const images = await loadImages(sections, options.loadImage);
+  const settings = options.settings ?? DEFAULT_EXPORT_SETTINGS;
+  const page = pageMetrics(settings);
+  const images = await loadImages(sections, options.loadImage, options.imageCache ?? new Map());
   const numbering: Ctx["numbering"] = [
     {
       reference: "bullets",
@@ -554,30 +566,36 @@ export async function buildDocx(sections: ExportSection[], options: ExportOption
         format: d.LevelFormat.BULLET,
         text,
         alignment: d.AlignmentType.LEFT,
-        style: { paragraph: { indent: levelIndent(level) }, run: { font: "Calibri" } },
+        style: { paragraph: { indent: levelIndent(level) }, run: { font: settings.font } },
       })),
     },
   ];
   const ordered = { count: 0 };
+  const ctxBase = { settings };
   const children: Block[] = [];
   const now = options.now ?? new Date();
 
   sections.forEach((section, index) => {
-    const ctx: Ctx = { d, images, levelOffset: section.level, maxWidthPx: CONTENT_PX, bold: false, numbering, ordered };
+    const ctx: Ctx = { d, settings, contentTwips: page.contentTwips, images, levelOffset: section.level, maxWidthPx: Math.round(page.contentTwips / TWIPS_PER_PX), bold: false, numbering, ordered };
     const title = section.title.trim() || "Ohne Titel";
 
     if (section.level === 0) {
-      children.push(new d.Paragraph({ text: title, heading: d.HeadingLevel.TITLE }));
-      children.push(
-        new d.Paragraph({
-          children: [new d.TextRun({ text: `Exportiert aus dem Wissenszentrum am ${now.toLocaleDateString("de-CH")}`, color: MUTED, size: 18 })],
-          border: { bottom: { style: d.BorderStyle.SINGLE, size: 6, color: LINE, space: 6 } },
-          spacing: { after: 240 },
-        }),
-      );
+      // Der Kopf: Titel, Vermerk und Trennlinie, jedes für sich abschaltbar
+      const rule = { bottom: { style: d.BorderStyle.SINGLE, size: 6, color: LINE, space: 6 } };
+      const hasLine = settings.showNote || settings.showHeaderRule;
+      if (settings.showTitle) children.push(new d.Paragraph({ text: title, heading: d.HeadingLevel.TITLE, spacing: hasLine ? undefined : { before: 0, after: 240 } }));
+      if (hasLine) {
+        children.push(
+          new d.Paragraph({
+            children: settings.showNote ? [new d.TextRun({ text: `Exportiert aus dem Wissenszentrum am ${now.toLocaleDateString("de-CH")}`, color: MUTED, size: scaled(ctx, 18) })] : [],
+            border: settings.showHeaderRule ? rule : undefined,
+            spacing: { after: settings.showHeaderRule ? 240 : 200, ...(settings.showTitle ? {} : { before: 0 }) },
+          }),
+        );
+      }
     } else {
       const heading = [d.HeadingLevel.HEADING_1, d.HeadingLevel.HEADING_2, d.HeadingLevel.HEADING_3][Math.min(section.level, 3) - 1];
-      children.push(new d.Paragraph({ text: title, heading, pageBreakBefore: section.level === 1 && index > 0 }));
+      children.push(new d.Paragraph({ text: title, heading, pageBreakBefore: settings.chapterBreaks && section.level === 1 && index > 0 }));
     }
 
     const doc = new DOMParser().parseFromString(section.html, "text/html");
@@ -591,30 +609,38 @@ export async function buildDocx(sections: ExportSection[], options: ExportOption
     numbering: { config: numbering },
     styles: {
       default: {
-        document: { run: { font: FONT, size: 22, color: INK }, paragraph: { spacing: { line: 276, after: 120 } } },
-        title: { run: { font: FONT, size: 52, bold: true, color: INK }, paragraph: { spacing: { before: 0, after: 100 } } },
-        heading1: { run: { font: FONT, size: 36, bold: true, color: INK }, paragraph: { spacing: { before: 400, after: 140 }, keepNext: true } },
-        heading2: { run: { font: FONT, size: 28, bold: true, color: INK }, paragraph: { spacing: { before: 320, after: 120 }, keepNext: true } },
-        heading3: { run: { font: FONT, size: 24, bold: true, color: "3A3A36" }, paragraph: { spacing: { before: 260, after: 100 }, keepNext: true } },
-        heading4: { run: { font: FONT, size: 22, bold: true, color: "3A3A36" }, paragraph: { spacing: { before: 220, after: 80 }, keepNext: true } },
-        heading5: { run: { font: FONT, size: 22, bold: true, italics: true, color: MUTED }, paragraph: { spacing: { before: 200, after: 80 }, keepNext: true } },
-        heading6: { run: { font: FONT, size: 22, italics: true, color: MUTED }, paragraph: { spacing: { before: 200, after: 80 }, keepNext: true } },
+        document: { run: { font: settings.font, size: settings.fontPt * 2, color: INK }, paragraph: { spacing: { line: LINE_TWIPS[settings.lineSpacing], after: 120 } } },
+        title: { run: { font: settings.font, size: scaled(ctxBase, 52), bold: true, color: INK }, paragraph: { spacing: { before: 0, after: 100 } } },
+        heading1: { run: { font: settings.font, size: scaled(ctxBase, 36), bold: true, color: INK }, paragraph: { spacing: { before: 400, after: 140 }, keepNext: true } },
+        heading2: { run: { font: settings.font, size: scaled(ctxBase, 28), bold: true, color: INK }, paragraph: { spacing: { before: 320, after: 120 }, keepNext: true } },
+        heading3: { run: { font: settings.font, size: scaled(ctxBase, 24), bold: true, color: "3A3A36" }, paragraph: { spacing: { before: 260, after: 100 }, keepNext: true } },
+        heading4: { run: { font: settings.font, size: scaled(ctxBase, 22), bold: true, color: "3A3A36" }, paragraph: { spacing: { before: 220, after: 80 }, keepNext: true } },
+        heading5: { run: { font: settings.font, size: scaled(ctxBase, 22), bold: true, italics: true, color: MUTED }, paragraph: { spacing: { before: 200, after: 80 }, keepNext: true } },
+        heading6: { run: { font: settings.font, size: scaled(ctxBase, 22), italics: true, color: MUTED }, paragraph: { spacing: { before: 200, after: 80 }, keepNext: true } },
         hyperlink: { run: { color: "2F5BEA", underline: {} } },
       },
     },
     sections: [
       {
-        properties: { page: { size: { width: PAGE_W, height: PAGE_H }, margin: { top: MARGIN, right: MARGIN, bottom: MARGIN, left: MARGIN } } },
-        footers: {
-          default: new d.Footer({
-            children: [
-              new d.Paragraph({
-                alignment: d.AlignmentType.RIGHT,
-                children: [new d.TextRun({ children: ["Seite ", d.PageNumber.CURRENT, " von ", d.PageNumber.TOTAL_PAGES], size: 18, color: "8A8A84" })],
-              }),
-            ],
-          }),
+        properties: {
+          page: {
+            // Hochformat angeben, bei Querformat dreht die Bibliothek Breite und Höhe selbst
+            size: { width: page.portraitW, height: page.portraitH, orientation: settings.landscape ? d.PageOrientation.LANDSCAPE : d.PageOrientation.PORTRAIT },
+            margin: { top: page.margin, right: page.margin, bottom: page.margin, left: page.margin },
+          },
         },
+        footers: settings.pageNumbers
+          ? {
+              default: new d.Footer({
+                children: [
+                  new d.Paragraph({
+                    alignment: d.AlignmentType.RIGHT,
+                    children: [new d.TextRun({ children: ["Seite ", d.PageNumber.CURRENT, " von ", d.PageNumber.TOTAL_PAGES], size: 18, color: "8A8A84" })],
+                  }),
+                ],
+              }),
+            }
+          : undefined,
         children,
       },
     ],

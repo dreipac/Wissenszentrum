@@ -33,6 +33,10 @@ zip = { version = "9.4.2", default-features = false, features = ["deflate"] }
 tokio = { version = "1", features = ["time", "process", "io-util", "rt"] }
 heifer = { version = "0.5.1", default-features = false }
 jpeg-encoder = "0.7.1"
+# Excel- und PowerPoint-Dateien als Text für den Assistenten (Datumszellen brauchen "dates")
+calamine = { version = "0.38.0", default-features = false, features = ["dates"] }
+quick-xml = "0.42.0"
+encoding_rs = "0.8"
 
 [profile.release]
 codegen-units = 1

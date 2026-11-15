@@ -1,13 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Check, FileDown, FileText, Folder, X } from "lucide-react";
-import { Modal } from "../ui/Modal";
-import { Button } from "../ui/Button";
-import { SecondaryButton } from "../ui/SecondaryButton";
-import { loadBlob } from "../../lib/api/docImages";
-import { safeFileName, saveDocx } from "../../lib/api/exportFile";
-import { buildDocx, type ExportSection } from "../../lib/export/docx";
-import { buildTree, isFolder, pageTitle, type DocNode, type DocPage } from "../../lib/docs";
+import { Check, FileDown, X } from "lucide-react";
+import { isFolder, type DocPage } from "../../lib/docs";
+import { collectSections, ExportModal } from "./ExportModal";
 import "./DocExport.css";
 
 interface DocExportProps {
@@ -17,46 +12,18 @@ interface DocExportProps {
   beforeExport?: () => Promise<void>;
 }
 
-/** Die Seite und, wenn gewünscht, alle Unterseiten in Reihenfolge des Baums; Unterseiten liegen eine Ebene tiefer. */
-function collect(page: DocPage, pages: DocPage[], withSubpages: boolean): ExportSection[] {
-  const sections: ExportSection[] = [{ title: pageTitle(page), html: isFolder(page) ? "" : page.content, level: 0 }];
-  if (!withSubpages) return sections;
-  const find = (nodes: DocNode[]): DocNode | undefined => {
-    for (const n of nodes) {
-      if (n.page.id === page.id) return n;
-      const inner = find(n.children);
-      if (inner) return inner;
-    }
-    return undefined;
-  };
-  const walk = (nodes: DocNode[], level: number) => {
-    for (const n of nodes) {
-      sections.push({ title: pageTitle(n.page), html: isFolder(n.page) ? "" : n.page.content, level });
-      walk(n.children, level + 1);
-    }
-  };
-  walk(find(buildTree(pages))?.children ?? [], 1);
-  return sections;
-}
-
-const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
-
 /**
- * Knopf „Als Word-Dokument exportieren“ in der Kopfzeile einer Seite. Hat die Seite Unterseiten, fragt ein kleiner Dialog,
- * ob sie mitkommen sollen (ein Ordner exportiert immer seinen Inhalt). Danach folgt der Speichern-Dialog von Windows.
+ * Knopf „Als Word-Dokument exportieren“ in der Kopfzeile einer Seite. Er öffnet das Export-Fenster mit Vorschau und
+ * Einstellungen; danach folgt der Speichern-Dialog von Windows. Die Rückmeldung zeigt, wo die Datei liegt.
  */
 export function DocExport({ page, pages, beforeExport }: DocExportProps) {
-  const [dialog, setDialog] = useState(false);
-  const [withSubpages, setWithSubpages] = useState(true);
+  const [open, setOpen] = useState<{ page: DocPage; pages: DocPage[] } | null>(null);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<{ kind: "ok" | "error"; text: string } | null>(null);
   const latest = useRef({ page, pages });
   latest.current = { page, pages };
 
-  const folder = isFolder(page);
-  const subpageCount = collect(page, pages, true).length - 1;
-  const nothing = folder && subpageCount === 0;
+  const nothing = isFolder(page) && collectSections(page, pages, true).length === 1;
 
   // Die Meldung verschwindet von selbst; ein Fehler bleibt, bis man ihn schließt
   useEffect(() => {
@@ -65,36 +32,18 @@ export function DocExport({ page, pages, beforeExport }: DocExportProps) {
     return () => window.clearTimeout(t);
   }, [notice]);
 
-  const run = async (include: boolean) => {
+  const start = async () => {
+    if (busy) return;
     setBusy(true);
-    setError(null);
     try {
       await beforeExport?.();
       // Stand nach dem Speichern: Seite und Liste können sich in der Zwischenzeit erneuert haben
       const { page: p, pages: all } = latest.current;
-      const fresh = all.find((x) => x.id === p.id) ?? p;
-      const sections = collect(fresh, all, include || isFolder(fresh));
-      const name = safeFileName(pageTitle(fresh));
-      const path = await saveDocx(name, () => buildDocx(sections, { loadImage: loadBlob }));
-      setDialog(false);
-      if (path) setNotice({ kind: "ok", text: path });
+      setOpen({ page: all.find((x) => x.id === p.id) ?? p, pages: all });
     } catch (e) {
-      const text = String(e);
-      if (dialog) setError(text);
-      else setNotice({ kind: "error", text });
+      setNotice({ kind: "error", text: String(e) });
     } finally {
       setBusy(false);
-    }
-  };
-
-  const start = () => {
-    if (busy) return;
-    if (subpageCount > 0) {
-      setWithSubpages(true);
-      setError(null);
-      setDialog(true);
-    } else {
-      void run(false);
     }
   };
 
@@ -106,53 +55,12 @@ export function DocExport({ page, pages, beforeExport }: DocExportProps) {
         aria-label="Als Word-Dokument exportieren"
         title={nothing ? "Dieser Ordner ist leer" : "Als Word-Dokument exportieren"}
         disabled={busy || nothing}
-        onClick={start}
+        onClick={() => void start()}
       >
         <FileDown size={16} />
       </button>
 
-      {dialog && (
-        <Modal
-          title="Als Word-Dokument exportieren"
-          width={460}
-          onClose={() => !busy && setDialog(false)}
-          footer={
-            <>
-              <span className="spacer" />
-              <SecondaryButton disabled={busy} onClick={() => setDialog(false)}>
-                Abbrechen
-              </SecondaryButton>
-              <Button disabled={busy} onClick={() => void run(withSubpages)}>
-                {busy ? "Exportiere …" : "Exportieren"}
-              </Button>
-            </>
-          }
-        >
-          <div className="dx-summary">
-            <span className="dx-icon">{folder ? <Folder size={17} /> : <FileText size={17} />}</span>
-            <div>
-              <strong>{pageTitle(page)}</strong>
-              <span>
-                {folder ? "Ordner" : "Seite"} · {count(subpageCount, "Unterseite", "Unterseiten")}
-              </span>
-            </div>
-          </div>
-
-          {!folder && (
-            <label className="checkbox-row dx-option">
-              <input type="checkbox" checked={withSubpages} onChange={(e) => setWithSubpages(e.target.checked)} />
-              <span className={`check${withSubpages ? " checked" : ""}`} />
-              <span>
-                Unterseiten einbeziehen
-                <em>Jede Unterseite wird ein eigenes Kapitel, ihre Überschriften rücken eine Ebene tiefer.</em>
-              </span>
-            </label>
-          )}
-
-          <p className="dx-hint">Überschriften, Listen, Tabellen und Bilder (auch in Tabellen) werden als echte Word-Elemente übernommen.</p>
-          {error && <p className="field-error">{error}</p>}
-        </Modal>
-      )}
+      {open && <ExportModal page={open.page} pages={open.pages} onClose={() => setOpen(null)} onExported={(path) => setNotice({ kind: "ok", text: path })} />}
 
       {notice &&
         createPortal(

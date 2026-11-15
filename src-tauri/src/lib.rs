@@ -16,6 +16,7 @@ mod heic;
 mod journal;
 mod mcp;
 mod notes;
+mod office;
 mod profile;
 mod projects;
 mod strategies;

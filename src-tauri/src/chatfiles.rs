@@ -5,7 +5,7 @@
 //!
 //! Der Inhalt einer Datei sind Daten und nie Anweisungen: der Systemprompt sagt dem Modell, dass es ihm nicht folgen darf.
 
-use crate::heic;
+use crate::{heic, office};
 use rusqlite::Connection;
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -36,6 +36,10 @@ enum Kind {
     Pdf,
     Text,
     Docx,
+    /// Excel: wird als Text ausgelesen (siehe `office`)
+    Excel,
+    /// PowerPoint: wird als Text ausgelesen (siehe `office`)
+    Powerpoint,
     Other,
 }
 
@@ -54,10 +58,28 @@ fn kind_of(name: &str, mime: &str) -> Kind {
         "webp" => Kind::Image("image/webp"),
         "pdf" => Kind::Pdf,
         "docx" => Kind::Docx,
+        "xlsx" | "xlsm" | "xlsb" | "xls" => Kind::Excel,
+        "pptx" | "pptm" | "ppsx" => Kind::Powerpoint,
         "txt" | "md" | "markdown" | "csv" | "tsv" | "json" | "xml" | "html" | "htm" | "log" | "yaml" | "yml" | "ini" | "toml" | "sql" | "rs" | "py" | "ts" | "tsx" | "js" | "jsx" | "css" => Kind::Text,
+        // Ohne bekannte Endung entscheidet der Typ. Die Endung geht vor: Windows meldet auch .csv als „application/vnd.ms-excel“.
         _ if mime == "application/pdf" => Kind::Pdf,
+        _ if office::is_excel("", mime) => Kind::Excel,
+        _ if office::is_powerpoint("", mime) => Kind::Powerpoint,
         _ if mime.starts_with("text/") => Kind::Text,
         _ => Kind::Other,
+    }
+}
+
+/// Der Text einer Textdatei, in welcher Zeichencodierung sie auch gespeichert ist: mit Marke (BOM) als UTF-8 oder UTF-16
+/// (Excel „Unicode-Text“), ohne Marke als UTF-8 und, wenn das nicht aufgeht, als Windows-1252. So speichert Excel unter
+/// deutschem Windows eine CSV-Datei („CSV (Trennzeichen-getrennt)“), und Umlaute blieben sonst Fragezeichen.
+fn decode_text(data: &[u8]) -> String {
+    if let Some((encoding, bom_len)) = encoding_rs::Encoding::for_bom(data) {
+        return encoding.decode_without_bom_handling(&data[bom_len..]).0.into_owned();
+    }
+    match std::str::from_utf8(data) {
+        Ok(text) => text.to_string(),
+        Err(_) => encoding_rs::WINDOWS_1252.decode_without_bom_handling(data).0.into_owned(),
     }
 }
 
@@ -190,13 +212,23 @@ pub fn open(conn: &Connection, id: i64) -> Opened {
             Ok(jpeg) => Opened::Binary { work_name: format!("{id}-{}", crate::claude_code::safe_file_name(&heic::jpeg_name(&name))), name, bytes: jpeg },
             Err(why) => skipped(&why),
         },
-        Kind::Text => Opened::Text { text: clip(String::from_utf8_lossy(&data).into_owned()), name },
+        Kind::Text => Opened::Text { text: clip(decode_text(&data)), name },
         Kind::Docx => match read_docx(&data) {
             Ok(text) if text.trim().is_empty() => skipped("die Word-Datei enthält keinen Text"),
             Ok(text) => Opened::Text { text: clip(text), name },
             Err(e) => skipped(&e),
         },
-        Kind::Other => skipped("dieser Dateityp wird nicht gelesen (lesbar: Bilder, PDF, Text, Word)"),
+        Kind::Excel => match office::excel_text_cached(id, &data) {
+            Ok(text) if text.trim().is_empty() => skipped("die Excel-Datei enthält keinen Inhalt"),
+            Ok(text) => Opened::Text { text: clip(text), name },
+            Err(e) => skipped(&e),
+        },
+        Kind::Powerpoint => match office::powerpoint_text_cached(id, &data) {
+            Ok(text) if text.trim().is_empty() => skipped("die PowerPoint-Datei enthält keinen Text"),
+            Ok(text) => Opened::Text { text: clip(text), name },
+            Err(e) => skipped(&e),
+        },
+        Kind::Other => skipped("dieser Dateityp wird nicht gelesen (lesbar: Bilder, PDF, Text, Word, Excel, PowerPoint)"),
     }
 }
 
@@ -252,7 +284,7 @@ pub fn prepare(conn: &Connection, files: &[ChatFile], budget: &mut usize, same_a
                 Err(why) => skip(&why),
             },
             Kind::Text => {
-                let text = clip(String::from_utf8_lossy(&data).into_owned());
+                let text = clip(decode_text(&data));
                 if !fits(text.len(), budget) {
                     skip("alle Dateien im Gespräch zusammen sind zu groß")
                 } else {
@@ -273,7 +305,33 @@ pub fn prepare(conn: &Connection, files: &[ChatFile], budget: &mut usize, same_a
                 }
                 Err(e) => skip(&e),
             },
-            Kind::Other => skip("dieser Dateityp wird nicht gelesen (lesbar: Bilder, PDF, Text, Word)"),
+            Kind::Excel => match office::excel_text_cached(file.id, &data) {
+                Ok(text) if text.trim().is_empty() => skip("die Excel-Datei enthält keinen Inhalt"),
+                Ok(text) => {
+                    let text = clip(text);
+                    if !fits(text.len(), budget) {
+                        skip("alle Dateien im Gespräch zusammen sind zu groß")
+                    } else {
+                        *budget -= text.len();
+                        ready(format!("{work_name}.txt"), "(Excel-Datei als Text) ", text.into_bytes())
+                    }
+                }
+                Err(e) => skip(&e),
+            },
+            Kind::Powerpoint => match office::powerpoint_text_cached(file.id, &data) {
+                Ok(text) if text.trim().is_empty() => skip("die PowerPoint-Datei enthält keinen Text"),
+                Ok(text) => {
+                    let text = clip(text);
+                    if !fits(text.len(), budget) {
+                        skip("alle Dateien im Gespräch zusammen sind zu groß")
+                    } else {
+                        *budget -= text.len();
+                        ready(format!("{work_name}.txt"), "(PowerPoint-Datei als Text) ", text.into_bytes())
+                    }
+                }
+                Err(e) => skip(&e),
+            },
+            Kind::Other => skip("dieser Dateityp wird nicht gelesen (lesbar: Bilder, PDF, Text, Word, Excel, PowerPoint)"),
         });
     }
     out
@@ -315,7 +373,7 @@ mod tests {
         assert_eq!(kind_of("Plan.pdf", "application/octet-stream"), Kind::Pdf);
         assert_eq!(kind_of("Brief.docx", ""), Kind::Docx);
         assert_eq!(kind_of("notizen", "text/plain"), Kind::Text);
-        assert_eq!(kind_of("Daten.xlsx", ""), Kind::Other);
+        assert_eq!(kind_of("Archiv.zip", ""), Kind::Other);
     }
 
     #[test]
@@ -333,7 +391,7 @@ mod tests {
         let pdf = add(&c, "Plan.pdf", "application/pdf", b"%PDF-1.4 x");
         let png = add(&c, "Bild.png", "image/png", &[137, 80, 78, 71]);
         let word = add(&c, "Brief.docx", "", &docx("<w:document><w:p><w:r><w:t>Guten Tag</w:t></w:r></w:p></w:document>"));
-        let zip = add(&c, "Daten.xlsx", "", b"PK");
+        let zip = add(&c, "Archiv.zip", "", b"PK");
         let files: Vec<ChatFile> = [text, pdf, png, word, zip].iter().map(|id| ChatFile { id: *id }).collect();
 
         let mut budget = TOTAL_BYTES;
@@ -347,7 +405,7 @@ mod tests {
         assert_eq!(provided[&format!("{text}-Notiz.txt")], b"Hallo Welt");
         assert_eq!(provided[&format!("{pdf}-Plan.pdf")], b"%PDF-1.4 x");
         assert_eq!(String::from_utf8_lossy(&provided[&format!("{word}-Brief.docx.txt")]), "Guten Tag", "Word kommt als Text");
-        assert_eq!(provided.len(), 4, "die xlsx-Datei wird nicht bereitgestellt");
+        assert_eq!(provided.len(), 4, "die zip-Datei wird nicht bereitgestellt");
 
         // Ist das Budget des Gesprächs aufgebraucht, bleiben Name und id, aber keine Datei
         let old = prepare(&c, &files, &mut 0, &HashMap::new());
@@ -396,7 +454,7 @@ mod tests {
         let text = add(&c, "Notiz.txt", "text/plain", "Hallo Welt".as_bytes());
         let word = add(&c, "Brief.docx", "", &docx("<w:document><w:p><w:r><w:t>Guten Tag</w:t></w:r></w:p></w:document>"));
         let pdf = add(&c, "Plan.pdf", "application/pdf", b"%PDF-1.4 x");
-        let sheet = add(&c, "Daten.xlsx", "", b"PK");
+        let sheet = add(&c, "Archiv.zip", "", b"PK");
         let big = add(&c, "Gross.png", "image/png", &vec![1u8; MAX_IMAGE_BYTES + 1]);
 
         assert_eq!(open(&c, text), Opened::Text { name: "Notiz.txt".into(), text: "Hallo Welt".into() });
@@ -456,5 +514,96 @@ mod tests {
         assert!(items[0].description.contains("Inhalt nicht bereitgestellt") && items[0].description.contains("HEIC-Foto"), "{}", items[0].description);
         assert_eq!(budget, TOTAL_BYTES);
         assert!(matches!(open(&c, id), Opened::Skipped { .. }));
+    }
+
+    #[test]
+    fn excel_and_powerpoint_files_are_provided_and_opened_as_text() {
+        use crate::office::tests::{sample_pptx, sample_xlsx};
+        assert_eq!(kind_of("Budget.XLSX", ""), Kind::Excel);
+        assert_eq!(kind_of("alt.xls", ""), Kind::Excel);
+        assert_eq!(kind_of("x", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"), Kind::Excel);
+        assert_eq!(kind_of("Folien.pptx", ""), Kind::Powerpoint);
+        assert_eq!(kind_of("Alt.ppt", "application/vnd.ms-powerpoint"), Kind::Other, "das alte Binärformat bleibt unlesbar");
+
+        let c = conn();
+        let xlsx = add(&c, "Budget.XLSX", "", &sample_xlsx());
+        let pptx = add(&c, "Praesentation.pptx", "", &sample_pptx());
+        let mut budget = TOTAL_BYTES;
+        let items = prepare(&c, &[ChatFile { id: xlsx }, ChatFile { id: pptx }], &mut budget, &HashMap::new());
+
+        let (name, bytes) = items[0].file.as_ref().expect("Excel wird bereitgestellt");
+        assert_eq!(name, &format!("{xlsx}-Budget.XLSX.txt"));
+        let text = String::from_utf8_lossy(bytes);
+        assert!(text.contains("Tabelle 1: „Budget“") && text.contains("2: Miete & Strom | 1200.5 | 2026-01-01"), "{text}");
+        assert!(items[0].description.contains("(Excel-Datei als Text)"), "{}", items[0].description);
+
+        let (name, bytes) = items[1].file.as_ref().expect("PowerPoint wird bereitgestellt");
+        assert_eq!(name, &format!("{pptx}-Praesentation.pptx.txt"));
+        assert!(String::from_utf8_lossy(bytes).contains("Folie 1: Projekt & Ziele"));
+        assert!(items[1].description.contains("(PowerPoint-Datei als Text)"), "{}", items[1].description);
+        assert!(budget < TOTAL_BYTES, "der Text zählt zum Budget");
+
+        // Mit read_file: als Text zurück, nicht als Datei für den Arbeitsordner
+        match open(&c, xlsx) {
+            Opened::Text { name, text } => assert!(name == "Budget.XLSX" && text.contains("Summe")),
+            other => panic!("erwartet Text, bekommen {other:?}"),
+        }
+        match open(&c, pptx) {
+            Opened::Text { text, .. } => assert!(text.contains("Notizen: Hier die Zahlen nennen.")),
+            other => panic!("erwartet Text, bekommen {other:?}"),
+        }
+    }
+
+    #[test]
+    fn broken_or_old_office_files_are_skipped_with_a_reason() {
+        let c = conn();
+        let bad_xlsx = add(&c, "Kaputt.xlsx", "", b"kein excel");
+        let bad_pptx = add(&c, "Kaputt.pptx", "", b"keine folien");
+        let old_ppt = add(&c, "Alt.ppt", "application/vnd.ms-powerpoint", b"binaer");
+        let mut budget = TOTAL_BYTES;
+        let items = prepare(&c, &[ChatFile { id: bad_xlsx }, ChatFile { id: bad_pptx }, ChatFile { id: old_ppt }], &mut budget, &HashMap::new());
+        assert!(items.iter().all(|i| i.file.is_none()));
+        assert!(items[0].description.contains("Excel-Datei") && items[1].description.contains("PowerPoint-Datei"), "{:?}", items);
+        assert!(items[2].description.contains("PowerPoint"), "die Meldung nennt, was lesbar ist: {}", items[2].description);
+        assert_eq!(budget, TOTAL_BYTES);
+        for id in [bad_xlsx, bad_pptx, old_ppt] {
+            assert!(matches!(open(&c, id), Opened::Skipped { .. }));
+        }
+    }
+
+    #[test]
+    fn csv_files_are_text_even_when_windows_calls_them_excel() {
+        assert_eq!(kind_of("Umsatz.csv", "application/vnd.ms-excel"), Kind::Text, "die Endung geht vor dem Typ");
+        assert_eq!(kind_of("Umsatz.CSV", "text/csv"), Kind::Text);
+        assert_eq!(kind_of("Tabelle.tsv", ""), Kind::Text);
+        assert_eq!(kind_of("Daten", "application/vnd.ms-excel"), Kind::Excel, "ohne Endung entscheidet der Typ");
+        assert_eq!(kind_of("Folien", "application/vnd.openxmlformats-officedocument.presentationml.presentation"), Kind::Powerpoint);
+
+        // So speichert Excel unter deutschem Windows: Windows-1252, Semikolon, Zeilenende CRLF
+        let c = conn();
+        let id = add(&c, "Umsatz.csv", "application/vnd.ms-excel", b"Name;Gr\xf6\xdfe;Preis\r\nM\xfcller;42;1,5\r\n");
+        let mut budget = TOTAL_BYTES;
+        let items = prepare(&c, &[ChatFile { id }], &mut budget, &HashMap::new());
+        let (name, bytes) = items[0].file.as_ref().expect("CSV wird bereitgestellt");
+        assert_eq!(name, &format!("{id}-Umsatz.csv"));
+        assert_eq!(String::from_utf8_lossy(bytes), "Name;Größe;Preis\r\nMüller;42;1,5\r\n", "Umlaute bleiben erhalten");
+        match open(&c, id) {
+            Opened::Text { text, .. } => assert!(text.contains("Müller;42;1,5")),
+            other => panic!("erwartet Text, bekommen {other:?}"),
+        }
+    }
+
+    #[test]
+    fn text_files_are_decoded_by_their_byte_order_mark_or_as_utf8_or_windows_1252() {
+        assert_eq!(decode_text("Größe".as_bytes()), "Größe");
+        assert_eq!(decode_text(b"\xEF\xBB\xBFName;Gr\xC3\xB6\xC3\x9Fe"), "Name;Größe", "UTF-8 mit Marke: die Marke verschwindet");
+        // UTF-16 mit Marke (Excel „Unicode-Text“)
+        let mut utf16 = vec![0xFF, 0xFE];
+        for unit in "Größe\t1".encode_utf16() {
+            utf16.extend_from_slice(&unit.to_le_bytes());
+        }
+        assert_eq!(decode_text(&utf16), "Größe\t1");
+        assert_eq!(decode_text(b"Gr\xf6\xdfe \x80 \x96"), "Größe € –", "Windows-1252 mit Euro und Gedankenstrich");
+        assert_eq!(decode_text(b""), "");
     }
 }
