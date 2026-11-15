@@ -1,5 +1,9 @@
 # Änderungen
 
+## 1.6.1 (15.11.2026)
+
+- UI/UX and HEIC Converter
+
 ## 1.6.0 (15.11.2026)
 
 - Assistent, Tabellen: Tabellen mit Checklisten, Listen oder mehreren Absätzen in einzelnen Zellen (zum Beispiel die Spalte mit den Abhak-Kreisen in „02_Grobplanung“) galten bisher als Ganzes als nicht änderbar, und der Assistent sah nur ihren Anfang. Jetzt liest er sie vollständig (Checklisten als [x] erledigt und [ ] offen) und ändert die anderen Zellen einzeln; Zellen mit Checkliste bleiben Zeichen für Zeichen unberührt, neue Zeilen bekommen dort einen offenen Eintrag. Die ganze Tabelle lässt sich nicht mehr ersetzen, wenn dabei Checklisten verloren gingen. Außerdem liest der Assistent Anhänge nun von sich aus, wenn die Frage sie betrifft.
