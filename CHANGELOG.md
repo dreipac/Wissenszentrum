@@ -1,5 +1,9 @@
 # Änderungen
 
+## 1.6.2 (15.11.2026)
+
+- Fix UI Bug (White Mode) and New File type
+
 ## 1.6.1 (15.11.2026)
 
 - UI/UX and HEIC Converter
