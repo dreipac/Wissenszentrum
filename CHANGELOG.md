@@ -1,5 +1,9 @@
 # Änderungen
 
+## 1.6.3 (23.11.2026)
+
+- Tabellen und Code Block
+
 ## 1.6.2 (15.11.2026)
 
 - Fix UI Bug (White Mode) and New File type
